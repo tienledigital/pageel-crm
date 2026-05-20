@@ -20,7 +20,7 @@ CREATE TABLE `__new_payments` (
 	FOREIGN KEY (`customer_id`) REFERENCES `customers`(`id`) ON UPDATE no action ON DELETE no action
 );
 --> statement-breakpoint
-INSERT INTO `__new_payments`("id", "invoice_id", "customer_id", "amount", "transaction_id", "payment_method", "bank", "account_number", "sender_account", "sender_name", "sender_bank", "type", "tax_category", "content", "paid_at", "created_at") SELECT "id", "invoice_id", "customer_id", "amount", "transaction_id", "payment_method", "bank", "account_number", "sender_account", "sender_name", "sender_bank", "type", "tax_category", "content", "paid_at", "created_at" FROM `payments`;--> statement-breakpoint
+INSERT INTO `__new_payments`("id", "invoice_id", "customer_id", "amount", "transaction_id", "payment_method", "bank", "account_number", "sender_account", "sender_name", "sender_bank", "type", "tax_category", "content", "paid_at", "created_at") SELECT "id", "invoice_id", NULL, "amount", "transaction_id", "payment_method", NULL, NULL, NULL, NULL, NULL, 'in', NULL, "content", "paid_at", "created_at" FROM `payments`;--> statement-breakpoint
 DROP TABLE `payments`;--> statement-breakpoint
 ALTER TABLE `__new_payments` RENAME TO `payments`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;--> statement-breakpoint
