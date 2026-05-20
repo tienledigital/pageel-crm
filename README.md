@@ -70,11 +70,25 @@
    ```bash
    npm install
    ```
-3. Run the local development server:
-   ```bash
-   npm run dev
-   ```
-4. Run the unit test suite:
+3. Initialize the local database schema:
+   - For Cloudflare local emulator development (recommended):
+     ```bash
+     npx wrangler d1 migrations apply DB --local
+     ```
+   - For standalone Astro dev server (using SQLite local.db fallback):
+     ```bash
+     npx drizzle-kit push
+     ```
+4. Run the development server:
+   - For Cloudflare emulated environment (D1 & KV bindings active):
+     ```bash
+     npm run dev:cf
+     ```
+   - For standalone Astro dev server:
+     ```bash
+     npm run dev
+     ```
+5. Run the unit test suite:
    ```bash
    npx vitest run
    ```

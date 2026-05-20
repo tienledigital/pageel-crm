@@ -1,0 +1,265 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import { env } from 'cloudflare:workers';
+import { getDb } from '@/lib/db';
+import { users } from '@/lib/db/schema';
+
+// Khởi tạo DB để truy vấn số liệu thống kê nhanh
+const db = getDb(env);
+
+// Đếm số lượng user làm ví dụ metric
+const userCountResult = await db.select().from(users);
+const totalUsers = userCountResult.length;
+---
+
+<DashboardLayout title="System Overview">
+  <style>
+    /* Metric Cards Grid */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .metric-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .metric-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--primary);
+      box-shadow: 0 10px 20px rgba(99, 102, 241, 0.05);
+    }
+
+    /* Glow effect on hover */
+    .metric-card::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle at top right, var(--primary-glow) 0%, transparent 60%);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+    }
+
+    .metric-card:hover::after {
+      opacity: 1;
+    }
+
+    .metric-label {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .metric-value {
+      font-size: 2.25rem;
+      font-weight: 700;
+      letter-spacing: -1px;
+      color: #fff;
+    }
+
+    .metric-change {
+      font-size: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-weight: 600;
+    }
+
+    .change-up {
+      color: var(--success);
+    }
+
+    /* Info Panels */
+    .dashboard-panels {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 1024px) {
+      .dashboard-panels {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.75rem;
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .panel-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+    }
+
+    /* Table styles */
+    .data-table-container {
+      overflow-x: auto;
+    }
+
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    .data-table th {
+      padding: 0.75rem 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .data-table td {
+      padding: 1rem;
+      font-size: 0.875rem;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-primary);
+    }
+
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .badge-success {
+      background-color: rgba(16, 185, 129, 0.1);
+      color: var(--success);
+    }
+  </style>
+
+  <div class="metrics-grid">
+    <!-- Active Customers -->
+    <div class="metric-card">
+      <span class="metric-label">Total Customers</span>
+      <span class="metric-value">1,482</span>
+      <span class="metric-change change-up">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width: 12px; height: 12px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
+        </svg>
+        +12.4% vs last month
+      </span>
+    </div>
+
+    <!-- Active Users -->
+    <div class="metric-card">
+      <span class="metric-label">System Users</span>
+      <span class="metric-value">{totalUsers}</span>
+      <span class="metric-change change-up">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width: 12px; height: 12px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
+        </svg>
+        Active
+      </span>
+    </div>
+
+    <!-- Sync Success Rate -->
+    <div class="metric-card">
+      <span class="metric-label">Sync Success Rate</span>
+      <span class="metric-value">99.8%</span>
+      <span class="metric-change change-up">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width: 12px; height: 12px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
+        </svg>
+        All webhooks healthy
+      </span>
+    </div>
+  </div>
+
+  <div class="dashboard-panels">
+    <!-- Panel: Recent Customer Synced -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">Recent Synchronizations</h2>
+      </div>
+      <div class="data-table-container">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>Status</th>
+              <th>Source</th>
+              <th>Timestamp</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Nguyen Van A</td>
+              <td><span class="badge badge-success">Completed</span></td>
+              <td>Sepay Webhook</td>
+              <td>2 mins ago</td>
+            </tr>
+            <tr>
+              <td>Tran Thi B</td>
+              <td><span class="badge badge-success">Completed</span></td>
+              <td>Sepay Webhook</td>
+              <td>15 mins ago</td>
+            </tr>
+            <tr>
+              <td>Le Van C</td>
+              <td><span class="badge badge-success">Completed</span></td>
+              <td>Manual Sync</td>
+              <td>1 hour ago</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Panel: System Info -->
+    <div class="panel">
+      <div class="panel-header">
+        <h2 class="panel-title">System Status</h2>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 1rem;">
+        <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
+          <span style="color: var(--text-secondary);">Database</span>
+          <span style="font-weight: 600; color: var(--success);">Cloudflare D1 (Online)</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
+          <span style="color: var(--text-secondary);">Storage</span>
+          <span style="font-weight: 600; color: var(--success);">Cloudflare KV (Online)</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
+          <span style="color: var(--text-secondary);">Runtime Environment</span>
+          <span style="font-weight: 600; color: var(--primary);">Cloudflare Pages</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
