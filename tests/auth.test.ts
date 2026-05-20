@@ -8,6 +8,7 @@ import { POST as loginHandler } from '@/pages/api/auth/login';
 import { POST as logoutHandler } from '@/pages/api/auth/logout';
 
 const SESSION_SECRET = 'test-secret-key-must-be-long-enough-32-chars';
+process.env.SESSION_SECRET = SESSION_SECRET;
 
 describe('Authentication Engine - Password Hashing', () => {
   it('should hash password using PBKDF2 and return correct format', async () => {

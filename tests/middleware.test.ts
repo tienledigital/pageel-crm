@@ -3,6 +3,7 @@ import { onRequest } from '@/middleware';
 import { createSessionCookie } from '@/lib/auth';
 
 const SESSION_SECRET = 'test-secret-key-must-be-long-enough-32-chars';
+process.env.SESSION_SECRET = SESSION_SECRET;
 
 describe('Astro Middleware - Authentication & RBAC', () => {
   const validPayload = {

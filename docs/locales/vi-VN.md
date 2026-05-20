@@ -70,11 +70,25 @@
    ```bash
    npm install
    ```
-3. Chạy server phát triển cục bộ:
-   ```bash
-   npm run dev
-   ```
-4. Chạy kiểm thử unit test:
+3. Khởi tạo cấu trúc cơ sở dữ liệu (schema) local:
+   - Đối với môi trường giả lập Cloudflare local (khuyên dùng):
+     ```bash
+     npx wrangler d1 migrations apply DB --local
+     ```
+   - Đối với dev server Astro thuần (sử dụng fallback file local.db):
+     ```bash
+     npx drizzle-kit push
+     ```
+4. Khởi chạy server phát triển:
+   - Sử dụng môi trường giả lập Cloudflare (đầy đủ binding D1 & KV):
+     ```bash
+     npm run dev:cf
+     ```
+   - Sử dụng Astro dev thuần:
+     ```bash
+     npm run dev
+     ```
+5. Chạy kiểm thử unit test:
    ```bash
    npx vitest run
    ```

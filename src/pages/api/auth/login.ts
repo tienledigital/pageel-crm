@@ -1,8 +1,9 @@
 import type { APIRoute } from 'astro';
-import { getDb } from '../../../lib/db';
-import { users } from '../../../lib/db/schema';
+import { env } from 'cloudflare:workers';
+import { getDb } from '@/lib/db';
+import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { verifyPassword, createSessionCookie, hashPassword } from '../../../lib/auth';
+import { verifyPassword, createSessionCookie, hashPassword } from '@/lib/auth';
 
 export const POST: APIRoute = async (context) => {
   try {
@@ -17,7 +18,6 @@ export const POST: APIRoute = async (context) => {
     }
 
     // 1. Lấy database client (có truyền platform env nếu chạy trên Cloudflare)
-    const env = (context.locals as any).runtime?.env;
     const db = getDb(env);
 
     // 1.5 Auto-Seed Admin nếu DB trống

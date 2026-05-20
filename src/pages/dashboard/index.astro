@@ -1,10 +1,10 @@
 ---
-import DashboardLayout from '../../layouts/DashboardLayout.astro';
-import { getDb } from '../../lib/db';
-import { users } from '../../lib/db/schema';
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import { env } from 'cloudflare:workers';
+import { getDb } from '@/lib/db';
+import { users } from '@/lib/db/schema';
 
 // Khởi tạo DB để truy vấn số liệu thống kê nhanh
-const env = (Astro.locals as any).runtime?.env;
 const db = getDb(env);
 
 // Đếm số lượng user làm ví dụ metric

@@ -1,4 +1,5 @@
 import type { APIContext, MiddlewareNext } from 'astro';
+import { env } from 'cloudflare:workers';
 import { verifySessionCookie } from './lib/auth';
 
 // Các route không yêu cầu đăng nhập
@@ -22,7 +23,6 @@ export const onRequest = async (context: APIContext, next: MiddlewareNext) => {
 
   // 2. Kiểm tra Authentication cho các route còn lại (dashboard, các api khác...)
   const sessionCookie = context.cookies.get('session')?.value;
-  const env = (context.locals as any).runtime?.env;
   const secret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
 
   if (sessionCookie) {
