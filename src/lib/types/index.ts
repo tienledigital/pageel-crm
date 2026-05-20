@@ -1,55 +1,30 @@
-export interface User {
-  id: string;
-  username: string;
-  passwordHash: string;
-  role: 'admin' | 'accountant' | 'saler';
-  createdAt: number;
-}
+import type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
+import * as schema from '../db/schema';
 
-export interface Customer {
-  id: string;
-  fullName: string;
-  phone: string;
-  address?: string;
-  taxCode?: string;
-  notes?: string;
-  createdAt: number;
-}
+// 1. users
+export type User = InferSelectModel<typeof schema.users>;
+export type NewUser = InferInsertModel<typeof schema.users>;
 
-export interface Staff {
-  id: string;
-  userId: string;
-  fullName: string;
-  phone?: string;
-  status: 'active' | 'inactive';
-  createdAt: number;
-}
+// 2. customers
+export type Customer = InferSelectModel<typeof schema.customers>;
+export type NewCustomer = InferInsertModel<typeof schema.customers>;
 
-export interface Invoice {
-  id: string;
-  customerId: string;
-  staffId: string;
-  invoiceNumber: string;
-  amount: number;
-  content: string;
-  status: 'pending' | 'paid' | 'cancelled';
-  createdAt: number;
-  paidAt?: number;
-}
+// 3. staff
+export type Staff = InferSelectModel<typeof schema.staff>;
+export type NewStaff = InferInsertModel<typeof schema.staff>;
 
-export interface Payment {
-  id: string;
-  invoiceId: string;
-  amount: number;
-  transactionId: string;
-  paymentMethod: 'bank_transfer' | 'cash';
-  content?: string;
-  paidAt: number;
-  createdAt: number;
-}
+// 4. invoices
+export type Invoice = InferSelectModel<typeof schema.invoices>;
+export type NewInvoice = InferInsertModel<typeof schema.invoices>;
 
-export interface Config {
-  key: string;
-  value: string;
-  updatedAt: number;
-}
+// 5. payments
+export type Payment = InferSelectModel<typeof schema.payments>;
+export type NewPayment = InferInsertModel<typeof schema.payments>;
+
+// 6. config
+export type Config = InferSelectModel<typeof schema.config>;
+export type NewConfig = InferInsertModel<typeof schema.config>;
+
+// 7. sync_logs
+export type SyncLog = InferSelectModel<typeof schema.syncLogs>;
+export type NewSyncLog = InferInsertModel<typeof schema.syncLogs>;
