@@ -17,10 +17,10 @@ export const POST: APIRoute = async (context) => {
       );
     }
 
-    // 1. Lấy database client (có truyền platform env nếu chạy trên Cloudflare)
+    // 1. Get database client (injects platform env if running on Cloudflare)
     const db = getDb(env);
 
-    // 1.5 Auto-Seed Admin nếu DB trống
+    // 1.5 Auto-Seed Admin user if DB is empty
     const existingUsers = await db.select().from(users).limit(1);
     if (existingUsers.length === 0) {
       const adminUsername = env?.INITIAL_ADMIN_USERNAME || import.meta.env.INITIAL_ADMIN_USERNAME || 'admin';
@@ -34,7 +34,7 @@ export const POST: APIRoute = async (context) => {
       });
     }
 
-    // 2. Tìm kiếm user
+    // 2. Look up user
     const user = await db.query.users.findFirst({
       where: eq(users.username, username),
     });
@@ -46,7 +46,7 @@ export const POST: APIRoute = async (context) => {
       );
     }
 
-    // 3. So khớp mật khẩu
+    // 3. Match and verify password
     const isValid = await verifyPassword(password, user.passwordHash);
     if (!isValid) {
       return new Response(
@@ -55,7 +55,7 @@ export const POST: APIRoute = async (context) => {
       );
     }
 
-    // 4. Thiết lập session cookie
+    // 4. Setup session cookie
     const secret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
     const payload = {
       id: user.id,

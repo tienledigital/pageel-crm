@@ -2,7 +2,7 @@ import type { APIContext, MiddlewareNext } from 'astro';
 import { env } from 'cloudflare:workers';
 import { verifySessionCookie } from './lib/auth';
 
-// Các route không yêu cầu đăng nhập
+// Public routes that do not require authentication
 const PUBLIC_ROUTES = [
   '/login',
   '/api/auth/login',
@@ -13,7 +13,7 @@ const PUBLIC_ROUTES = [
 export const onRequest = async (context: APIContext, next: MiddlewareNext) => {
   const { pathname } = context.url;
 
-  // 1. Kiểm tra whitelist public routes và các static files (chứa dấu chấm như .css, .js, .png...)
+  // 1. Check whitelist public routes and static files (containing dot like .css, .js, .png...)
   const isPublic = PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'));
   const isStatic = pathname.includes('.') && !pathname.startsWith('/api/');
 
@@ -21,20 +21,20 @@ export const onRequest = async (context: APIContext, next: MiddlewareNext) => {
     return next();
   }
 
-  // 2. Kiểm tra Authentication cho các route còn lại (dashboard, các api khác...)
+  // 2. Check Authentication for remaining routes (dashboard, other APIs...)
   const sessionCookie = context.cookies.get('session')?.value;
   const secret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
 
   if (sessionCookie) {
     const decoded = await verifySessionCookie(sessionCookie, secret);
     if (decoded) {
-      // Inject user payload vào locals để các components phía sau tái sử dụng
+      // Inject user payload into locals for downstream components reuse
       context.locals.user = decoded;
       return next();
     }
   }
 
-  // 3. Nếu không được xác thực, phân loại để redirect hoặc trả về 401
+  // 3. If not authenticated, redirect to login or return 401 for APIs
   if (pathname.startsWith('/api/')) {
     return new Response(
       JSON.stringify({ error: 'Unauthorized' }),

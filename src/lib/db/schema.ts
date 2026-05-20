@@ -12,12 +12,16 @@ export const users = sqliteTable('users', {
 
 // 2. customers
 export const customers = sqliteTable('customers', {
-  id: text('id').primaryKey(),
+  id: text('id').primaryKey(), // Supports legacy IDs (e.g. AG1, AG2) and new UUIDs
   fullName: text('full_name').notNull(),
   phone: text('phone').notNull(),
   address: text('address'),
   taxCode: text('tax_code'),
+  idCard: text('id_card'),       // Citizen identity card number
+  email: text('email'),         // Email address
+  assignedStaffId: text('assigned_staff_id').references(() => staff.id), // Assigned staff member
   notes: text('notes'),
+  expiredAt: integer('expired_at'), // Unix timestamp for service expiration (Auto renewal check)
   createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`),
 }, (table) => [
   index('idx_customers_phone').on(table.phone)
@@ -39,7 +43,7 @@ export const invoices = sqliteTable('invoices', {
   customerId: text('customer_id').references(() => customers.id),
   staffId: text('staff_id').references(() => staff.id),
   invoiceNumber: text('invoice_number').notNull().unique(),
-  amount: integer('amount').notNull(), // VNĐ
+  amount: integer('amount').notNull(), // VND
   content: text('content').notNull(),
   status: text('status').notNull().default('pending'), // pending, paid, cancelled
   createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`),
@@ -51,19 +55,27 @@ export const invoices = sqliteTable('invoices', {
 // 5. payments
 export const payments = sqliteTable('payments', {
   id: text('id').primaryKey(),
-  invoiceId: text('invoice_id').references(() => invoices.id),
-  amount: integer('amount').notNull(), // VNĐ
-  transactionId: text('transaction_id').unique(),
-  paymentMethod: text('payment_method').notNull(), // bank_transfer, cash
-  content: text('content'),
-  paidAt: integer('paid_at').notNull(),
+  invoiceId: text('invoice_id').references(() => invoices.id), // Nullable for direct payment without invoice
+  customerId: text('customer_id').references(() => customers.id), // Assigned directly to customer
+  amount: integer('amount').notNull(), // VND
+  transactionId: text('transaction_id').unique(), // Bank transaction ID (UNIQUE)
+  paymentMethod: text('payment_method').notNull().default('bank_transfer'), 
+  bank: text('bank'),                 // Receiving bank name (e.g. Techcombank)
+  accountNumber: text('account_number'), // Receiving bank account number
+  senderAccount: text('sender_account'), // Sender bank account number (for reconciliation/tracing)
+  senderName: text('sender_name'),       // Sender bank name
+  senderBank: text('sender_bank'),       // Sender bank code/name
+  type: text('type').notNull().default('in'), // in (incoming payment), out (outgoing payment)
+  taxCategory: text('tax_category'),     // Tax category classification
+  content: text('content'),              // Original transfer description/content
+  paidAt: integer('paid_at').notNull(),  // Bank transaction timestamp
   createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`),
 });
 
 // 6. config
 export const config = sqliteTable('config', {
   key: text('key').primaryKey(),
-  value: text('value').notNull(), // JSON hoặc text
+  value: text('value').notNull(), // JSON or string value
   updatedAt: integer('updated_at').default(sql`(strftime('%s', 'now') * 1000)`),
 });
 

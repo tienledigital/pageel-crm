@@ -1,0 +1,754 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import { env } from 'cloudflare:workers';
+import { getDb } from '@/lib/db';
+import { customers, config } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
+
+// Fetch initial data from database
+const db = getDb(env);
+const allCustomers = await db.select().from(customers);
+
+const defaultBankConfig = await db.select().from(config).where(eq(config.key, 'defaultBank'));
+const defaultAccountConfig = await db.select().from(config).where(eq(config.key, 'defaultAccount'));
+const orgNameConfig = await db.select().from(config).where(eq(config.key, 'orgName'));
+const orgLogoConfig = await db.select().from(config).where(eq(config.key, 'orgLogo'));
+
+const defaultBank = defaultBankConfig[0]?.value || 'MB';
+const defaultAccount = defaultAccountConfig[0]?.value || '0000000000';
+const orgName = orgNameConfig[0]?.value || 'Pageel CRM';
+const orgLogo = orgLogoConfig[0]?.value || '';
+
+// URL parameter for quick customer selection
+const url = new URL(Astro.request.url);
+const initialCustomerId = url.searchParams.get('customerId') || '';
+---
+
+<DashboardLayout title="QR Generator Tool">
+  <style>
+    .qr-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 2rem;
+      align-items: start;
+    }
+
+    @media (max-width: 1024px) {
+      .qr-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .form-section {
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+
+    .card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.75rem;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+
+    .card-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-secondary);
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .input-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .text-input, .select-input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background-color: var(--bg-main);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: var(--text-primary);
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 500;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .text-input:focus, .select-input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px var(--primary-glow);
+    }
+
+    /* Button Grids */
+    .button-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .quick-btn {
+      padding: 0.6rem;
+      background-color: var(--bg-main);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 0.75rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+    }
+
+    .quick-btn:hover {
+      border-color: var(--primary);
+      color: var(--text-primary);
+    }
+
+    .quick-btn.active {
+      background-color: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    .template-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+    }
+
+    .template-btn {
+      padding: 1rem;
+      background-color: var(--bg-main);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      cursor: pointer;
+      text-align: left;
+      transition: all 0.2s ease;
+    }
+
+    .template-btn:hover {
+      border-color: var(--text-muted);
+    }
+
+    .template-btn.active {
+      border-color: var(--primary);
+      background-color: rgba(99, 102, 241, 0.05);
+    }
+
+    .template-name {
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.25rem;
+    }
+
+    .template-desc {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Right Preview Sticky Card */
+    .preview-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: sticky;
+      top: 2rem;
+    }
+
+    .preview-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 380px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+    }
+
+    .preview-header {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .org-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .org-logo {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      object-cover: fill;
+      background-color: var(--bg-hover);
+    }
+
+    .org-name {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-secondary);
+    }
+
+    .qr-status-box {
+      width: 100%;
+      min-height: 240px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--bg-main);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+
+    .qr-img {
+      width: 220px;
+      height: 220px;
+      object-fit: contain;
+    }
+
+    .placeholder-icon {
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+
+    .placeholder-text {
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--text-muted);
+    }
+
+    .amount-display {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.5px;
+    }
+
+    .memo-display {
+      width: 100%;
+      font-size: 0.875rem;
+      font-weight: 600;
+      padding: 0.75rem 1rem;
+      background-color: var(--bg-main);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      text-align: center;
+      word-break: break-all;
+      margin-bottom: 0.5rem;
+    }
+
+    .memo-display.danger {
+      background-color: rgba(239, 68, 68, 0.1);
+      border-color: rgba(239, 68, 68, 0.3);
+      color: var(--error);
+    }
+
+    .char-count {
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+
+    .char-count.danger {
+      color: var(--error);
+      font-weight: 600;
+    }
+
+    .action-grid {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.5rem;
+      border-top: 1px solid var(--border-color);
+      padding-top: 1.25rem;
+    }
+
+    .action-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.5rem;
+      background: transparent;
+      border: none;
+      color: var(--text-secondary);
+      font-family: inherit;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      cursor: pointer;
+      padding: 0.5rem;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .action-btn:hover:not(:disabled) {
+      background-color: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .action-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .action-btn svg {
+      width: 18px;
+      height: 18px;
+      stroke-width: 2px;
+    }
+  </style>
+
+  <div class="qr-grid">
+    <!-- Left Column: Settings Form -->
+    <div class="form-section">
+      <!-- 1. Customer Selection -->
+      <div class="card">
+        <h3 class="card-title">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;"><path stroke-linecap="round" stroke-linejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" /></svg>
+          1. Select Customer
+        </h3>
+        
+        <div class="input-group">
+          <input 
+            type="text" 
+            id="custSearch" 
+            placeholder="Search by ID, Name or Phone..." 
+            class="text-input"
+          />
+        </div>
+
+        <div class="input-group">
+          <select id="custSelect" class="select-input">
+            <option value="" data-name="">-- Select Customer --</option>
+            {allCustomers.map((c: any) => (
+              <option 
+                value={c.id} 
+                data-name={c.fullName} 
+                selected={c.id === initialCustomerId}
+              >
+                {c.id} - {c.fullName} ({c.phone})
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <!-- 2. Service & Amount -->
+      <div class="card">
+        <h3 class="card-title">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;"><path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581a1.125 1.125 0 001.591 0l7.22-7.22a1.125 1.125 0 000-1.591L11.839 3.659A2.25 2.25 0 0010.159 3H9.568a.75.75 0 010-1.5h.591a3.75 3.75 0 012.818 1.125l9.58 9.581a2.625 2.625 0 010 3.712l-7.22 7.22a2.625 2.625 0 01-3.712 0L3.02 13.586A3.75 3.75 0 011.875 10.9v-5.65A3.75 3.75 0 015.625 1.5h3.943a.75.75 0 010 1.5z" /><path stroke-linecap="round" stroke-linejoin="round" d="M6 7.5a1 1 0 100-2 1 1 0 000 2z" /></svg>
+          2. Service & Amount
+        </h3>
+
+        <div class="input-group">
+          <span class="input-label">Service Name (Max 15 chars)</span>
+          <div class="button-grid" id="quickServices">
+            <button class="quick-btn" data-value="TT GIA HAN">GIA HAN</button>
+            <button class="quick-btn" data-value="TT DV FB">DV FB</button>
+            <button class="quick-btn" data-value="TT DV QTW">DV QTW</button>
+            <button class="quick-btn" data-value="TT TOOL">TOOL</button>
+          </div>
+          <input 
+            type="text" 
+            id="serviceInput" 
+            maxlength="15" 
+            placeholder="Enter custom service name..." 
+            class="text-input"
+          />
+        </div>
+
+        <div class="input-group">
+          <span class="input-label">Payment Amount (VND)</span>
+          <div class="button-grid" id="quickAmounts">
+            <button class="quick-btn" data-value="200000">200K</button>
+            <button class="quick-btn" data-value="300000">300K</button>
+            <button class="quick-btn" data-value="400000">400K</button>
+            <button class="quick-btn" data-value="500000">500K</button>
+            <button class="quick-btn" data-value="600000">600K</button>
+            <button class="quick-btn" data-value="1000000">1M</button>
+          </div>
+          <input 
+            type="number" 
+            id="amountInput" 
+            min="0" 
+            placeholder="Enter custom amount..." 
+            class="text-input"
+          />
+        </div>
+
+        <div class="input-group">
+          <span class="input-label">Payment Period</span>
+          <div class="button-grid" id="periodSelect">
+            <button class="quick-btn active" data-value="none">None</button>
+            <button class="quick-btn" data-value="month">Month (T)</button>
+            <button class="quick-btn" data-value="year">Year (N)</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3. QR Customization -->
+      <div class="card">
+        <h3 class="card-title">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;"><path stroke-linecap="round" stroke-linejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.43l-1.003.828c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.43l1.004-.827c.292-.24.437-.613.43-.991a6.936 6.936 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+          3. Customize QR Template
+        </h3>
+        
+        <div class="template-grid" id="templateGrid">
+          <button class="template-btn active" data-template="compact2">
+            <div class="template-name">Modern</div>
+            <div class="template-desc">Compact layout</div>
+          </button>
+          <button class="template-btn" data-template="compact">
+            <div class="template-name">Classic</div>
+            <div class="template-desc">Full bank info</div>
+          </button>
+          <button class="template-btn" data-template="logo">
+            <div class="template-name">With Logo</div>
+            <div class="template-desc">Includes brand logo</div>
+          </button>
+          <button class="template-btn" data-template="qr_only">
+            <div class="template-name">QR Only</div>
+            <div class="template-desc">Pure QR code</div>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column: Live Preview Sticky Card -->
+    <div class="preview-container">
+      <div class="preview-card">
+        <div class="preview-header">
+          <div class="org-brand">
+            {orgLogo && <img src={orgLogo} class="org-logo" alt="Org Logo" />}
+            <span class="org-name">{orgName}</span>
+          </div>
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.2" stroke="currentColor" style="width: 18px; height: 18px; color: var(--text-muted);"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" /><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" /></svg>
+        </div>
+
+        <!-- QR Image Display Area -->
+        <div class="qr-status-box" id="qrStatusBox">
+          <svg class="placeholder-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 48px; height: 48px;"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" /><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" /></svg>
+          <div class="placeholder-text">Please select a customer and<br/>enter payment amount</div>
+        </div>
+
+        <div class="amount-display" id="amountVal">0 đ</div>
+        <div class="memo-display" id="memoVal">Empty</div>
+        <div class="char-count" id="charCount">0/50 characters</div>
+
+        <!-- Quick actions -->
+        <div class="action-grid">
+          <button id="copyBtn" class="action-btn" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+            Link
+          </button>
+          <button id="downloadBtn" class="action-btn" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
+            Image
+          </button>
+          <button id="shareBtn" class="action-btn" disabled>
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 100 2.186m0-2.186l9.566-5.314m-9.566 7.5l9.566 5.314m0 0a2.25 2.25 0 103.935-2.186 2.25 2.25 0 00-3.935 2.186zm0-12.814a2.25 2.25 0 103.933-2.185 2.25 2.25 0 00-3.933 2.185z" /></svg>
+            Share
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Client-side state & UI handling -->
+  <script is:inline define:vars={{ defaultBank, defaultAccount, orgName }}>
+    // Accent helper to translate Vietnamese accents
+    function removeAccents(str) {
+      return str
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .replace(/Đ/g, 'D')
+        .replace(/[^a-zA-Z0-9 ]/g, '');
+    }
+
+    // State Variables
+    let selectedCustomerId = '';
+    let selectedCustomerName = '';
+    let serviceName = '';
+    let amount = 0;
+    let period = 'none';
+    let qrTemplate = 'compact2';
+    let qrUrl = '';
+
+    // Elements
+    const custSearch = document.getElementById('custSearch');
+    const custSelect = document.getElementById('custSelect');
+    const serviceInput = document.getElementById('serviceInput');
+    const amountInput = document.getElementById('amountInput');
+    const qrStatusBox = document.getElementById('qrStatusBox');
+    const amountVal = document.getElementById('amountVal');
+    const memoVal = document.getElementById('memoVal');
+    const charCount = document.getElementById('charCount');
+    const copyBtn = document.getElementById('copyBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const shareBtn = document.getElementById('shareBtn');
+
+    const quickServices = document.querySelectorAll('#quickServices .quick-btn');
+    const quickAmounts = document.querySelectorAll('#quickAmounts .quick-btn');
+    const periodButtons = document.querySelectorAll('#periodSelect .quick-btn');
+    const templateButtons = document.querySelectorAll('#templateGrid .template-btn');
+
+    // Trigger state change and regenerate QR code
+    function updateState() {
+      // Calculate Memo Content
+      let finalMemo = '';
+      if (selectedCustomerId) {
+        const namePart = removeAccents(selectedCustomerName).toUpperCase();
+        const servicePart = removeAccents(serviceName).toUpperCase();
+        finalMemo = `${selectedCustomerId} - ${namePart}`;
+        if (servicePart) finalMemo += ` - ${servicePart}`;
+
+        if (amount > 0) {
+          const amountK = Math.floor(amount / 1000);
+          if (period === 'month') {
+            finalMemo += ` T${amountK}`;
+          } else if (period === 'year') {
+            finalMemo += ` N${amountK}`;
+          }
+        }
+      }
+
+      // Update UI displays
+      amountVal.textContent = amount > 0 ? `${amount.toLocaleString()} đ` : '0 đ';
+      memoVal.textContent = finalMemo || 'Empty';
+      
+      const isTooLong = finalMemo.length > 50;
+      charCount.textContent = `${finalMemo.length}/50 characters`;
+      
+      if (isTooLong) {
+        memoVal.classList.add('danger');
+        charCount.classList.add('danger');
+      } else {
+        memoVal.classList.remove('danger');
+        charCount.classList.remove('danger');
+      }
+
+      // Update QR preview image
+      if (selectedCustomerId && amount > 0 && !isTooLong) {
+        qrUrl = `https://img.vietqr.io/image/${defaultBank}-${defaultAccount}-${qrTemplate}.png?amount=${amount}&addInfo=${encodeURIComponent(finalMemo)}`;
+        qrStatusBox.innerHTML = `<img src="${qrUrl}" alt="VietQR Image" class="qr-img animate-fade-in" />`;
+        
+        // Enable actions
+        copyBtn.removeAttribute('disabled');
+        downloadBtn.removeAttribute('disabled');
+        shareBtn.removeAttribute('disabled');
+      } else {
+        qrUrl = '';
+        copyBtn.setAttribute('disabled', 'true');
+        downloadBtn.setAttribute('disabled', 'true');
+        shareBtn.setAttribute('disabled', 'true');
+
+        if (isTooLong) {
+          qrStatusBox.innerHTML = `
+            <div style="color: var(--error); margin-bottom: 1rem;">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 48px; height: 48px;"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
+            </div>
+            <div class="placeholder-text" style="color: var(--error); font-weight: 600;">Description exceeds 50 chars limit.<br/>Please shorten the service name.</div>
+          `;
+        } else {
+          qrStatusBox.innerHTML = `
+            <svg class="placeholder-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 48px; height: 48px;"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" /></svg>
+            <div class="placeholder-text">Please select a customer and<br/>enter payment amount</div>
+          `;
+        }
+      }
+    }
+
+    // 1. Search filter logic
+    custSearch.addEventListener('input', () => {
+      const query = custSearch.value.toLowerCase();
+      const options = custSelect.options;
+      for (let i = 1; i < options.length; i++) {
+        const option = options[i];
+        const text = option.textContent.toLowerCase();
+        if (text.includes(query)) {
+          option.style.display = 'block';
+        } else {
+          option.style.display = 'none';
+        }
+      }
+    });
+
+    // Customer selection change
+    custSelect.addEventListener('change', () => {
+      selectedCustomerId = custSelect.value;
+      const selectedOption = custSelect.options[custSelect.selectedIndex];
+      selectedCustomerName = selectedOption.getAttribute('data-name') || '';
+      updateState();
+    });
+
+    // 2. Service text input
+    serviceInput.addEventListener('input', () => {
+      serviceName = serviceInput.value;
+      
+      // Deactivate quick service buttons if no longer matching
+      quickServices.forEach(btn => {
+        if (btn.getAttribute('data-value') === serviceName) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+      updateState();
+    });
+
+    // Quick services selection
+    quickServices.forEach(btn => {
+      btn.addEventListener('click', () => {
+        quickServices.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        serviceName = btn.getAttribute('data-value');
+        serviceInput.value = serviceName;
+        updateState();
+      });
+    });
+
+    // Amount text input
+    amountInput.addEventListener('input', () => {
+      amount = Number(amountInput.value) || 0;
+      
+      // Deactivate quick amount buttons
+      quickAmounts.forEach(btn => {
+        if (Number(btn.getAttribute('data-value')) === amount) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+      updateState();
+    });
+
+    // Quick amounts selection
+    quickAmounts.forEach(btn => {
+      btn.addEventListener('click', () => {
+        quickAmounts.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        amount = Number(btn.getAttribute('data-value'));
+        amountInput.value = amount;
+        updateState();
+      });
+    });
+
+    // Period selection
+    periodButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        periodButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        period = btn.getAttribute('data-value');
+        updateState();
+      });
+    });
+
+    // 3. Template selection
+    templateButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        templateButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        qrTemplate = btn.getAttribute('data-template');
+        updateState();
+      });
+    });
+
+    // Clipboard Copy Action
+    copyBtn.addEventListener('click', () => {
+      if (!qrUrl) return;
+      navigator.clipboard.writeText(qrUrl)
+        .then(() => alert('Copied QR Image API Link to clipboard!'))
+        .catch(err => console.error('Could not copy link:', err));
+    });
+
+    // Download Image Action
+    downloadBtn.addEventListener('click', async () => {
+      if (!qrUrl) return;
+      try {
+        const response = await fetch(qrUrl);
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `vietqr-${selectedCustomerId || 'default'}-${amount}.png`;
+        document.body.appendChild(a);
+        a.click();
+        
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(blobUrl);
+      } catch (err) {
+        console.error('Error downloading image:', err);
+        alert('Could not download image. Copy the link instead.');
+      }
+    });
+
+    // Native Web Share Action
+    shareBtn.addEventListener('click', async () => {
+      if (!qrUrl) return;
+      try {
+        if (navigator.share) {
+          await navigator.share({
+            title: `VietQR - ${orgName}`,
+            text: `Payment QR Code for customer ${selectedCustomerId}: ${amount.toLocaleString()} VND. Memo: ${memoVal.textContent}`,
+            url: qrUrl,
+          });
+        } else {
+          // Fallback to copying url
+          navigator.clipboard.writeText(qrUrl);
+          alert('Web Share API not supported. URL copied instead.');
+        }
+      } catch (err) {
+        console.error('Error sharing:', err);
+      }
+    });
+
+    // Initialize state on page load (if customerId parameter provided)
+    if (custSelect.value) {
+      selectedCustomerId = custSelect.value;
+      selectedCustomerName = custSelect.options[custSelect.selectedIndex].getAttribute('data-name') || '';
+      updateState();
+    }
+  </script>
+</DashboardLayout>

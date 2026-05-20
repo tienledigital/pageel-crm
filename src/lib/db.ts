@@ -6,7 +6,7 @@ import * as schema from './db/schema';
 let sqliteDb: any = null;
 
 export function getDb(platformEnv?: { DB: any }) {
-  // 1. Môi trường kiểm thử (Testing environment)
+  // 1. Testing environment
   if (process.env.NODE_ENV === 'test') {
     if (!sqliteDb) {
       const sqlite = new Database(':memory:');
@@ -15,12 +15,12 @@ export function getDb(platformEnv?: { DB: any }) {
     return sqliteDb;
   }
 
-  // 2. Môi trường Production / Local development có binding Cloudflare D1
+  // 2. Production / Local development with Cloudflare D1 binding
   if (platformEnv?.DB) {
     return drizzleD1(platformEnv.DB, { schema });
   }
 
-  // 3. Fallback mặc định cho local dev không có binding (sử dụng local SQLite file)
+  // 3. Default fallback for local development without D1 binding (using local SQLite file)
   if (!sqliteDb) {
     const sqlite = new Database('local.db');
     sqliteDb = drizzleSqlite(sqlite, { schema });
