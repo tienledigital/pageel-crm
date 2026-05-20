@@ -4,10 +4,10 @@ import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 
-// Khởi tạo DB để truy vấn số liệu thống kê nhanh
+// Initialize database client to query analytics metrics
 const db = getDb(env);
 
-// Đếm số lượng user làm ví dụ metric
+// Count users to display as an overview metric
 const userCountResult = await db.select().from(users);
 const totalUsers = userCountResult.length;
 ---
