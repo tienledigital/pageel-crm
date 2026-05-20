@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/pageel/pageel-crm/main/public/favicon.svg" alt="Pageel CRM Logo" width="120" />
+  <img src="https://raw.githubusercontent.com/pageel/pageel-crm/main/public/pageel-logo.svg" alt="Pageel CRM Logo" width="120" />
   
   <h1>Pageel CRM 🧠</h1>
   
@@ -12,7 +12,8 @@
 
   <p>
     <a href="../../LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="Giấy phép: MIT"></a>
-    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome">
+    <img src="https://img.shields.io/badge/Status-Beta-orange.svg" alt="Trạng thái: Beta">
+    <img src="https://img.shields.io/badge/Built%20with-Astro-BC52EE.svg" alt="Xây dựng với: Astro">
   </p>
 </div>
 
