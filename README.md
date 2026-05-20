@@ -1,43 +1,93 @@
-# Astro Starter Kit: Minimal
+<div align="center">
+  <img src="https://raw.githubusercontent.com/pageel/pageel-crm/main/public/favicon.svg" alt="Pageel CRM Logo" width="120" />
+  
+  <h1>Pageel CRM 🧠</h1>
+  
+  <p><b>A minimalist, lightning-fast CRM & automated bookkeeping system built on Astro, SQLite, and Cloudflare D1.</b></p>
+  
+  <p>
+    <a href="README.md"><b>🇺🇸 English</b></a> •
+    <a href="docs/locales/vi-VN.md"><b>🇻🇳 Tiếng Việt</b></a>
+  </p>
 
-```sh
-npm create astro@latest -- --template minimal
-```
+  <p>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome">
+  </p>
+</div>
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+<br/>
 
-## 🚀 Project Structure
+## Table of Contents
+- [Overview](#overview)
+- [Key Features](#key-features)
+- [Tech Stack](#tech-stack)
+- [Quick Start](#quick-start)
+- [Database Architecture](#database-architecture)
+- [License](#license)
 
-Inside of your Astro project, you'll see the following folders and files:
+---
 
-```text
-/
-├── public/
-├── src/
-│   └── pages/
-│       └── index.astro
-└── package.json
-```
+## 🎯 Overview
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
+**Pageel CRM** is a self-hosted, lightweight CRM and automated invoicing engine designed for small businesses and households (HKD) in Vietnam. It operates directly on edge nodes using Cloudflare Pages, eliminating server maintenance overhead while ensuring zero-cold-start performance.
 
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
+---
 
-Any static assets, like images, can be placed in the `public/` directory.
+## ✨ Key Features
 
-## 🧞 Commands
+- **Automated Bookkeeping:** Seamless bank transaction matching and reconciliation via SePay Webhook integrations.
+- **Dynamic Database Routing:** Automatically uses an in-memory SQLite database for testing, local SQLite database for development, and Cloudflare D1 for production deployment.
+- **Financial Compliance:** Auto-generates quarterly and monthly tax report spreadsheets complying with standard Vietnamese bookkeeping guidelines (S1a-HKD).
+- **TDD-First Architecture:** Decoupled codebase utilizing Repository patterns, tested locally with Vitest.
 
-All commands are run from the root of the project, from a terminal:
+---
 
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
+## 💻 Tech Stack
 
-## 👀 Want to learn more?
+- **Framework:** [Astro](https://astro.build/) (Serverless endpoints and static front-end)
+- **Database ORM:** [Drizzle ORM](https://orm.drizzle.team/)
+- **Database Engine:** [Cloudflare D1](https://developers.cloudflare.com/d1/) (Production) & SQLite / [Better-SQLite3](https://github.com/WiseLibs/better-sqlite3) (Local/Testing)
+- **Testing Suite:** [Vitest](https://vitest.dev/)
 
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- Node.js (v18 or higher)
+- npm (v9 or higher)
+
+### Setup & Run
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/pageel/pageel-crm.git
+   cd pageel-crm
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Run the local development server:
+   ```bash
+   npm run dev
+   ```
+4. Run the unit test suite:
+   ```bash
+   npx vitest run
+   ```
+
+---
+
+## 📐 Database Architecture
+
+The application decouples business logic from physical storage engines using a dynamic database router:
+
+- **Local & Unit Tests:** Operates using a fast, isolated in-memory SQLite database.
+- **Production Edge:** Leverages Cloudflare D1's distributed SQLite engine via `platform.env.DB`.
+
+---
+
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
