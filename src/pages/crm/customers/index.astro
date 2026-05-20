@@ -201,7 +201,7 @@ function formatExpiration(timestamp: number | null) {
           </tr>
         </thead>
         <tbody>
-          {customerList.map((customer) => {
+          {customerList.map((customer: any) => {
             const serviceStatus = formatExpiration(customer.expiredAt);
             return (
               <tr>

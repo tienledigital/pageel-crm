@@ -360,7 +360,7 @@ const initialCustomerId = url.searchParams.get('customerId') || '';
         <div class="input-group">
           <select id="custSelect" class="select-input">
             <option value="" data-name="">-- Select Customer --</option>
-            {allCustomers.map(c => (
+            {allCustomers.map((c: any) => (
               <option 
                 value={c.id} 
                 data-name={c.fullName} 
