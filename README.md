@@ -1,20 +1,21 @@
 <div align="center">
-  <img src="https://raw.githubusercontent.com/pageel/pageel-crm/main/public/pageel-logo.svg" alt="Pageel CRM Logo" width="120" />
-  
-  <h1>Pageel CRM 🧠</h1>
-  
-  <p><b>A minimalist, lightning-fast CRM & automated bookkeeping system built on Astro, SQLite, and Cloudflare D1.</b></p>
-  
-  <p>
-    <a href="README.md"><b>🇺🇸 English</b></a> •
-    <a href="docs/locales/vi-VN.md"><b>🇻🇳 Tiếng Việt</b></a>
-  </p>
+  <a href="https://pageel.com">
+    <img src="https://raw.githubusercontent.com/pageel/pageel-cms/main/.github/assets/pageel-icon.svg" width="120" alt="Pageel CRM">
+  </a>
 
-  <p>
-    <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
-    <img src="https://img.shields.io/badge/Status-Beta-orange.svg" alt="Status: Beta">
-    <img src="https://img.shields.io/badge/Built%20with-Astro-BC52EE.svg" alt="Built with: Astro">
-  </p>
+  <h1>Pageel CRM</h1>
+
+  <p><strong>A minimalist, lightning-fast CRM & automated bookkeeping system built on Astro, SQLite, and Cloudflare D1</strong></p>
+  <p>Self-hosted financial and invoicing engine tailored for Vietnamese small businesses.</p>
+
+  [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+  [![Version](https://img.shields.io/badge/Version-v0.1.0-blue.svg)](CHANGELOG.md)
+  ![Status](https://img.shields.io/badge/Status-Beta-orange.svg)
+  [![Built with Astro](https://img.shields.io/badge/Built%20with-Astro-BC52EE.svg?logo=astro&logoColor=white)](https://astro.build)
+
+  <br />
+
+  <a href="README.md">🇺🇸 <b>English</b></a> | <a href="docs/locales/vi-VN.md">🇻🇳 <b>Tiếng Việt</b></a>
 </div>
 
 <br/>
