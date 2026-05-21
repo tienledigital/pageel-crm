@@ -1,6 +1,6 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
-	"name": "reddcom-crm",
+	"name": "pageel-crm",
 	"compatibility_date": "2024-11-01",
 	"compatibility_flags": [
 		"nodejs_compat"
@@ -9,13 +9,13 @@
 		{
 			"binding": "DB",
 			"database_name": "pageel-crm-db",
-			"database_id": "86178d5d-70e1-4f73-9b44-1fbdb3712510"
+			"database_id": "00000000-0000-0000-0000-000000000000"
 		}
 	],
 	"kv_namespaces": [
 		{
 			"binding": "SESSION",
-			"id": "c5057567b5854dca9ed2c470764a8475"
+			"id": "00000000000000000000000000000000"
 		}
 	]
 }
