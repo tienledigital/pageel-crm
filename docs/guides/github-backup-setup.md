@@ -39,7 +39,7 @@ Fine-grained PAT là loại token thế hệ mới của GitHub, cho phép bạn
 
 ### 1. Chạy thử nghiệm ở môi trường cục bộ (Local Development)
 
-Wrangler sử dụng tệp tin `.dev.vars` để mô phỏng các biến bí mật (secrets) trên Cloudflare Workers/Pages.
+Wrangler sử dụng tệp tin `.dev.vars` để mô phỏng các biến bí mật (secrets) trên Cloudflare Workers.
 
 1. Tại thư mục gốc của repo (`repo/`), tạo một tệp tin mới tên là `.dev.vars` (đã được cấu hình tự động bỏ qua trong `.gitignore` để không bị lộ lên Git).
 2. Sao chép nội dung từ `.dev.vars.example` vào `.dev.vars` và thay thế giá trị thực tế của bạn:
@@ -51,18 +51,25 @@ GITHUB_BACKUP_REPO=crm-backups
 GITHUB_BACKUP_BRANCH=main
 ```
 
-### 2. Triển khai trên Production (Cloudflare Pages Dashboard)
+### 2. Triển khai trên Production (Cloudflare Workers)
 
-Khi deploy ứng dụng lên Cloudflare Pages, bạn cần thêm các biến môi trường này vào trang quản trị:
+Khi deploy ứng dụng dưới dạng Cloudflare Workers, bạn cần cài đặt các biến bí mật này bằng Wrangler CLI (nếu Worker của bạn chạy dưới một tên cụ thể, ví dụ: `pageel-crm`, hãy sử dụng flag `--name pageel-crm`):
 
-1. Truy cập trang quản trị Cloudflare Dashboard -> **Workers & Pages** -> Chọn dự án Pages của bạn.
-2. Chọn tab **Settings** -> **Environment variables**.
-3. Tại phần **Production** (và Preview nếu cần), nhấp **Add variables**:
-   - Thêm khoá `GITHUB_BACKUP_TOKEN` với giá trị là Token của bạn (Chọn **Encrypt** để mã hóa ẩn đi).
-   - Thêm khoá `GITHUB_BACKUP_OWNER` với tên tài khoản GitHub của bạn.
-   - Thêm khoá `GITHUB_BACKUP_REPO` với tên kho chứa sao lưu của bạn.
-   - Thêm khoá `GITHUB_BACKUP_BRANCH` với giá trị `main` (hoặc tên nhánh mặc định).
-4. Nhấp **Save**. *Lưu ý: Bạn cần Re-deploy dự án để các biến này có hiệu lực.*
+```bash
+# Nạp Token của bạn (Wrangler sẽ yêu cầu nhập giá trị bí mật)
+npx wrangler secret put GITHUB_BACKUP_TOKEN --name pageel-crm
+
+# Nạp tên tài khoản / Organization sở hữu repo backup
+npx wrangler secret put GITHUB_BACKUP_OWNER --name pageel-crm
+
+# Nạp tên kho chứa sao lưu
+npx wrangler secret put GITHUB_BACKUP_REPO --name pageel-crm
+
+# Nạp tên nhánh muốn commit dữ liệu (mặc định: main)
+npx wrangler secret put GITHUB_BACKUP_BRANCH --name pageel-crm
+```
+
+Ngoài ra, bạn cũng có thể quản lý trực tiếp các biến này trên Cloudflare Dashboard -> **Workers & Pages** -> Chọn dự án Worker của bạn -> tab **Settings** -> mục **Variables**.
 
 ---
 

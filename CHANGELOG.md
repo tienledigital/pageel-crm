@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2026-05-21
+
+### Fixed
+- Fixed database D1 connection crash in backup API (`/api/backup`) by passing the `env` binding explicitly and removing Node native `crypto` import for Cloudflare Workers compatibility.
+- Fixed administrator user login crash caused by Astro v6 removal of `Astro.locals.runtime.env` (migrated to `cloudflare:workers` `env` binding).
+
+### Changed
+- Refactored entire deployment, development, and API contract documentation to target Cloudflare Workers, resolving obsolete Pages instructions.
+- Standardized all public documentation examples to use `pageel-crm` as the mock worker name.
+
 ## [0.4.0] - 2026-05-21
 
 ### Added

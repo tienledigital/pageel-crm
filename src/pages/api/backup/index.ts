@@ -2,7 +2,6 @@ import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { exportDatabaseToJson, pushBackupToGit } from '@/lib/backup/githubClient';
 import { syncLogs } from '@/lib/db/schema';
-import crypto from 'crypto';
 
 export async function POST(context: any) {
   // 1. Verify authentication & authorization
@@ -21,7 +20,7 @@ export async function POST(context: any) {
     });
   }
 
-  const db = getDb();
+  const db = getDb(env);
 
   // 2. Read configuration from env (Cloudflare bindings fallback to process.env)
   const token = env.GITHUB_BACKUP_TOKEN || process.env.GITHUB_BACKUP_TOKEN;

@@ -2,7 +2,9 @@
 
 > **Project:** pageel-crm
 > **File:** docs/guides/deployment-guide.md
-> **Infrastructure:** Cloudflare Workers & Cloudflare D1
+> **Version:** 0.4.1
+> **Updated:** 2026-05-21
+> **Infrastructure:** Cloudflare Workers & Cloudflare D1 & Cloudflare KV
 
 ---
 
@@ -83,10 +85,9 @@ Establish a dual-remote repository setup:
 
 ## ⚙️ 4. Environment Variables & Secrets Configuration
 
-All sensitive keys (secrets) must be encrypted directly on Cloudflare's infrastructure. **Do not store them in the source code**.
+All sensitive keys (secrets) must be encrypted directly on Cloudflare's infrastructure. **Do not store them in the source code**. If you manage your Worker under a specific project name (e.g., `pageel-crm`), add the `--name pageel-crm` flag to your wrangler commands.
 
-### Step 1: Initialize Secrets on Cloudflare
-Run these commands in the `repo/` directory:
+### Category 1: Authentication & System Admin
 
 1. **SESSION_SECRET** (Used to sign session cookies. Must be a secure random 32-character hex string):
    *You can generate a random key using:*
@@ -95,32 +96,50 @@ Run these commands in the `repo/` directory:
    ```
    *Then store it on Cloudflare:*
    ```bash
-   npx wrangler secret put SESSION_SECRET
+   npx wrangler secret put SESSION_SECRET --name pageel-crm
    ```
 
 2. **Initial Admin User:**
    ```bash
    # The username of the initial admin (Defaults to 'admin' if omitted)
-   npx wrangler secret put INITIAL_ADMIN_USERNAME
+   npx wrangler secret put INITIAL_ADMIN_USERNAME --name pageel-crm
    
    # The password of the initial admin (Defaults to 'admin123' if omitted)
-   npx wrangler secret put INITIAL_ADMIN_PASSWORD
+   npx wrangler secret put INITIAL_ADMIN_PASSWORD --name pageel-crm
    ```
 
-3. **GitHub Backup Secrets:**
-   Configure connection credentials to automatically push backup data to a private GitHub repository:
+### Category 2: Payment Integration (SePay Webhook)
+
+To verify the integrity and digital signature of incoming payments from SePay Webhook:
+```bash
+# Webhook secret token configured on your SePay dashboard
+npx wrangler secret put SEPAY_WEBHOOK_SECRET --name pageel-crm
+```
+
+### Category 3: Database Automated Backup (GitHub Backup Engine)
+
+To enable automatic database JSON exports to a private GitHub backup repository:
+
+1. **GITHUB_BACKUP_TOKEN** (GitHub Personal Access Token with Contents: Read & Write scopes):
    ```bash
-   npx wrangler secret put GITHUB_BACKUP_TOKEN
-   npx wrangler secret put GITHUB_BACKUP_OWNER
-   npx wrangler secret put GITHUB_BACKUP_REPO
-   npx wrangler secret put GITHUB_BACKUP_BRANCH
+   npx wrangler secret put GITHUB_BACKUP_TOKEN --name pageel-crm
+   ```
+2. **GITHUB_BACKUP_OWNER** (The username or organization owner of the backup repository):
+   ```bash
+   npx wrangler secret put GITHUB_BACKUP_OWNER --name pageel-crm
+   ```
+3. **GITHUB_BACKUP_REPO** (The name of the private repository for backup storage):
+   ```bash
+   npx wrangler secret put GITHUB_BACKUP_REPO --name pageel-crm
+   ```
+4. **GITHUB_BACKUP_BRANCH** (Target branch to commit the backups, e.g., `main`):
+   ```bash
+   npx wrangler secret put GITHUB_BACKUP_BRANCH --name pageel-crm
    ```
 
-> [!NOTE]
-> **For Cloudflare Pages:** If you deploy as a Cloudflare Pages project and configure a different project name than the default `name` in `wrangler.jsonc` (e.g. `reddcom-crm`), you must use the `pages secret put` command with the `--project-name` flag:
-> `npx wrangler pages secret put SESSION_SECRET --project-name <pages-project-name>`
+---
 
-### ⚠️ Important: Auto-Seed Behavior & Login Troubleshooting
+## ⚠️ 5. Important: Auto-Seed Behavior & Login Troubleshooting
 - **How it works:** The system will auto-seed the admin user using the above secrets **only if the `users` database table is completely empty** (e.g., immediately after first deployment).
 - **The Login Trap:** 
   - If you visit the login page *before* setting the Cloudflare secrets, the system will auto-seed the default username/password (`admin` / `admin123`).
@@ -137,7 +156,7 @@ Run these commands in the `repo/` directory:
 
 ---
 
-## 🚀 5. Deploying the Application
+## 🚀 6. Deploying the Application
 
 With all configurations and secrets ready, build and deploy the app to Cloudflare Workers:
 
@@ -148,6 +167,6 @@ npm run build
 
 ### Step 2: Deploy to Cloudflare
 ```bash
-npx wrangler deploy
+npx wrangler deploy --name pageel-crm
 ```
 Wrangler will compile and upload the Astro server-side assets and static files to edge CDN, returning your live site URL (e.g., `https://pageel-crm.your-subdomain.workers.dev`).

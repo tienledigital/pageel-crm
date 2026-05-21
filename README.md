@@ -9,7 +9,7 @@
   <p>Self-hosted financial and invoicing engine tailored for Vietnamese small businesses.</p>
 
   [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-  [![Version](https://img.shields.io/badge/Version-v0.1.0-blue.svg)](CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/Version-v0.4.1-blue.svg)](CHANGELOG.md)
   ![Status](https://img.shields.io/badge/Status-Beta-orange.svg)
   [![Built with Astro](https://img.shields.io/badge/Built%20with-Astro-BC52EE.svg?logo=astro&logoColor=white)](https://astro.build)
 
@@ -33,7 +33,7 @@
 
 ## 🎯 Overview
 
-**Pageel CRM** is a self-hosted, lightweight CRM and automated invoicing engine designed for small businesses and households (HKD) in Vietnam. It operates directly on edge nodes using Cloudflare Pages, eliminating server maintenance overhead while ensuring zero-cold-start performance.
+**Pageel CRM** is a self-hosted, lightweight CRM and automated invoicing engine designed for small businesses and households (HKD) in Vietnam. It operates directly on edge nodes using Cloudflare Workers, eliminating server maintenance overhead while ensuring zero-cold-start performance.
 
 ---
 
@@ -58,8 +58,8 @@
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Node.js (v18 or higher)
-- npm (v9 or higher)
+- Node.js (v22 or higher)
+- npm (v10 or higher)
 
 ### Setup & Run
 1. Clone the repository:
@@ -72,13 +72,9 @@
    npm install
    ```
 3. Initialize the local database schema:
-   - For Cloudflare local emulator development (recommended):
+   - Apply Drizzle migrations onto the local emulated D1 instance:
      ```bash
-     npx wrangler d1 migrations apply DB --local
-     ```
-   - For standalone Astro dev server (using SQLite local.db fallback):
-     ```bash
-     npx drizzle-kit push
+     npx wrangler d1 migrations apply pageel-crm-db --local
      ```
 4. Run the development server:
    - For Cloudflare emulated environment (D1 & KV bindings active):
@@ -107,7 +103,7 @@ For detailed production deployment instructions using Cloudflare Workers, D1, KV
 The application decouples business logic from physical storage engines using a dynamic database router:
 
 - **Local & Unit Tests:** Operates using a fast, isolated in-memory SQLite database.
-- **Production Edge:** Leverages Cloudflare D1's distributed SQLite engine via `platform.env.DB`.
+- **Production Edge:** Leverages Cloudflare D1's distributed SQLite engine by importing `env` from `cloudflare:workers` and routing it dynamically to `getDb(env)`.
 
 ---
 
