@@ -1,0 +1,877 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import { env } from 'cloudflare:workers';
+import { getDb } from '@/lib/db';
+import { payments, customers, invoices } from '@/lib/db/schema';
+import { desc, eq, like, and, or, sql } from 'drizzle-orm';
+
+const db = getDb(env);
+
+// Fetch all customers for manual link dropdown
+const allCustomers = await db
+  .select({
+    id: customers.id,
+    fullName: customers.fullName,
+  })
+  .from(customers)
+  .orderBy(customers.fullName);
+
+// Fetch all invoices to allow linking
+const allInvoices = await db
+  .select({
+    id: invoices.id,
+    invoiceNumber: invoices.invoiceNumber,
+    amount: invoices.amount,
+    customerId: invoices.customerId,
+    status: invoices.status,
+  })
+  .from(invoices);
+
+// 1. Parse query parameters for filters
+const url = new URL(Astro.request.url);
+const search = url.searchParams.get('search') || '';
+const typeFilter = url.searchParams.get('type') || ''; // 'in', 'out' or '' (all)
+
+// 2. Build where conditions
+const conditions = [];
+
+if (search) {
+  conditions.push(
+    or(
+      like(payments.transactionId, `%${search}%`),
+      like(payments.content, `%${search}%`),
+      like(payments.bank, `%${search}%`)
+    )
+  );
+}
+
+if (typeFilter === 'in' || typeFilter === 'out') {
+  conditions.push(eq(payments.type, typeFilter));
+}
+
+const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+// 3. Query transactions list joining with customer and invoice to enrich context
+const transactionList = await db
+  .select({
+    id: payments.id,
+    amount: payments.amount,
+    transactionId: payments.transactionId,
+    paymentMethod: payments.paymentMethod,
+    bank: payments.bank,
+    accountNumber: payments.accountNumber,
+    type: payments.type,
+    content: payments.content,
+    paidAt: payments.paidAt,
+    customerName: customers.fullName,
+    customerId: customers.id,
+    invoiceNumber: invoices.invoiceNumber,
+    invoiceId: invoices.id,
+  })
+  .from(payments)
+  .leftJoin(customers, eq(payments.customerId, customers.id))
+  .leftJoin(invoices, eq(payments.invoiceId, invoices.id))
+  .where(whereClause)
+  .orderBy(desc(payments.paidAt));
+
+// 4. Calculate total revenue metrics (total in vs total out) based on all payments
+const rawStats = await db
+  .select({
+    type: payments.type,
+    total: sql<number>`SUM(${payments.amount})`,
+    count: sql<number>`COUNT(${payments.id})`,
+  })
+  .from(payments)
+  .groupBy(payments.type);
+
+let totalIn = 0;
+let totalOut = 0;
+let countIn = 0;
+let countOut = 0;
+
+rawStats.forEach((stat: any) => {
+  if (stat.type === 'in') {
+    totalIn = Number(stat.total || 0);
+    countIn = Number(stat.count || 0);
+  } else if (stat.type === 'out') {
+    totalOut = Number(stat.total || 0);
+    countOut = Number(stat.count || 0);
+  }
+});
+
+// Format money to VND representation
+function formatVND(amount: number) {
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+}
+
+// Format date
+function formatDate(timestamp: number) {
+  return new Date(timestamp).toLocaleDateString('vi-VN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+---
+
+<DashboardLayout title="Payments & Reconciliation">
+  <style>
+    .header-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .title-section h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .title-section p {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      margin-top: 0.25rem;
+    }
+
+    /* Stats Banner */
+    .stats-banner {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .stat-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stat-icon.income {
+      background-color: rgba(16, 185, 129, 0.1);
+      color: var(--success);
+    }
+
+    .stat-icon.expense {
+      background-color: rgba(239, 68, 68, 0.1);
+      color: var(--error);
+    }
+
+    .stat-icon.net {
+      background-color: rgba(99, 102, 241, 0.1);
+      color: var(--primary);
+    }
+
+    .stat-details {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-value {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .stat-count {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    /* Filter Bar */
+    .filter-bar {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .search-input {
+      flex-grow: 1;
+      min-width: 240px;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 0.65rem 1rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-input:focus {
+      border-color: var(--primary);
+    }
+
+    .select-filter {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 0.65rem 1rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .btn-filter {
+      background-color: var(--primary);
+      border: 1px solid var(--primary);
+      color: #fff;
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-filter:hover {
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+    }
+
+    /* Main Table Panel */
+    .card-container {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.5rem;
+      overflow: hidden;
+    }
+
+    .table-responsive {
+      overflow-x: auto;
+    }
+
+    .custom-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    .custom-table th {
+      padding: 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .custom-table td {
+      padding: 1.15rem 1rem;
+      font-size: 0.875rem;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-primary);
+      vertical-align: middle;
+    }
+
+    .custom-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* Direction Badge */
+    .direction-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .direction-in {
+      background-color: rgba(16, 185, 129, 0.1);
+      color: var(--success);
+    }
+
+    .direction-out {
+      background-color: rgba(239, 68, 68, 0.1);
+      color: var(--error);
+    }
+
+    /* Meta text */
+    .meta-subtext {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 0.15rem;
+    }
+
+    .mono {
+      font-family: monospace;
+      color: var(--text-primary);
+    }
+
+    .text-success {
+      color: var(--success);
+      font-weight: 600;
+    }
+
+    .text-error {
+      color: var(--error);
+      font-weight: 600;
+    }
+
+    /* Reset filter button */
+    .btn-reset {
+      background-color: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-reset:hover {
+      background-color: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .btn-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.45rem 0.75rem;
+      background-color: var(--bg-hover);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-action:hover {
+      background-color: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    /* Modal Styles */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-content {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 500px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      animation: scale-up 0.2s ease-out;
+    }
+
+    @keyframes scale-up {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.75rem;
+    }
+
+    .modal-header h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .modal-close:hover {
+      color: var(--text-primary);
+    }
+
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+      letter-spacing: 0.5px;
+    }
+
+    .form-select, .form-input {
+      width: 100%;
+      background-color: var(--bg-hover);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: var(--text-primary);
+      padding: 0.65rem 0.85rem;
+      font-size: 0.875rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-select:focus, .form-input:focus {
+      border-color: var(--primary);
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+
+    .btn-cancel {
+      background-color: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-cancel:hover {
+      background-color: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .btn-save {
+      background-color: var(--primary);
+      border: 1px solid var(--primary);
+      color: #fff;
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-save:hover {
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
+    }
+
+    .tx-info-box {
+      background-color: rgba(99, 102, 241, 0.05);
+      border: 1px dashed var(--border-color);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .tx-info-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.875rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .tx-info-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .tx-info-label {
+      color: var(--text-secondary);
+    }
+
+    .tx-info-val {
+      font-weight: 600;
+      color: var(--text-primary);
+    }
+  </style>
+
+  <div class="header-container">
+    <div class="title-section">
+      <h1>Payments & Cashflow</h1>
+      <p>Monitor transactions synced from SePay/MBBank, trace customer payments, and track net cashflow.</p>
+    </div>
+  </div>
+
+  <!-- Stats Grid -->
+  <div class="stats-banner">
+    <!-- Income -->
+    <div class="stat-card">
+      <div class="stat-icon income">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 24px; height: 24px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m0 0l6.75-6.75M12 19.5l-6.75-6.75" />
+        </svg>
+      </div>
+      <div class="stat-details">
+        <span class="stat-label">Total Revenue</span>
+        <span class="stat-value">{formatVND(totalIn)}</span>
+        <span class="stat-count">{countIn} incoming transactions</span>
+      </div>
+    </div>
+
+    <!-- Expenses -->
+    <div class="stat-card">
+      <div class="stat-icon expense">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 24px; height: 24px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 19.5V4.5m0 0l6.75 6.75M12 4.5L5.25 11.25" />
+        </svg>
+      </div>
+      <div class="stat-details">
+        <span class="stat-label">Total Withdrawals</span>
+        <span class="stat-value">{formatVND(totalOut)}</span>
+        <span class="stat-count">{countOut} outgoing transactions</span>
+      </div>
+    </div>
+
+    <!-- Net Cashflow -->
+    <div class="stat-card">
+      <div class="stat-icon net">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 24px; height: 24px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0-9v9m0 0a2.25 2.25 0 002.25 2.25h.375m-2.625-2.25h-.75a.75.75 0 00-.75.75v.75m-15 0H6a.75.75 0 01.75-.75h.75m-1.5 1.5H5.625a2.25 2.25 0 01-2.25-2.25v-.375m0 0V6.75m0 12v.375c0 .621.504 1.125 1.125 1.125H6.75" />
+        </svg>
+      </div>
+      <div class="stat-details">
+        <span class="stat-label">Net Profit</span>
+        <span class="stat-value {totalIn - totalOut >= 0 ? 'text-success' : 'text-error'}">
+          {formatVND(totalIn - totalOut)}
+        </span>
+        <span class="stat-count">Total: {countIn + countOut} transactions</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <form method="GET" class="filter-bar">
+    <input 
+      type="text" 
+      name="search" 
+      placeholder="Search by transaction ID, content, or bank..." 
+      value={search} 
+      class="search-input" 
+    />
+    <select name="type" class="select-filter">
+      <option value="">All Flow Types</option>
+      <option value="in" selected={typeFilter === 'in'}>Tiền vào (Income)</option>
+      <option value="out" selected={typeFilter === 'out'}>Tiền ra (Expense)</option>
+    </select>
+    <button type="submit" class="btn-filter">Apply Filters</button>
+    {(search || typeFilter) && (
+      <a href="/crm/payments" class="btn-reset">Reset</a>
+    )}
+  </form>
+
+  <!-- Table Card -->
+  <div class="card-container">
+    <div class="table-responsive">
+      <table class="custom-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Flow</th>
+            <th>Amount</th>
+            <th>Transaction details</th>
+            <th>Sender/Destination Info</th>
+            <th>Relations</th>
+          </tr>
+        </thead>
+        <tbody>
+          {transactionList.length === 0 ? (
+            <tr>
+              <td colspan="6" style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                No transactions matching the criteria.
+              </td>
+            </tr>
+          ) : (
+            transactionList.map((tx: any) => (
+              <tr>
+                <td>
+                  <div>
+                    <span>{formatDate(tx.paidAt)}</span>
+                  </div>
+                </td>
+                <td>
+                  <span class={`direction-badge ${tx.type === 'in' ? 'direction-in' : 'direction-out'}`}>
+                    {tx.type === 'in' ? 'Tiền vào' : 'Tiền ra'}
+                  </span>
+                </td>
+                <td>
+                  <span class={tx.type === 'in' ? 'text-success' : 'text-error'}>
+                    {tx.type === 'in' ? '+' : '-'}{formatVND(tx.amount)}
+                  </span>
+                </td>
+                <td>
+                  <div>
+                    <span class="mono">{tx.transactionId}</span>
+                    <div class="meta-subtext">{tx.content || 'No content description'}</div>
+                  </div>
+                </td>
+                <td>
+                  <div>
+                    <span>{tx.bank || 'Unknown Bank'}</span>
+                    <div class="meta-subtext">Acc: {tx.accountNumber || 'N/A'}</div>
+                  </div>
+                </td>
+                <td>
+                  <div style="display: flex; flex-direction: column; gap: 0.35rem;">
+                    {tx.customerName ? (
+                      <a href={`/crm/customers?search=${tx.customerName}`} style="color: var(--primary); font-weight: 500;">
+                        👤 {tx.customerName}
+                      </a>
+                    ) : (
+                      <span style="color: var(--text-muted); font-size: 0.75rem;">No customer link</span>
+                    )}
+                    {tx.invoiceNumber && (
+                      <span style="font-size: 0.75rem; color: var(--text-secondary);">
+                        📄 Invoice: <span class="mono">{tx.invoiceNumber}</span>
+                      </span>
+                    )}
+                    <button 
+                      class="btn-reconcile btn-action" 
+                      data-id={tx.id} 
+                      data-amount={tx.amount}
+                      data-content={tx.content || ''}
+                      data-customer-id={tx.customerId || ''} 
+                      data-invoice-id={tx.invoiceId || ''}
+                      style="align-self: flex-start; margin-top: 0.25rem; font-size: 0.7rem; padding: 0.25rem 0.5rem;"
+                    >
+                      ✏️ Link / Edit
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Reconcile Modal -->
+  <div class="modal-backdrop" id="reconcileModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Manual Reconcile</h3>
+        <button class="modal-close" id="modalCloseBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="tx-info-box">
+          <div class="tx-info-row">
+            <span class="tx-info-label">Transaction ID:</span>
+            <span class="tx-info-val mono" id="modalTxId">TX123456</span>
+          </div>
+          <div class="tx-info-row">
+            <span class="tx-info-label">Amount:</span>
+            <span class="tx-info-val text-success" id="modalTxAmount">100,000 đ</span>
+          </div>
+          <div class="tx-info-row">
+            <span class="tx-info-label">Description:</span>
+            <span class="tx-info-val" id="modalTxContent" style="font-size: 0.8rem; word-break: break-all;">Transfer info</span>
+          </div>
+        </div>
+
+        <form id="reconcileForm">
+          <input type="hidden" id="modalPaymentId" />
+          
+          <!-- Customer Select -->
+          <div class="form-group">
+            <label for="modalCustomerSelect">Customer Link</label>
+            <select id="modalCustomerSelect" class="form-select">
+              <option value="">-- No Customer Link --</option>
+              {allCustomers.map((cust: any) => (
+                <option value={cust.id}>{cust.fullName} ({cust.id})</option>
+              ))}
+            </select>
+          </div>
+
+          <!-- Invoice Select -->
+          <div class="form-group">
+            <label for="modalInvoiceSelect">Invoice Link</label>
+            <select id="modalInvoiceSelect" class="form-select">
+              <option value="">-- No Invoice Link --</option>
+              {allInvoices.map((inv: any) => (
+                <option 
+                  value={inv.id} 
+                  data-customer-id={inv.customerId || ''}
+                  data-amount={inv.amount}
+                  data-status={inv.status}
+                >
+                  {inv.invoiceNumber} - {inv.amount.toLocaleString()} đ [{inv.status.toUpperCase()}]
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn-cancel" id="modalCancelBtn">Cancel</button>
+            <button type="submit" class="btn-save">Save Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Client script for modal handling -->
+  <script is:inline define:vars={{ allInvoices }}>
+    const modal = document.getElementById('reconcileModal');
+    const closeBtn = document.getElementById('modalCloseBtn');
+    const cancelBtn = document.getElementById('modalCancelBtn');
+    const form = document.getElementById('reconcileForm');
+    
+    const modalPaymentId = document.getElementById('modalPaymentId');
+    const modalTxId = document.getElementById('modalTxId');
+    const modalTxAmount = document.getElementById('modalTxAmount');
+    const modalTxContent = document.getElementById('modalTxContent');
+    
+    const customerSelect = document.getElementById('modalCustomerSelect');
+    const invoiceSelect = document.getElementById('modalInvoiceSelect');
+
+    // Track all options of invoice select to filter them dynamically
+    const invoiceOptions = Array.from(invoiceSelect.options);
+
+    // Open Modal
+    document.querySelectorAll('.btn-reconcile').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        const amount = Number(btn.getAttribute('data-amount')) || 0;
+        const content = btn.getAttribute('data-content');
+        const customerId = btn.getAttribute('data-customer-id');
+        const invoiceId = btn.getAttribute('data-invoice-id');
+
+        // Populate transaction info
+        modalPaymentId.value = id;
+        modalTxId.textContent = id;
+        modalTxAmount.textContent = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+        modalTxContent.textContent = content || 'No content description';
+
+        // Set current dropdown values
+        customerSelect.value = customerId;
+        filterInvoices(customerId);
+        invoiceSelect.value = invoiceId;
+
+        // Display modal
+        modal.style.display = 'flex';
+      });
+    });
+
+    // Filter invoice options based on selected customer
+    customerSelect.addEventListener('change', () => {
+      const selectedCustomerId = customerSelect.value;
+      filterInvoices(selectedCustomerId);
+      invoiceSelect.value = ''; // Reset invoice selection when customer changes
+    });
+
+    function filterInvoices(customerId) {
+      // Clear current options except the first placeholder
+      invoiceSelect.innerHTML = '';
+      invoiceSelect.appendChild(invoiceOptions[0]);
+
+      if (!customerId) {
+        // If no customer selected, show all invoices
+        for (let i = 1; i < invoiceOptions.length; i++) {
+          invoiceSelect.appendChild(invoiceOptions[i]);
+        }
+        return;
+      }
+
+      // Show only invoices belonging to the selected customer
+      for (let i = 1; i < invoiceOptions.length; i++) {
+        const option = invoiceOptions[i];
+        const optionCustId = option.getAttribute('data-customer-id');
+        if (optionCustId === customerId) {
+          invoiceSelect.appendChild(option);
+        }
+      }
+    }
+
+    // Close Modal functions
+    function closeModal() {
+      modal.style.display = 'none';
+    }
+
+    closeBtn.addEventListener('click', closeModal);
+    cancelBtn.addEventListener('click', closeModal);
+    window.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+
+    // Submit form to API
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const paymentId = modalPaymentId.value;
+      const customerId = customerSelect.value;
+      const invoiceId = invoiceSelect.value;
+
+      try {
+        const res = await fetch('/api/crm/payments/reconcile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ paymentId, customerId, invoiceId }),
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          closeModal();
+          window.location.reload();
+        } else {
+          alert('Error saving changes: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Network error, could not save manual reconciliation.');
+      }
+    });
+  </script>
+</DashboardLayout>

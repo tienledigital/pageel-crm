@@ -36,3 +36,11 @@ pnpm-debug.log*
 
 # Cloudflare Wrangler
 .wrangler/
+
+# Cloudflare Wrangler Local Secrets
+.dev.vars
+
+# Local testing and debugging scripts
+scripts/test-backup-manual.ts
+scripts/test-backup-manual.js
+
