@@ -31,6 +31,25 @@ export async function exportDatabaseToJson(db: any): Promise<string> {
  */
 export async function pushBackupToGit(params: BackupParams): Promise<string> {
   const { token, owner, repo, branch, filePath, content, commitMessage } = params;
+
+  // Basic input validation
+  const ownerRegex = /^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$/;
+  const repoRegex = /^[a-zA-Z0-9-_.]+$/;
+  const branchRegex = /^[a-zA-Z0-9-_./]+$/;
+
+  if (!owner || !ownerRegex.test(owner)) {
+    throw new Error(`Invalid GitHub owner: "${owner}"`);
+  }
+  if (!repo || !repoRegex.test(repo)) {
+    throw new Error(`Invalid GitHub repository name: "${repo}"`);
+  }
+  if (!branch || !branchRegex.test(branch)) {
+    throw new Error(`Invalid GitHub branch name: "${branch}"`);
+  }
+  if (!token || token.trim() === '') {
+    throw new Error('GitHub Backup Token is required and cannot be empty.');
+  }
+
   const baseUrl = `https://api.github.com/repos/${owner}/${repo}`;
   
   const headers: Record<string, string> = {
@@ -45,7 +64,14 @@ export async function pushBackupToGit(params: BackupParams): Promise<string> {
   const refUrl = `${baseUrl}/git/ref/heads/${branch}`;
   const refRes = await fetch(refUrl, { headers });
   if (!refRes.ok) {
-    throw new Error(`GitHub API error GET ref: ${refRes.status} ${refRes.statusText}`);
+    let errorDetail = '';
+    try {
+      const errJson = await refRes.json() as any;
+      if (errJson && errJson.message) {
+        errorDetail = `: ${errJson.message}`;
+      }
+    } catch {}
+    throw new Error(`GitHub API error GET ref: ${refRes.status} ${refRes.statusText}${errorDetail}`);
   }
   const refData = await refRes.json() as any;
   const parentSha = refData.object.sha;
@@ -61,7 +87,14 @@ export async function pushBackupToGit(params: BackupParams): Promise<string> {
     }),
   });
   if (!blobRes.ok) {
-    throw new Error(`GitHub API error POST blob: ${blobRes.status} ${blobRes.statusText}`);
+    let errorDetail = '';
+    try {
+      const errJson = await blobRes.json() as any;
+      if (errJson && errJson.message) {
+        errorDetail = `: ${errJson.message}`;
+      }
+    } catch {}
+    throw new Error(`GitHub API error POST blob: ${blobRes.status} ${blobRes.statusText}${errorDetail}`);
   }
   const blobData = await blobRes.json() as any;
   const blobSha = blobData.sha;
@@ -84,7 +117,14 @@ export async function pushBackupToGit(params: BackupParams): Promise<string> {
     }),
   });
   if (!treeRes.ok) {
-    throw new Error(`GitHub API error POST tree: ${treeRes.status} ${treeRes.statusText}`);
+    let errorDetail = '';
+    try {
+      const errJson = await treeRes.json() as any;
+      if (errJson && errJson.message) {
+        errorDetail = `: ${errJson.message}`;
+      }
+    } catch {}
+    throw new Error(`GitHub API error POST tree: ${treeRes.status} ${treeRes.statusText}${errorDetail}`);
   }
   const treeData = await treeRes.json() as any;
   const treeSha = treeData.sha;
@@ -101,7 +141,14 @@ export async function pushBackupToGit(params: BackupParams): Promise<string> {
     }),
   });
   if (!commitRes.ok) {
-    throw new Error(`GitHub API error POST commit: ${commitRes.status} ${commitRes.statusText}`);
+    let errorDetail = '';
+    try {
+      const errJson = await commitRes.json() as any;
+      if (errJson && errJson.message) {
+        errorDetail = `: ${errJson.message}`;
+      }
+    } catch {}
+    throw new Error(`GitHub API error POST commit: ${commitRes.status} ${commitRes.statusText}${errorDetail}`);
   }
   const commitData = await commitRes.json() as any;
   const newCommitSha = commitData.sha;
@@ -117,7 +164,14 @@ export async function pushBackupToGit(params: BackupParams): Promise<string> {
     }),
   });
   if (!updateRefRes.ok) {
-    throw new Error(`GitHub API error PATCH ref: ${updateRefRes.status} ${updateRefRes.statusText}`);
+    let errorDetail = '';
+    try {
+      const errJson = await updateRefRes.json() as any;
+      if (errJson && errJson.message) {
+        errorDetail = `: ${errJson.message}`;
+      }
+    } catch {}
+    throw new Error(`GitHub API error PATCH ref: ${updateRefRes.status} ${updateRefRes.statusText}${errorDetail}`);
   }
   const updateRefData = await updateRefRes.json() as any;
   

@@ -138,6 +138,47 @@ describe('GitHub Backup Client', () => {
 
       await expect(pushBackupToGit(params)).rejects.toThrow('GitHub API error GET ref: 401 Unauthorized');
     });
+
+    it('should validate inputs before making API requests', async () => {
+      const params = {
+        token: 'github-test-token',
+        owner: 'testowner',
+        repo: 'testrepo',
+        branch: 'main',
+        filePath: 'backups/backup.json',
+        content: '{"data":[]}',
+        commitMessage: 'Backup database',
+      };
+
+      await expect(pushBackupToGit({ ...params, owner: 'invalid owner' })).rejects.toThrow('Invalid GitHub owner');
+      await expect(pushBackupToGit({ ...params, repo: 'invalid/repo' })).rejects.toThrow('Invalid GitHub repository name');
+      await expect(pushBackupToGit({ ...params, branch: 'invalid branch' })).rejects.toThrow('Invalid GitHub branch name');
+      await expect(pushBackupToGit({ ...params, token: '' })).rejects.toThrow('GitHub Backup Token is required');
+    });
+
+    it('should parse and include detailed error messages from GitHub JSON responses', async () => {
+      const mockFetch = vi.fn();
+      globalThis.fetch = mockFetch;
+
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 401,
+        statusText: 'Unauthorized',
+        json: async () => ({ message: 'Bad credentials' }),
+      });
+
+      const params = {
+        token: 'invalid-token',
+        owner: 'testowner',
+        repo: 'testrepo',
+        branch: 'main',
+        filePath: 'backups/backup.json',
+        content: '{"data":[]}',
+        commitMessage: 'Backup database',
+      };
+
+      await expect(pushBackupToGit(params)).rejects.toThrow('GitHub API error GET ref: 401 Unauthorized: Bad credentials');
+    });
   });
 });
 
