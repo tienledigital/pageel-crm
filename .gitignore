@@ -36,3 +36,7 @@ pnpm-debug.log*
 
 # Cloudflare Wrangler
 .wrangler/
+
+# TypeScript build info
+*.tsbuildinfo
+
