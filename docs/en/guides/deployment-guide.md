@@ -88,14 +88,14 @@ All sensitive keys (secrets) must be encrypted directly on Cloudflare's infrastr
 ### Step 1: Initialize Secrets on Cloudflare
 Run these commands in the `repo/` directory:
 
-1. **JWT_SECRET** (Used to sign session cookies. Must be a secure random 32-character hex string):
+1. **SESSION_SECRET** (Used to sign session cookies. Must be a secure random 32-character hex string):
    *You can generate a random key using:*
    ```bash
    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
    ```
    *Then store it on Cloudflare:*
    ```bash
-   npx wrangler secret put JWT_SECRET
+   npx wrangler secret put SESSION_SECRET
    ```
 
 2. **Initial Admin User:**
@@ -106,6 +106,19 @@ Run these commands in the `repo/` directory:
    # The password of the initial admin (Defaults to 'admin123' if omitted)
    npx wrangler secret put INITIAL_ADMIN_PASSWORD
    ```
+
+3. **GitHub Backup Secrets:**
+   Configure connection credentials to automatically push backup data to a private GitHub repository:
+   ```bash
+   npx wrangler secret put GITHUB_BACKUP_TOKEN
+   npx wrangler secret put GITHUB_BACKUP_OWNER
+   npx wrangler secret put GITHUB_BACKUP_REPO
+   npx wrangler secret put GITHUB_BACKUP_BRANCH
+   ```
+
+> [!NOTE]
+> **For Cloudflare Pages:** If you deploy as a Cloudflare Pages project and configure a different project name than the default `name` in `wrangler.jsonc` (e.g. `reddcom-crm`), you must use the `pages secret put` command with the `--project-name` flag:
+> `npx wrangler pages secret put SESSION_SECRET --project-name <pages-project-name>`
 
 ### ⚠️ Important: Auto-Seed Behavior & Login Troubleshooting
 - **How it works:** The system will auto-seed the admin user using the above secrets **only if the `users` database table is completely empty** (e.g., immediately after first deployment).
