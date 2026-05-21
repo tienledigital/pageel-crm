@@ -2,7 +2,7 @@
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { customers, config } from '@/lib/db/schema';
+import { customers, config, invoices } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
 // Fetch initial data from database
@@ -19,9 +19,31 @@ const defaultAccount = defaultAccountConfig[0]?.value || '0000000000';
 const orgName = orgNameConfig[0]?.value || 'Pageel CRM';
 const orgLogo = orgLogoConfig[0]?.value || '';
 
-// URL parameter for quick customer selection
+// URL parameter for quick customer/invoice selection
 const url = new URL(Astro.request.url);
 const initialCustomerId = url.searchParams.get('customerId') || '';
+const invoiceId = url.searchParams.get('invoiceId') || '';
+
+let initialInvoice = null;
+if (invoiceId) {
+  const invoiceData = await db
+    .select({
+      id: invoices.id,
+      invoiceNumber: invoices.invoiceNumber,
+      amount: invoices.amount,
+      content: invoices.content,
+      customerId: invoices.customerId,
+      customerName: customers.fullName,
+    })
+    .from(invoices)
+    .leftJoin(customers, eq(invoices.customerId, customers.id))
+    .where(eq(invoices.id, invoiceId))
+    .limit(1);
+  
+  if (invoiceData.length > 0) {
+    initialInvoice = invoiceData[0];
+  }
+}
 ---
 
 <DashboardLayout title="QR Generator Tool">
@@ -181,14 +203,26 @@ const initialCustomerId = url.searchParams.get('customerId') || '';
     .preview-card {
       background-color: var(--bg-card);
       border: 1px solid var(--border-color);
-      border-radius: 20px;
-      padding: 2rem;
+      border-radius: 24px;
+      padding: 1.75rem;
       width: 100%;
-      max-width: 380px;
+      max-width: 360px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.3);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .preview-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--primary) 0%, #10b981 100%);
     }
 
     .preview-header {
@@ -196,7 +230,7 @@ const initialCustomerId = url.searchParams.get('customerId') || '';
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 1.5rem;
+      margin-bottom: 1.25rem;
     }
 
     .org-brand {
@@ -209,7 +243,7 @@ const initialCustomerId = url.searchParams.get('customerId') || '';
       width: 24px;
       height: 24px;
       border-radius: 6px;
-      object-cover: fill;
+      object-fit: cover;
       background-color: var(--bg-hover);
     }
 
@@ -223,56 +257,68 @@ const initialCustomerId = url.searchParams.get('customerId') || '';
 
     .qr-status-box {
       width: 100%;
-      min-height: 240px;
+      min-height: 200px;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      background-color: var(--bg-main);
-      border: 1px solid var(--border-color);
-      border-radius: 12px;
-      padding: 1.5rem;
-      margin-bottom: 1.5rem;
+      background-color: #ffffff; /* Clean white background for perfect QR contrast */
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 1rem;
+      margin-bottom: 1.25rem;
       text-align: center;
       transition: all 0.3s ease;
+      box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05), 0 4px 12px rgba(0, 0, 0, 0.08);
     }
 
     .qr-img {
-      width: 220px;
-      height: 220px;
+      width: 180px;
+      height: 180px;
       object-fit: contain;
     }
 
     .placeholder-icon {
-      color: var(--text-muted);
-      margin-bottom: 1rem;
+      color: #9ca3af;
+      margin-bottom: 0.75rem;
     }
 
     .placeholder-text {
-      font-size: 0.875rem;
+      font-size: 0.825rem;
       font-weight: 500;
-      color: var(--text-muted);
+      color: #4b5563;
+      line-height: 1.4;
+    }
+
+    /* Receipt-like dashed separator */
+    .receipt-divider {
+      width: 100%;
+      height: 1px;
+      border-top: 1px dashed var(--border-color);
+      margin: 0.5rem 0 1.25rem 0;
     }
 
     .amount-display {
-      font-size: 2rem;
-      font-weight: 700;
-      color: var(--text-primary);
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: #10b981; /* system green success color for payment amounts */
       margin-bottom: 0.5rem;
       letter-spacing: -0.5px;
     }
 
     .memo-display {
       width: 100%;
-      font-size: 0.875rem;
+      font-size: 0.8rem;
       font-weight: 600;
-      padding: 0.75rem 1rem;
+      padding: 0.65rem 0.85rem;
       background-color: var(--bg-main);
       border: 1px solid var(--border-color);
       border-radius: 8px;
       text-align: center;
       word-break: break-all;
       margin-bottom: 0.5rem;
+      font-family: monospace;
+      color: var(--text-primary);
     }
 
     .memo-display.danger {
@@ -282,10 +328,10 @@ const initialCustomerId = url.searchParams.get('customerId') || '';
     }
 
     .char-count {
-      font-size: 0.75rem;
+      font-size: 0.7rem;
       font-weight: 500;
       color: var(--text-muted);
-      margin-bottom: 1.5rem;
+      margin-bottom: 1.25rem;
     }
 
     .char-count.danger {
@@ -467,9 +513,11 @@ const initialCustomerId = url.searchParams.get('customerId') || '';
 
         <!-- QR Image Display Area -->
         <div class="qr-status-box" id="qrStatusBox">
-          <svg class="placeholder-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 48px; height: 48px;"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" /><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" /></svg>
+          <svg class="placeholder-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" style="width: 36px; height: 36px;"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5z" /><path stroke-linecap="round" stroke-linejoin="round" d="M6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" /></svg>
           <div class="placeholder-text">Please select a customer and<br/>enter payment amount</div>
         </div>
+
+        <div class="receipt-divider"></div>
 
         <div class="amount-display" id="amountVal">0 đ</div>
         <div class="memo-display" id="memoVal">Empty</div>
@@ -495,7 +543,7 @@ const initialCustomerId = url.searchParams.get('customerId') || '';
   </div>
 
   <!-- Client-side state & UI handling -->
-  <script is:inline define:vars={{ defaultBank, defaultAccount, orgName }}>
+  <script is:inline define:vars={{ defaultBank, defaultAccount, orgName, initialInvoice }}>
     // Accent helper to translate Vietnamese accents
     function removeAccents(str) {
       return str
@@ -507,10 +555,10 @@ const initialCustomerId = url.searchParams.get('customerId') || '';
     }
 
     // State Variables
-    let selectedCustomerId = '';
-    let selectedCustomerName = '';
-    let serviceName = '';
-    let amount = 0;
+    let selectedCustomerId = initialInvoice ? initialInvoice.customerId : '';
+    let selectedCustomerName = initialInvoice ? initialInvoice.customerName : '';
+    let serviceName = initialInvoice ? initialInvoice.invoiceNumber : '';
+    let amount = initialInvoice ? initialInvoice.amount : 0;
     let period = 'none';
     let qrTemplate = 'compact2';
     let qrUrl = '';
@@ -744,8 +792,19 @@ const initialCustomerId = url.searchParams.get('customerId') || '';
       }
     });
 
-    // Initialize state on page load (if customerId parameter provided)
-    if (custSelect.value) {
+    // Initialize state on page load (if customerId or invoiceId parameter provided)
+    if (initialInvoice) {
+      custSelect.value = initialInvoice.customerId;
+      amountInput.value = initialInvoice.amount;
+      serviceInput.value = initialInvoice.invoiceNumber;
+      
+      selectedCustomerId = initialInvoice.customerId;
+      selectedCustomerName = initialInvoice.customerName;
+      amount = initialInvoice.amount;
+      serviceName = initialInvoice.invoiceNumber;
+      
+      updateState();
+    } else if (custSelect.value) {
       selectedCustomerId = custSelect.value;
       selectedCustomerName = custSelect.options[custSelect.selectedIndex].getAttribute('data-name') || '';
       updateState();

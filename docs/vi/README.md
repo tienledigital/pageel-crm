@@ -9,13 +9,13 @@
   <p>Bộ máy quản lý tài chính và hóa đơn tự vận hành tối ưu cho hộ kinh doanh Việt Nam.</p>
 
   [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
-  [![Version](https://img.shields.io/badge/Version-v0.1.0-blue.svg)](../../CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/Version-v0.4.1-blue.svg)](../../CHANGELOG.md)
   ![Status](https://img.shields.io/badge/Status-Beta-orange.svg)
   [![Built with Astro](https://img.shields.io/badge/Built%20with-Astro-BC52EE.svg?logo=astro&logoColor=white)](https://astro.build)
 
   <br />
 
-  <a href="../../README.md">🇺🇸 <b>English</b></a> | <a href="vi-VN.md">🇻🇳 <b>Tiếng Việt</b></a>
+  <a href="../../README.md">🇺🇸 <b>English</b></a> | <a href="README.md">🇻🇳 <b>Tiếng Việt</b></a>
 </div>
 
 <br/>
@@ -25,6 +25,7 @@
 - [Tính năng nổi bật](#tính-năng-nổi-bật)
 - [Công nghệ sử dụng](#công-nghệ-sử-dụng)
 - [Khởi chạy nhanh](#khởi-chạy-nhanh)
+- [Triển khai hệ thống](#triển-khai-hệ-thống)
 - [Kiến trúc Cơ sở Dữ liệu](#kiến-trúc-cơ-sở-dữ-liệu)
 - [Giấy phép](#giấy-phép)
 
@@ -32,7 +33,7 @@
 
 ## 🎯 Giới thiệu
 
-**Pageel CRM** là một giải pháp tự lưu trữ (self-hosted), CRM siêu nhẹ và bộ máy quản lý hóa đơn tự động dành cho các hộ kinh doanh cá thể (HKD) và doanh nghiệp nhỏ tại Việt Nam. Dự án vận hành trực tiếp trên hạ tầng Edge của Cloudflare Pages, giúp triệt tiêu hoàn toàn chi phí thuê server và đảm bảo hiệu năng truy cập tối đa.
+**Pageel CRM** là một giải pháp tự lưu trữ (self-hosted), CRM siêu nhẹ và bộ máy quản lý hóa đơn tự động dành cho các hộ kinh doanh cá thể (HKD) và doanh nghiệp nhỏ tại Việt Nam. Dự án vận hành trực tiếp trên hạ tầng Edge của Cloudflare Workers, giúp triệt tiêu hoàn toàn chi phí thuê server và đảm bảo hiệu năng truy cập tối đa.
 
 ---
 
@@ -57,8 +58,8 @@
 ## 🚀 Khởi chạy nhanh
 
 ### Yêu cầu hệ thống
-- Node.js (phiên bản v18 trở lên)
-- npm (phiên bản v9 trở lên)
+- Node.js (phiên bản v22 trở lên)
+- npm (phiên bản v10 trở lên)
 
 ### Cài đặt và Chạy
 1. Clone mã nguồn dự án:
@@ -71,13 +72,9 @@
    npm install
    ```
 3. Khởi tạo cấu trúc cơ sở dữ liệu (schema) local:
-   - Đối với môi trường giả lập Cloudflare local (khuyên dùng):
+   - Áp dụng các tệp tin migrations lên database D1 local giả lập:
      ```bash
-     npx wrangler d1 migrations apply DB --local
-     ```
-   - Đối với dev server Astro thuần (sử dụng fallback file local.db):
-     ```bash
-     npx drizzle-kit push
+     npx wrangler d1 migrations apply pageel-crm-db --local
      ```
 4. Khởi chạy server phát triển:
    - Sử dụng môi trường giả lập Cloudflare (đầy đủ binding D1 & KV):
@@ -95,12 +92,18 @@
 
 ---
 
+## 🚀 Triển khai hệ thống (Deployment)
+
+Để xem hướng dẫn chi tiết từng bước triển khai ứng dụng lên Cloudflare Workers (kèm D1 Database, KV Namespace) và thiết lập tài khoản Admin ban đầu bảo mật, vui lòng tham khảo [Hướng dẫn Triển khai Hệ thống](guides/deployment-guide.md).
+
+---
+
 ## 📐 Kiến trúc Cơ sở Dữ liệu
 
 Ứng dụng tách biệt tầng logic nghiệp vụ khỏi lớp lưu trữ vật lý bằng bộ điều tuyến DB Router động:
 
 - **Môi trường Test:** Khởi chạy trên in-memory SQLite biệt lập và siêu tốc.
-- **Môi trường Production:** Tận dụng tối đa SQLite phân tán Cloudflare D1 qua binding `platform.env.DB`.
+- **Môi trường Production:** Tận dụng SQLite phân tán Cloudflare D1 thông qua kết nối truyền trực tiếp biến `env` từ `cloudflare:workers` vào hàm `getDb(env)`.
 
 ---
 

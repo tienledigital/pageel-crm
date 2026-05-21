@@ -1,7 +1,7 @@
 {
   "name": "pageel-crm",
   "type": "module",
-  "version": "0.0.1",
+  "version": "0.4.1",
   "engines": {
     "node": ">=22.12.0"
   },
@@ -11,7 +11,8 @@
     "build": "astro build",
     "preview": "astro preview",
     "astro": "astro",
-    "generate-types": "wrangler types"
+    "generate-types": "wrangler types",
+    "lint": "astro check && tsc --noEmit --incremental"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^13.5.2",
@@ -19,11 +20,14 @@
     "astro": "^6.3.5",
     "better-sqlite3": "^12.10.0",
     "drizzle-orm": "^0.45.2",
+    "exceljs": "^4.4.0",
+    "jszip": "^3.10.1",
     "wrangler": "^4.93.0"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.9",
     "@types/better-sqlite3": "^7.6.13",
+    "@types/jszip": "^3.4.0",
     "@types/node": "^25.9.1",
     "drizzle-kit": "^0.31.10",
     "typescript": "^6.0.3",

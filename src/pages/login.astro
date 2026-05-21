@@ -1,10 +1,12 @@
 ---
+import { env } from 'cloudflare:workers';
+
 // Redirect if already logged in
 const sessionCookie = Astro.cookies.get('session')?.value;
 if (sessionCookie) {
   // Since the login page is in the public whitelist (does not execute middleware),
   // we check the session cookie directly here to redirect authenticated users.
-  const secret = (Astro.locals as any).runtime?.env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
+  const secret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
   const { verifySessionCookie } = await import('../lib/auth');
   const decoded = await verifySessionCookie(sessionCookie, secret);
   if (decoded) {
