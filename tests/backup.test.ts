@@ -326,3 +326,128 @@ describe('Astro API Endpoint - POST /api/backup', () => {
   });
 });
 
+import { POST as testConnectionApiHandler } from '../src/pages/api/backup/test-connection';
+
+describe('Astro API Endpoint - POST /api/backup/test-connection', () => {
+  beforeAll(async () => {
+    process.env.GITHUB_BACKUP_TOKEN = 'mock-github-token-api';
+    process.env.GITHUB_BACKUP_OWNER = 'mock-owner';
+    process.env.GITHUB_BACKUP_REPO = 'mock-repo';
+  });
+
+  it('should return 401 Unauthorized if user is not authenticated', async () => {
+    const request = new Request('http://localhost/api/backup/test-connection', { method: 'POST' });
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {},
+    };
+
+    const response = await testConnectionApiHandler(context);
+    expect(response.status).toBe(401);
+    const data = await response.json();
+    expect(data.error).toBe('Unauthorized');
+  });
+
+  it('should return 403 Forbidden if user is not an admin', async () => {
+    const request = new Request('http://localhost/api/backup/test-connection', { method: 'POST' });
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-2', username: 'member1', role: 'member' },
+      },
+    };
+
+    const response = await testConnectionApiHandler(context);
+    expect(response.status).toBe(403);
+    const data = await response.json();
+    expect(data.error).toBe('Forbidden - Admin access required');
+  });
+
+  it('should return 400 Bad Request if repository configuration is invalid', async () => {
+    const request = new Request('http://localhost/api/backup/test-connection', { method: 'POST' });
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' },
+      },
+    };
+
+    const prevOwner = process.env.GITHUB_BACKUP_OWNER;
+    process.env.GITHUB_BACKUP_OWNER = 'invalid owner';
+
+    const response = await testConnectionApiHandler(context);
+    expect(response.status).toBe(400);
+    const data = await response.json();
+    expect(data.error).toBe('Invalid GitHub owner format');
+
+    process.env.GITHUB_BACKUP_OWNER = prevOwner;
+  });
+
+  it('should return 200 with success: false if token does not have push permissions', async () => {
+    const mockFetch = vi.fn();
+    globalThis.fetch = mockFetch;
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        full_name: 'mock-owner/mock-repo',
+        private: true,
+        permissions: {
+          pull: true,
+          push: false,
+        },
+      }),
+    });
+
+    const request = new Request('http://localhost/api/backup/test-connection', { method: 'POST' });
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' },
+      },
+    };
+
+    const response = await testConnectionApiHandler(context);
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.success).toBe(false);
+    expect(data.error).toContain('Token không có quyền ghi');
+  });
+
+  it('should return 200 with success: true and repository info when connection is healthy', async () => {
+    const mockFetch = vi.fn();
+    globalThis.fetch = mockFetch;
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        full_name: 'mock-owner/mock-repo',
+        private: true,
+        permissions: {
+          pull: true,
+          push: true,
+        },
+      }),
+    });
+
+    const request = new Request('http://localhost/api/backup/test-connection', { method: 'POST' });
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' },
+      },
+    };
+
+    const response = await testConnectionApiHandler(context);
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.repo).toBe('mock-owner/mock-repo');
+  });
+});
+

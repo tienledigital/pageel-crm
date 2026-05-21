@@ -454,13 +454,45 @@ const lastBackupStatusClass = lastBackup
                   </select>
                 </div>
               </div>
-              <button type="submit" class="btn btn-primary">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="btn-icon">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
-                </svg>
-                Tải xuống Báo cáo
-              </button>
+              <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+                <button type="submit" class="btn btn-primary" style="flex: 1; padding: 0.625rem 1rem; font-size: 0.8125rem;">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="btn-icon">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                  Tải báo cáo
+                </button>
+                <button type="button" id="btn-preview-report" class="btn btn-secondary" style="flex: 1; padding: 0.625rem 1rem; font-size: 0.8125rem;">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="btn-icon">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  Xem trước
+                </button>
+              </div>
             </form>
+
+            <!-- Preview section container -->
+            <div id="preview-section" style="display: none; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.25rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                <h4 style="margin: 0; font-size: 0.875rem; font-weight: 600; color: #fff;">Dữ liệu Xem trước</h4>
+                <span class="badge badge-success" id="preview-summary" style="font-size: 0.7rem;">0 dòng - 0 đ</span>
+              </div>
+              <div class="data-table-container" style="max-height: 250px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px;">
+                <table class="data-table" style="font-size: 0.75rem; width: 100%;">
+                  <thead style="position: sticky; top: 0; background-color: var(--bg-card); z-index: 1;">
+                    <tr>
+                      <th>Ngày</th>
+                      <th>Khách hàng</th>
+                      <th>Nội dung</th>
+                      <th style="text-align: right;">Doanh thu</th>
+                    </tr>
+                  </thead>
+                  <tbody id="preview-table-body">
+                    <!-- Dynamic preview rows -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
 
           <!-- Section 2: Git Backup Trigger -->
@@ -473,12 +505,21 @@ const lastBackupStatusClass = lastBackup
               <strong id="backup-status-text" class={lastBackupStatusClass}>{lastBackupStatusText}</strong>
             </div>
             
-            <button id="btn-backup-now" class="btn btn-secondary">
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="btn-icon" id="backup-btn-icon">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-              </svg>
-              <span>Sao lưu ngay lập tức</span>
-            </button>
+            <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem;">
+              <button id="btn-test-connection" class="btn btn-secondary" style="flex: 1; padding: 0.625rem 1rem; font-size: 0.8125rem;">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="btn-icon" id="test-connection-icon">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>Kiểm tra kết nối</span>
+              </button>
+              
+              <button id="btn-backup-now" class="btn btn-primary" style="flex: 1; padding: 0.625rem 1rem; font-size: 0.8125rem;">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="btn-icon" id="backup-btn-icon">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+                </svg>
+                <span>Sao lưu ngay</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -592,6 +633,108 @@ const lastBackupStatusClass = lastBackup
 
       // Trigger file download
       window.location.href = url;
+    });
+  }
+
+  // Handle report preview trigger
+  const btnPreview = document.getElementById('btn-preview-report');
+  const previewSection = document.getElementById('preview-section');
+  const previewSummary = document.getElementById('preview-summary');
+  const previewTableBody = document.getElementById('preview-table-body');
+
+  if (btnPreview && previewSection && previewSummary && previewTableBody) {
+    btnPreview.addEventListener('click', async () => {
+      const year = (document.getElementById('export-year') as HTMLInputElement).value;
+      const type = (document.getElementById('export-type') as HTMLSelectElement).value;
+      
+      let url = `/api/export/s1a-preview?year=${year}`;
+      if (type === 'month') {
+        const month = (document.getElementById('export-month') as HTMLSelectElement).value;
+        url += `&month=${month}`;
+      } else if (type === 'quarter') {
+        const quarter = (document.getElementById('export-quarter') as HTMLSelectElement).value;
+        url += `&quarter=${quarter}`;
+      }
+
+      btnPreview.setAttribute('disabled', 'true');
+      const originalText = btnPreview.innerHTML;
+      btnPreview.innerHTML = 'Đang tải...';
+
+      try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('Không thể tải dữ liệu xem trước.');
+        const data = await res.json();
+        
+        if (data.success) {
+          previewSummary.textContent = `${data.totalCount} dòng - ${new Intl.NumberFormat('vi-VN').format(data.totalAmount)} đ`;
+          
+          if (data.payments.length === 0) {
+            previewTableBody.innerHTML = `
+              <tr>
+                <td colspan="4" style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">Không có giao dịch phù hợp (phải có thông tin Khách hàng)</td>
+              </tr>
+            `;
+          } else {
+            previewTableBody.innerHTML = data.payments.map((p: any) => {
+              const dateStr = new Date(p.paidAt).toLocaleDateString('vi-VN');
+              const customerName = p.customer ? p.customer.fullName : 'Chưa gán';
+              const customerId = p.customer ? p.customer.id : 'N/A';
+              const amountStr = new Intl.NumberFormat('vi-VN').format(p.amount) + ' đ';
+              return `
+                <tr>
+                  <td style="white-space: nowrap;">${dateStr}</td>
+                  <td><strong>${customerId}</strong> - ${customerName}</td>
+                  <td>${p.content}</td>
+                  <td style="text-align: right; font-weight: 600; color: #fff;">${amountStr}</td>
+                </tr>
+              `;
+            }).join('');
+          }
+          previewSection.style.display = 'block';
+        } else {
+          throw new Error(data.error || 'Lỗi không xác định.');
+        }
+      } catch (err: any) {
+        alert(`Lỗi xem trước: ${err.message}`);
+      } finally {
+        btnPreview.removeAttribute('disabled');
+        btnPreview.innerHTML = originalText;
+      }
+    });
+  }
+
+  // Handle test connection trigger
+  const btnTestConnection = document.getElementById('btn-test-connection');
+  const iconTestConnection = document.getElementById('test-connection-icon');
+
+  if (btnTestConnection) {
+    btnTestConnection.addEventListener('click', async () => {
+      if (btnTestConnection.hasAttribute('disabled')) return;
+
+      btnTestConnection.setAttribute('disabled', 'true');
+      if (iconTestConnection) iconTestConnection.classList.add('spinning');
+      
+      const originalText = btnTestConnection.innerHTML;
+      btnTestConnection.innerHTML = 'Đang kiểm tra...';
+
+      try {
+        const res = await fetch('/api/backup/test-connection', {
+          method: 'POST',
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          alert(`Kết nối thành công!\nRepository: ${data.repo}\nTrạng thái: ${data.private ? 'Riêng tư (Private)' : 'Công khai (Public)'}`);
+        } else {
+          throw new Error(data.error || 'Connection check failed');
+        }
+      } catch (err: any) {
+        alert(`Lỗi kiểm tra kết nối: ${err.message}`);
+      } finally {
+        btnTestConnection.removeAttribute('disabled');
+        btnTestConnection.innerHTML = originalText;
+        if (iconTestConnection) iconTestConnection.classList.remove('spinning');
+      }
     });
   }
 
