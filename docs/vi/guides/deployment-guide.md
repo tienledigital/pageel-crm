@@ -87,14 +87,14 @@ Các biến bí mật (Secrets) cần được mã hóa an toàn trên hạ tầ
 ### Bước 1: Khởi tạo các biến Secrets trên Cloudflare
 Chạy các lệnh sau tại thư mục `repo/` để thiết lập:
 
-1. **JWT_SECRET** (Khóa dùng để ký mã hóa Cookie Session. Yêu cầu tối thiểu 32 ký tự ngẫu nhiên):
+1. **SESSION_SECRET** (Khóa dùng để ký mã hóa Cookie Session. Yêu cầu tối thiểu 32 ký tự ngẫu nhiên):
    *Bạn có thể tạo nhanh chuỗi ngẫu nhiên bằng lệnh:*
    ```bash
    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
    ```
    *Sau đó nạp vào Cloudflare:*
    ```bash
-   npx wrangler secret put JWT_SECRET
+   npx wrangler secret put SESSION_SECRET
    ```
 
 2. **Tài khoản quản trị viên (Admin) ban đầu:**
@@ -105,6 +105,19 @@ Chạy các lệnh sau tại thư mục `repo/` để thiết lập:
    # Mật khẩu tài khoản Admin khởi tạo (Mặc định nếu bỏ qua: admin123)
    npx wrangler secret put INITIAL_ADMIN_PASSWORD
    ```
+
+3. **Cấu hình sao lưu GitHub (GitHub Backup Secrets):**
+   Nạp các biến cấu hình để kết nối và tự động đẩy dữ liệu sao lưu lên kho chứa GitHub bảo mật:
+   ```bash
+   npx wrangler secret put GITHUB_BACKUP_TOKEN
+   npx wrangler secret put GITHUB_BACKUP_OWNER
+   npx wrangler secret put GITHUB_BACKUP_REPO
+   npx wrangler secret put GITHUB_BACKUP_BRANCH
+   ```
+
+> [!NOTE]
+> **Đối với Cloudflare Pages:** Nếu bạn triển khai ứng dụng dưới dạng Cloudflare Pages và đặt tên dự án Pages khác với giá trị `name` mặc định trong `wrangler.jsonc` (ví dụ: đặt là `reddcom-crm`), bạn phải sử dụng lệnh `pages secret put` và thêm cờ `--project-name` như sau:
+> `npx wrangler pages secret put SESSION_SECRET --project-name <tên-dự-án-pages>`
 
 ### ⚠️ Lưu ý quan trọng về cơ chế Tự động Khởi tạo (Auto-Seed)
 - **Cơ chế hoạt động:** Hệ thống chỉ thực hiện quét và tự động tạo tài khoản Admin từ biến Secrets **khi bảng người dùng (`users`) trong Database trống hoàn toàn** (ngay sau khi bạn triển khai và truy cập hệ thống lần đầu).
