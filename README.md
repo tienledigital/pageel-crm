@@ -15,7 +15,7 @@
 
   <br />
 
-  <a href="README.md">🇺🇸 <b>English</b></a> | <a href="docs/locales/vi-VN.md">🇻🇳 <b>Tiếng Việt</b></a>
+  <a href="README.md">🇺🇸 <b>English</b></a> | <a href="docs/vi/README.md">🇻🇳 <b>Tiếng Việt</b></a>
 </div>
 
 <br/>
@@ -25,6 +25,7 @@
 - [Key Features](#key-features)
 - [Tech Stack](#tech-stack)
 - [Quick Start](#quick-start)
+- [Deployment](#deployment)
 - [Database Architecture](#database-architecture)
 - [License](#license)
 
@@ -92,6 +93,12 @@
    ```bash
    npx vitest run
    ```
+
+---
+
+## 🚀 Deployment
+
+For detailed production deployment instructions using Cloudflare Workers, D1, KV, and setting up secure admin credentials, please refer to the [Production Deployment Guide](docs/en/guides/deployment-guide.md).
 
 ---
 

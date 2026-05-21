@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { generateS1a, exportYearlyS1aZip, type ExportPayment } from '../src/lib/reports/excelGenerator';
 import { GET as exportS1aHandler } from '../src/pages/api/export/s1a';
+import { GET as previewS1aHandler } from '../src/pages/api/export/s1a-preview';
 import { getDb } from '../src/lib/db';
 import { customers, invoices, payments } from '../src/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
@@ -303,5 +304,119 @@ describe('Export S1a API Endpoint - GET /api/export/s1a', () => {
     const zip = await JSZip.loadAsync(buffer);
     expect(zip.file('S1a-HKD_Thang_01_2026.xlsx')).not.toBeNull();
     expect(zip.file('S1a-HKD_Thang_12_2026.xlsx')).not.toBeNull();
+  });
+
+  it('should exclude payments without customer (anonymous payments)', async () => {
+    // Insert a payment with customerId = null
+    await db.insert(payments).values({
+      id: 'PAY-ANON',
+      customerId: null,
+      amount: 999999,
+      type: 'in',
+      transactionId: 'TX-ANON',
+      paidAt: new Date('2026-05-18T12:00:00Z').getTime(),
+    });
+
+    const request = new Request('http://localhost/api/export/s1a?year=2026&month=5');
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' }
+      },
+    };
+
+    const response = await exportS1aHandler(context);
+    expect(response.status).toBe(200);
+
+    const buffer = await response.arrayBuffer();
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const worksheet = workbook.worksheets[0];
+
+    // The payment of 200000 (PAY-1) should be in row 12
+    const row12 = worksheet.getRow(12);
+    expect(row12.getCell(4).value).toBe(200000);
+
+    // Row 13 should be the total row because PAY-ANON (without customer) is excluded
+    const row13 = worksheet.getRow(13);
+    expect(row13.getCell(3).value).toBe('Tổng cộng:');
+    expect((row13.getCell(4).value as any).result).toBe(200000);
+  });
+});
+
+describe('Preview S1a API Endpoint - GET /api/export/s1a-preview', () => {
+  let db: any;
+
+  beforeEach(async () => {
+    process.env.NODE_ENV = 'test';
+    db = getDb();
+    migrate(db, { migrationsFolder: path.join(__dirname, '../drizzle') });
+
+    // Clean up
+    await db.delete(payments);
+    await db.delete(invoices);
+    await db.delete(customers);
+
+    // Seed mock data
+    await db.insert(customers).values({
+      id: '1005',
+      fullName: 'Nguyễn Văn A',
+      phone: '0987654321',
+    });
+
+    await db.insert(payments).values({
+      id: 'PAY-1',
+      customerId: '1005',
+      amount: 200000,
+      type: 'in',
+      transactionId: 'TX100',
+      paidAt: new Date('2026-05-15T12:00:00Z').getTime(),
+    });
+
+    // Anonymous payment (should be excluded)
+    await db.insert(payments).values({
+      id: 'PAY-ANON',
+      customerId: null,
+      amount: 999000,
+      type: 'in',
+      transactionId: 'TX-ANON',
+      paidAt: new Date('2026-05-16T12:00:00Z').getTime(),
+    });
+  });
+
+  it('should return 401 Unauthorized if user is not authenticated', async () => {
+    const request = new Request('http://localhost/api/export/s1a-preview?year=2026&month=5');
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {},
+    };
+
+    const response = await previewS1aHandler(context);
+    expect(response.status).toBe(401);
+  });
+
+  it('should return JSON preview excluding anonymous payments', async () => {
+    const request = new Request('http://localhost/api/export/s1a-preview?year=2026&month=5');
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' }
+      },
+    };
+
+    const response = await previewS1aHandler(context);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('application/json');
+
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.totalCount).toBe(1);
+    expect(data.totalAmount).toBe(200000);
+    expect(data.payments.length).toBe(1);
+    expect(data.payments[0].id).toBe('PAY-1');
+    expect(data.payments[0].customer.fullName).toBe('Nguyễn Văn A');
   });
 });

@@ -15,7 +15,7 @@
 
   <br />
 
-  <a href="../../README.md">🇺🇸 <b>English</b></a> | <a href="vi-VN.md">🇻🇳 <b>Tiếng Việt</b></a>
+  <a href="../../README.md">🇺🇸 <b>English</b></a> | <a href="README.md">🇻🇳 <b>Tiếng Việt</b></a>
 </div>
 
 <br/>
@@ -25,6 +25,7 @@
 - [Tính năng nổi bật](#tính-năng-nổi-bật)
 - [Công nghệ sử dụng](#công-nghệ-sử-dụng)
 - [Khởi chạy nhanh](#khởi-chạy-nhanh)
+- [Triển khai hệ thống](#triển-khai-hệ-thống)
 - [Kiến trúc Cơ sở Dữ liệu](#kiến-trúc-cơ-sở-dữ-liệu)
 - [Giấy phép](#giấy-phép)
 
@@ -92,6 +93,12 @@
    ```bash
    npx vitest run
    ```
+
+---
+
+## 🚀 Triển khai hệ thống (Deployment)
+
+Để xem hướng dẫn chi tiết từng bước triển khai ứng dụng lên Cloudflare Workers (kèm D1 Database, KV Namespace) và thiết lập tài khoản Admin ban đầu bảo mật, vui lòng tham khảo [Hướng dẫn Triển khai Hệ thống](guides/deployment-guide.md).
 
 ---
 

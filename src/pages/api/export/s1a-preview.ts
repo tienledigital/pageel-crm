@@ -3,8 +3,6 @@ import { getDb } from '@/lib/db';
 import { payments, customers, invoices } from '@/lib/db/schema';
 import { eq, and, gte, lte, isNotNull } from 'drizzle-orm';
 import { env } from 'cloudflare:workers';
-import JSZip from 'jszip';
-import { generateS1a, exportYearlyS1aZip, type ExportPayment } from '@/lib/reports/excelGenerator';
 
 export const GET = async (context: APIContext): Promise<Response> => {
   try {
@@ -45,30 +43,7 @@ export const GET = async (context: APIContext): Promise<Response> => {
       });
     }
 
-    // 3. Load template file
-    let templateBuffer: ArrayBuffer;
-    try {
-      const templateSubpath = '/templates/S1a-HKD-excel.xlsx';
-      if (process.env.NODE_ENV === 'test') {
-        const fs = await import('fs');
-        const path = await import('path');
-        const filePath = path.join(process.cwd(), 'public/templates/S1a-HKD-excel.xlsx');
-        const buffer = fs.readFileSync(filePath);
-        templateBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
-      } else {
-        const templateUrl = new URL(templateSubpath, context.url);
-        const res = await fetch(templateUrl);
-        if (!res.ok) throw new Error(`Template not found at ${templateUrl}`);
-        templateBuffer = await res.arrayBuffer();
-      }
-    } catch (e: any) {
-      return new Response(JSON.stringify({ error: 'Failed to load template', details: e.message }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    // 4. Fetch payments from DB
+    // 3. Fetch payments from DB
     const db = getDb(env);
     let startTime = 0;
     let endTime = 0;
@@ -120,10 +95,10 @@ export const GET = async (context: APIContext): Promise<Response> => {
       )
       .orderBy(payments.paidAt);
 
-    const exportPayments: ExportPayment[] = rows.map((row: any) => ({
+    const previewPayments = rows.map((row: any) => ({
+      id: row.payment.id,
       paidAt: row.payment.paidAt,
       amount: row.payment.amount,
-      type: row.payment.type,
       content: row.payment.content || '',
       customer: row.customer ? {
         id: row.customer.id,
@@ -136,56 +111,30 @@ export const GET = async (context: APIContext): Promise<Response> => {
       } : null,
     }));
 
-    // 5. Generate and return response
-    const headers = new Headers();
+    const totalAmount = previewPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
 
-    if (month !== null) {
-      const monthStr = month.toString().padStart(2, '0');
-      const filename = `S1a-HKD_Thang_${monthStr}_${year}.xlsx`;
-      const xlsxBuffer = await generateS1a(templateBuffer, exportPayments);
-      
-      headers.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-      headers.set('Content-Disposition', `attachment; filename="${filename}"`);
-      return new Response(xlsxBuffer, { status: 200, headers });
-    }
-
-    if (quarter !== null) {
-      const quarterStr = quarter.toString().padStart(2, '0');
-      const filename = `S1a-HKD_Quy_${quarterStr}_${year}.zip`;
-      
-      const zip = new JSZip();
-      const startMonth = (quarter - 1) * 3 + 1;
-      for (let m = startMonth; m < startMonth + 3; m++) {
-        const monthPayments = exportPayments.filter(p => {
-          // Compare using Date UTC month (0-indexed)
-          const date = new Date(p.paidAt);
-          return date.getUTCMonth() + 1 === m;
-        });
-
-        const xlsxBuffer = await generateS1a(templateBuffer, monthPayments);
-        const mStr = m.toString().padStart(2, '0');
-        zip.file(`S1a-HKD_Thang_${mStr}_${year}.xlsx`, xlsxBuffer);
+    return new Response(
+      JSON.stringify({
+        success: true,
+        year,
+        month,
+        quarter,
+        totalCount: previewPayments.length,
+        totalAmount,
+        payments: previewPayments,
+      }),
+      {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
       }
-
-      const zipArrayBuffer = await zip.generateAsync({ type: 'arraybuffer' });
-      headers.set('Content-Type', 'application/zip');
-      headers.set('Content-Disposition', `attachment; filename="${filename}"`);
-      return new Response(zipArrayBuffer, { status: 200, headers });
-    }
-
-    // Yearly export (All 12 months in ZIP)
-    const filename = `S1a-HKD_Nam_${year}.zip`;
-    const zipBlob = await exportYearlyS1aZip(exportPayments, year, templateBuffer);
-    const zipArrayBuffer = await zipBlob.arrayBuffer();
-
-    headers.set('Content-Type', 'application/zip');
-    headers.set('Content-Disposition', `attachment; filename="${filename}"`);
-    return new Response(zipArrayBuffer, { status: 200, headers });
-
+    );
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: 'Internal Server Error', details: err.message }), {
-      status: 500,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ error: 'Internal Server Error', details: err.message }),
+      {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
   }
 };

@@ -1,4 +1,3 @@
-import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 
 export interface ExportPayment {
@@ -47,7 +46,33 @@ const getPaymentDescription = (payment: ExportPayment): string => {
   return payment.content ? removeAccents(payment.content) : 'KHACH VANG LAI - THANH TOAN';
 };
 
+/**
+ * Lazily load ExcelJS with process.umask polyfill.
+ * ExcelJS calls process.umask() during module initialization which fails
+ * in Cloudflare Workers / unenv runtime. By using dynamic import, the module
+ * is only loaded when actually needed (at request time), not during SSR route
+ * resolution. The polyfill is applied right before import.
+ */
+const loadExcelJS = async () => {
+  // Polyfill process.umask before ExcelJS module initialization
+  if (typeof process !== 'undefined') {
+    const origUmask = process.umask;
+    if (!origUmask || typeof origUmask !== 'function') {
+      (process as any).umask = () => 0o022;
+    } else {
+      try {
+        origUmask();
+      } catch {
+        (process as any).umask = () => 0o022;
+      }
+    }
+  }
+  const ExcelJS = await import('exceljs');
+  return ExcelJS.default;
+};
+
 export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportPayment[]): Promise<ArrayBuffer> => {
+  const ExcelJS = await loadExcelJS();
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(templateBuffer);
   
