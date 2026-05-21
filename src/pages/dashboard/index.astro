@@ -2,7 +2,8 @@
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { users } from '@/lib/db/schema';
+import { users, syncLogs } from '@/lib/db/schema';
+import { desc } from 'drizzle-orm';
 
 // Initialize database client to query analytics metrics
 const db = getDb(env);
@@ -10,6 +11,22 @@ const db = getDb(env);
 // Count users to display as an overview metric
 const userCountResult = await db.select().from(users);
 const totalUsers = userCountResult.length;
+
+// Fetch the 5 most recent sync/backup logs
+const recentLogs = await db
+  .select()
+  .from(syncLogs)
+  .orderBy(desc(syncLogs.runAt))
+  .limit(5);
+
+// Find the last backup log specifically
+const lastBackup = recentLogs.find((log: any) => log.action === 'github_backup');
+const lastBackupStatusText = lastBackup 
+  ? (lastBackup.status === 'success' ? 'Thành công' : 'Thất bại') 
+  : 'Chưa thực hiện';
+const lastBackupStatusClass = lastBackup 
+  ? (lastBackup.status === 'success' ? 'text-success' : 'text-danger') 
+  : '';
 ---
 
 <DashboardLayout title="System Overview">
@@ -161,6 +178,156 @@ const totalUsers = userCountResult.length;
       background-color: rgba(16, 185, 129, 0.1);
       color: var(--success);
     }
+
+    .badge-danger {
+      background-color: rgba(239, 68, 68, 0.1);
+      color: var(--danger, #ef4444);
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      border-radius: 10px;
+      font-weight: 600;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: none;
+    }
+
+    .btn-primary {
+      background-color: var(--primary);
+      color: #fff;
+    }
+    .btn-primary:hover {
+      background-color: var(--primary-hover, #4f46e5);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background-color: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+    }
+    .btn-secondary:hover {
+      background-color: rgba(255, 255, 255, 0.1);
+      transform: translateY(-1px);
+    }
+
+    .btn-icon {
+      width: 18px;
+      height: 18px;
+    }
+
+    /* Controls Grid */
+    .controls-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 2rem;
+    }
+
+    @media (max-width: 768px) {
+      .controls-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .control-section {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .control-section h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      margin: 0;
+    }
+
+    .section-desc {
+      font-size: 0.8125rem;
+      color: var(--text-secondary);
+      line-height: 1.4;
+      margin: 0;
+    }
+
+    /* Forms */
+    .export-form {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+      gap: 0.75rem;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.375rem;
+    }
+
+    .form-group label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+    }
+
+    .form-group input, .form-group select {
+      background-color: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.5rem 0.75rem;
+      color: #fff;
+      font-size: 0.875rem;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+
+    .form-group input:focus, .form-group select:focus {
+      border-color: var(--primary);
+    }
+
+    /* Backup Status */
+    .backup-status-banner {
+      background-color: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.75rem 1rem;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    .text-success {
+      color: var(--success);
+    }
+
+    .text-danger {
+      color: var(--danger, #ef4444);
+    }
+    
+    .text-primary {
+      color: var(--primary);
+    }
+
+    /* Rotation animation for sync spinner */
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    .spinning {
+      animation: spin 1s linear infinite;
+    }
   </style>
 
   <div class="metrics-grid">
@@ -202,64 +369,275 @@ const totalUsers = userCountResult.length;
   </div>
 
   <div class="dashboard-panels">
-    <!-- Panel: Recent Customer Synced -->
-    <div class="panel">
-      <div class="panel-header">
-        <h2 class="panel-title">Recent Synchronizations</h2>
+    <!-- Left Column -->
+    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+      <!-- Panel: Recent Customer Synced -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Recent Synchronizations</h2>
+        </div>
+        <div class="data-table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Customer</th>
+                <th>Status</th>
+                <th>Source</th>
+                <th>Timestamp</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Nguyen Van A</td>
+                <td><span class="badge badge-success">Completed</span></td>
+                <td>Sepay Webhook</td>
+                <td>2 mins ago</td>
+              </tr>
+              <tr>
+                <td>Tran Thi B</td>
+                <td><span class="badge badge-success">Completed</span></td>
+                <td>Sepay Webhook</td>
+                <td>15 mins ago</td>
+              </tr>
+              <tr>
+                <td>Le Van C</td>
+                <td><span class="badge badge-success">Completed</span></td>
+                <td>Manual Sync</td>
+                <td>1 hour ago</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
-      <div class="data-table-container">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Customer</th>
-              <th>Status</th>
-              <th>Source</th>
-              <th>Timestamp</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Nguyen Van A</td>
-              <td><span class="badge badge-success">Completed</span></td>
-              <td>Sepay Webhook</td>
-              <td>2 mins ago</td>
-            </tr>
-            <tr>
-              <td>Tran Thi B</td>
-              <td><span class="badge badge-success">Completed</span></td>
-              <td>Sepay Webhook</td>
-              <td>15 mins ago</td>
-            </tr>
-            <tr>
-              <td>Le Van C</td>
-              <td><span class="badge badge-success">Completed</span></td>
-              <td>Manual Sync</td>
-              <td>1 hour ago</td>
-            </tr>
-          </tbody>
-        </table>
+
+      <!-- Panel: Reports & Backup Control -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Reports & Backup Controls</h2>
+        </div>
+        
+        <div class="controls-grid">
+          <!-- Section 1: Excel S1a-HKD Export -->
+          <div class="control-section">
+            <h3>Báo cáo S1a-HKD (Doanh thu)</h3>
+            <p class="section-desc">Xuất báo cáo thuế S1a-HKD dạng Excel hoặc ZIP nén theo tháng, quý hoặc năm.</p>
+            
+            <form id="export-form" class="export-form">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="export-year">Năm</label>
+                  <input type="number" id="export-year" name="year" value={new Date().getFullYear()} min="2020" max="2100" required />
+                </div>
+                <div class="form-group">
+                  <label for="export-type">Loại xuất</label>
+                  <select id="export-type" name="type">
+                    <option value="month">Theo tháng</option>
+                    <option value="quarter">Theo quý</option>
+                    <option value="year">Cả năm (ZIP)</option>
+                  </select>
+                </div>
+                <div class="form-group" id="group-month">
+                  <label for="export-month">Tháng</label>
+                  <select id="export-month" name="month">
+                    {Array.from({ length: 12 }, (_, i) => (
+                      <option value={i + 1} selected={i === new Date().getMonth()}>Tháng {i + 1}</option>
+                    ))}
+                  </select>
+                </div>
+                <div class="form-group" id="group-quarter" style="display: none;">
+                  <label for="export-quarter">Quý</label>
+                  <select id="export-quarter" name="quarter">
+                    <option value="1">Quý 1</option>
+                    <option value="2">Quý 2</option>
+                    <option value="3">Quý 3</option>
+                    <option value="4">Quý 4</option>
+                  </select>
+                </div>
+              </div>
+              <button type="submit" class="btn btn-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="btn-icon">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                </svg>
+                Tải xuống Báo cáo
+              </button>
+            </form>
+          </div>
+
+          <!-- Section 2: Git Backup Trigger -->
+          <div class="control-section">
+            <h3>Sao lưu GitHub</h3>
+            <p class="section-desc">Sao lưu toàn bộ cơ sở dữ liệu CRM (Customers, Invoices, Payments) lên GitHub Backup Repository.</p>
+            
+            <div class="backup-status-banner">
+              <span>Trạng thái gần nhất: </span>
+              <strong id="backup-status-text" class={lastBackupStatusClass}>{lastBackupStatusText}</strong>
+            </div>
+            
+            <button id="btn-backup-now" class="btn btn-secondary">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="btn-icon" id="backup-btn-icon">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+              <span>Sao lưu ngay lập tức</span>
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- Panel: System Info -->
-    <div class="panel">
-      <div class="panel-header">
-        <h2 class="panel-title">System Status</h2>
+    <!-- Right Column -->
+    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+      <!-- Panel: System Info -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">System Status</h2>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+          <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
+            <span style="color: var(--text-secondary);">Database</span>
+            <span style="font-weight: 600; color: var(--success);">Cloudflare D1 (Online)</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
+            <span style="color: var(--text-secondary);">Storage</span>
+            <span style="font-weight: 600; color: var(--success);">Cloudflare KV (Online)</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
+            <span style="color: var(--text-secondary);">Runtime Environment</span>
+            <span style="font-weight: 600; color: var(--primary);">Cloudflare Pages</span>
+          </div>
+        </div>
       </div>
-      <div style="display: flex; flex-direction: column; gap: 1rem;">
-        <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
-          <span style="color: var(--text-secondary);">Database</span>
-          <span style="font-weight: 600; color: var(--success);">Cloudflare D1 (Online)</span>
+
+      <!-- Panel: Recent Backup Logs -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Recent Backup Logs</h2>
         </div>
-        <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
-          <span style="color: var(--text-secondary);">Storage</span>
-          <span style="font-weight: 600; color: var(--success);">Cloudflare KV (Online)</span>
-        </div>
-        <div style="display: flex; justify-content: space-between; font-size: 0.875rem;">
-          <span style="color: var(--text-secondary);">Runtime Environment</span>
-          <span style="font-weight: 600; color: var(--primary);">Cloudflare Pages</span>
+        <div class="data-table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Status</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recentLogs.length === 0 ? (
+                <tr>
+                  <td colspan="3" style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">No logs found</td>
+                </tr>
+              ) : (
+                recentLogs.map((log: any) => (
+                  <tr>
+                    <td style="white-space: nowrap;">
+                      {new Date(log.runAt || Date.now()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                    </td>
+                    <td>
+                      <span class={`badge ${log.status === 'success' ? 'badge-success' : 'badge-danger'}`}>
+                        {log.status === 'success' ? 'success' : 'failed'}
+                      </span>
+                    </td>
+                    <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title={log.message || ''}>
+                      {log.message || 'N/A'}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
   </div>
 </DashboardLayout>
+
+<script>
+  // Handle toggle export inputs based on selection type
+  const exportType = document.getElementById('export-type') as HTMLSelectElement;
+  const groupMonth = document.getElementById('group-month');
+  const groupQuarter = document.getElementById('group-quarter');
+
+  if (exportType && groupMonth && groupQuarter) {
+    exportType.addEventListener('change', (e) => {
+      const val = (e.target as HTMLSelectElement).value;
+      if (val === 'month') {
+        groupMonth.style.display = 'flex';
+        groupQuarter.style.display = 'none';
+      } else if (val === 'quarter') {
+        groupMonth.style.display = 'none';
+        groupQuarter.style.display = 'flex';
+      } else {
+        groupMonth.style.display = 'none';
+        groupQuarter.style.display = 'none';
+      }
+    });
+  }
+
+  // Handle export form submission
+  const exportForm = document.getElementById('export-form') as HTMLFormElement;
+  if (exportForm) {
+    exportForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const year = (document.getElementById('export-year') as HTMLInputElement).value;
+      const type = (document.getElementById('export-type') as HTMLSelectElement).value;
+      
+      let url = `/api/export/s1a?year=${year}`;
+      if (type === 'month') {
+        const month = (document.getElementById('export-month') as HTMLSelectElement).value;
+        url += `&month=${month}`;
+      } else if (type === 'quarter') {
+        const quarter = (document.getElementById('export-quarter') as HTMLSelectElement).value;
+        url += `&quarter=${quarter}`;
+      }
+
+      // Trigger file download
+      window.location.href = url;
+    });
+  }
+
+  // Handle backup manual trigger
+  const btnBackup = document.getElementById('btn-backup-now');
+  const iconBackup = document.getElementById('backup-btn-icon');
+  const statusText = document.getElementById('backup-status-text');
+
+  if (btnBackup) {
+    btnBackup.addEventListener('click', async () => {
+      if (btnBackup.hasAttribute('disabled')) return;
+
+      btnBackup.setAttribute('disabled', 'true');
+      if (iconBackup) iconBackup.classList.add('spinning');
+      if (statusText) {
+        statusText.textContent = 'Đang sao lưu...';
+        statusText.className = 'text-primary';
+      }
+
+      try {
+        const res = await fetch('/api/backup', {
+          method: 'POST',
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          if (statusText) {
+            statusText.textContent = 'Thành công';
+            statusText.className = 'text-success';
+          }
+          alert(`Sao lưu thành công! Commit SHA: ${data.commitSha}`);
+          // Reload page to show new log in table
+          window.location.reload();
+        } else {
+          throw new Error(data.error || 'Backup failed');
+        }
+      } catch (err: any) {
+        if (statusText) {
+          statusText.textContent = 'Thất bại';
+          statusText.className = 'text-danger';
+        }
+        alert(`Lỗi sao lưu: ${err.message}`);
+      } finally {
+        btnBackup.removeAttribute('disabled');
+        if (iconBackup) iconBackup.classList.remove('spinning');
+      }
+    });
+  }
+</script>
