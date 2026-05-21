@@ -70,18 +70,36 @@ export async function POST(context: any) {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error: any) {
+    const safeErrorMessage = sanitizeError(error);
+    console.error('[Backup Error]:', safeErrorMessage);
+
     // 5. Log failure in sync_logs
     await db.insert(syncLogs).values({
       id: crypto.randomUUID(),
       action: 'github_backup',
       status: 'failed',
-      message: error.message || 'Unknown backup error',
+      message: safeErrorMessage,
       runAt: Date.now(),
     });
 
-    return new Response(JSON.stringify({ success: false, error: error.message || 'Unknown backup error' }), {
+    return new Response(JSON.stringify({ success: false, error: safeErrorMessage }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
   }
+}
+
+function sanitizeError(error: any): string {
+  if (!error) return 'Unknown error';
+  let message = error.message || String(error);
+  
+  // Redact GitHub Classic PAT (ghp_...) and Fine-grained PAT (github_pat_...)
+  message = message.replace(/ghp_[a-zA-Z0-9]{36}/g, 'ghp_***');
+  message = message.replace(/github_pat_[a-zA-Z0-9_]{82}/g, 'github_pat_***');
+  
+  // Redact potential Bearer / Basic tokens in URLs or error details
+  message = message.replace(/Authorization:\s*Bearer\s+[a-zA-Z0-9_.-]+/gi, 'Authorization: Bearer ***');
+  message = message.replace(/Authorization:\s*Basic\s+[a-zA-Z0-9_./+-]+/gi, 'Authorization: Basic ***');
+  
+  return message;
 }

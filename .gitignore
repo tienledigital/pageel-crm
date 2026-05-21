@@ -37,6 +37,10 @@ pnpm-debug.log*
 # Cloudflare Wrangler
 .wrangler/
 
-# TypeScript build info
-*.tsbuildinfo
+# Cloudflare Wrangler Local Secrets
+.dev.vars
+
+# Local testing and debugging scripts
+scripts/test-backup-manual.ts
+scripts/test-backup-manual.js
 
