@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.0] - Unreleased
+
+### Fixed
+- Fixed 500 Internal Server Error on production payments dashboard by applying missing database D1 migrations (`0002` and `0003`) containing the `category` column.
+- Hardened payments dashboard SSR logic with try-catch blocks for configuration rules JSON parsing, safe date parsing, and lowercase checks on customer/invoice IDs.
+
+
 ## [0.4.1] - 2026-05-21
 
 ### Fixed
