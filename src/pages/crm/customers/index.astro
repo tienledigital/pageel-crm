@@ -22,6 +22,9 @@ const customerList = await db
   .leftJoin(staff, eq(customers.assignedStaffId, staff.id))
   .orderBy(desc(customers.id));
 
+// Query all staff members for the dropdown
+const staffList = await db.select().from(staff).orderBy(staff.fullName);
+
 // Helper function to format service expiration date
 function formatExpiration(timestamp: number | null) {
   if (!timestamp) {
@@ -54,7 +57,7 @@ function formatExpiration(timestamp: number | null) {
     .title-section h1 {
       font-size: 1.75rem;
       font-weight: 700;
-      color: #fff;
+      color: var(--text-primary);
     }
 
     .title-section p {
@@ -111,13 +114,13 @@ function formatExpiration(timestamp: number | null) {
 
     .customer-name {
       font-weight: 600;
-      color: #fff;
+      color: var(--text-primary);
     }
 
     .customer-id {
       font-size: 0.75rem;
-      color: var(--text-muted);
-      background-color: var(--bg-main);
+      color: var(--text-secondary);
+      background-color: var(--bg-hover);
       padding: 0.15rem 0.4rem;
       border-radius: 4px;
       width: fit-content;
@@ -158,25 +161,254 @@ function formatExpiration(timestamp: number | null) {
       align-items: center;
       gap: 0.5rem;
       padding: 0.5rem 0.85rem;
-      background-color: var(--bg-hover);
+      background-color: var(--bg-card);
       border: 1px solid var(--border-color);
       border-radius: 8px;
       font-size: 0.75rem;
       font-weight: 600;
-      color: #fff;
+      color: var(--text-primary);
       cursor: pointer;
       transition: all 0.2s ease;
+      text-decoration: none;
     }
 
     .btn-action:hover {
       background-color: var(--primary);
       border-color: var(--primary);
+      color: #fff;
       box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
     }
 
     .btn-action svg {
       width: 14px;
       height: 14px;
+    }
+
+    /* Mobile Responsive Card Grid */
+    .mobile-card-grid {
+      display: none;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+
+    .mobile-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      position: relative;
+    }
+
+    .mobile-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.75rem;
+    }
+
+    .mobile-card-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+      color: var(--text-primary);
+    }
+
+    .mobile-card-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .mobile-card-label {
+      font-size: 0.75rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .mobile-card-value {
+      font-weight: 500;
+    }
+
+    .mobile-card-footer {
+      border-top: 1px solid var(--border-color);
+      padding-top: 0.75rem;
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    @media (max-width: 768px) {
+      .table-responsive {
+        display: none;
+      }
+      .mobile-card-grid {
+        display: grid;
+      }
+      .card-container {
+        padding: 0.75rem;
+      }
+    }
+
+    /* Modal Styles */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-content {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 600px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      animation: scale-up 0.2s ease-out;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    @keyframes scale-up {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.75rem;
+    }
+
+    .modal-header h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .modal-close:hover {
+      color: var(--text-primary);
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+    }
+
+    @media (max-width: 600px) {
+      .form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    .form-group.full-width {
+      grid-column: span 2;
+    }
+
+    @media (max-width: 600px) {
+      .form-group.full-width {
+        grid-column: span 1;
+      }
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+      letter-spacing: 0.5px;
+    }
+
+    .form-select, .form-input, .form-textarea {
+      width: 100%;
+      background-color: var(--bg-hover);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: var(--text-primary);
+      padding: 0.65rem 0.85rem;
+      font-size: 0.875rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-textarea {
+      resize: vertical;
+      min-height: 80px;
+    }
+
+    .form-select:focus, .form-input:focus, .form-textarea:focus {
+      border-color: var(--primary);
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+
+    .btn-cancel {
+      background-color: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-cancel:hover {
+      background-color: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .btn-save {
+      background-color: var(--primary);
+      border: 1px solid var(--primary);
+      color: #fff;
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-save:hover {
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.2);
     }
   </style>
 
@@ -185,10 +417,19 @@ function formatExpiration(timestamp: number | null) {
       <h1>Customers List</h1>
       <p>Manage customer subscription status, view profiles, and issue payment QR codes.</p>
     </div>
+    <div class="action-section">
+      <button id="btnNewCustomer" class="btn-save" style="display: inline-flex; align-items: center; gap: 0.5rem;">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+        </svg>
+        <span>Add Customer</span>
+      </button>
+    </div>
   </div>
 
   <div class="card-container">
-    <div class="table-responsive">
+    <!-- Desktop Table View -->
+    <div class="table-responsive table-scroll-container">
       <table class="custom-table">
         <thead>
           <tr>
@@ -214,7 +455,7 @@ function formatExpiration(timestamp: number | null) {
                 <td>
                   <div style="display: flex; flex-direction: column; gap: 0.15rem;">
                     <span>{customer.phone}</span>
-                    <span style="font-size: 0.75rem; color: var(--text-muted);">{customer.email || 'No email'}</span>
+                    <span style="font-size: 0.75rem; color: var(--text-secondary);">{customer.email || 'No email'}</span>
                   </div>
                 </td>
                 <td>
@@ -240,5 +481,200 @@ function formatExpiration(timestamp: number | null) {
         </tbody>
       </table>
     </div>
+
+    <!-- Mobile Card View -->
+    <div class="mobile-card-grid">
+      {customerList.map((customer: any) => {
+        const serviceStatus = formatExpiration(customer.expiredAt);
+        return (
+          <div class="mobile-card">
+            <div class="mobile-card-header">
+              <div class="customer-info">
+                <span class="customer-name">{customer.fullName}</span>
+                <span class="customer-id">ID: {customer.id}</span>
+              </div>
+              <span class={`badge ${serviceStatus.class}`}>{serviceStatus.text}</span>
+            </div>
+            
+            <div class="mobile-card-body">
+              <div class="mobile-card-row">
+                <span class="mobile-card-label">Phone</span>
+                <span class="mobile-card-value">{customer.phone}</span>
+              </div>
+              <div class="mobile-card-row">
+                <span class="mobile-card-label">Email</span>
+                <span class="mobile-card-value" style="font-size: 0.8125rem;">{customer.email || 'No email'}</span>
+              </div>
+              <div class="mobile-card-row">
+                <span class="mobile-card-label">CCCD / ID Card</span>
+                <span class="mobile-card-value" style="font-family: monospace;">{customer.idCard || 'N/A'}</span>
+              </div>
+              <div class="mobile-card-row">
+                <span class="mobile-card-label">Assigned Staff</span>
+                <span class="mobile-card-value" style="color: var(--text-secondary);">{customer.staffName || 'Unassigned'}</span>
+              </div>
+            </div>
+
+            <div class="mobile-card-footer">
+              <a href={`/crm/qr-tool?customerId=${customer.id}`} class="btn-action" style="width: 100%; justify-content: center;">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" />
+                </svg>
+                QR Tool
+              </a>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   </div>
+
+  <!-- Add Customer Modal -->
+  <div class="modal-backdrop" id="newCustomerModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Add New Customer</h3>
+        <button class="modal-close" id="modalCloseBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="newCustomerForm">
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="cust_id">Customer ID (Optional)</label>
+              <input type="text" id="cust_id" class="form-input" placeholder="e.g. AG1001 or blank for UUID" />
+            </div>
+            
+            <div class="form-group">
+              <label for="cust_fullName">Full Name *</label>
+              <input type="text" id="cust_fullName" class="form-input" required placeholder="e.g. John Doe" />
+            </div>
+
+            <div class="form-group">
+              <label for="cust_phone">Phone Number *</label>
+              <input type="tel" id="cust_phone" class="form-input" required placeholder="e.g. 0901234567" />
+            </div>
+
+            <div class="form-group">
+              <label for="cust_email">Email</label>
+              <input type="email" id="cust_email" class="form-input" placeholder="e.g. john@example.com" />
+            </div>
+
+            <div class="form-group">
+              <label for="cust_idCard">CCCD / ID Card</label>
+              <input type="text" id="cust_idCard" class="form-input" placeholder="e.g. 037123456789" />
+            </div>
+
+            <div class="form-group">
+              <label for="cust_taxCode">Tax Code</label>
+              <input type="text" id="cust_taxCode" class="form-input" placeholder="e.g. 8123456789" />
+            </div>
+
+            <div class="form-group">
+              <label for="cust_address">Address</label>
+              <input type="text" id="cust_address" class="form-input" placeholder="e.g. 123 Main St" />
+            </div>
+
+            <div class="form-group">
+              <label for="cust_expiredAt">Service Expiration</label>
+              <input type="date" id="cust_expiredAt" class="form-input" />
+            </div>
+
+            <div class="form-group full-width">
+              <label for="cust_assignedStaffId">Assigned Staff</label>
+              <select id="cust_assignedStaffId" class="form-select">
+                <option value="">-- Select Staff Member --</option>
+                {staffList.map((st: any) => (
+                  <option value={st.id}>{st.fullName}</option>
+                ))}
+              </select>
+            </div>
+
+            <div class="form-group full-width">
+              <label for="cust_notes">Notes</label>
+              <textarea id="cust_notes" class="form-textarea" placeholder="Add additional information..."></textarea>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn-cancel" id="modalCancelBtn">Cancel</button>
+            <button type="submit" class="btn-save">Create Customer</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script is:inline>
+    const modal = document.getElementById('newCustomerModal');
+    const openBtn = document.getElementById('btnNewCustomer');
+    const closeBtn = document.getElementById('modalCloseBtn');
+    const cancelBtn = document.getElementById('modalCancelBtn');
+    const form = document.getElementById('newCustomerForm');
+
+    // Open Modal
+    openBtn.addEventListener('click', () => {
+      form.reset();
+      modal.style.display = 'flex';
+    });
+
+    // Close Modal
+    function closeModal() {
+      modal.style.display = 'none';
+    }
+
+    closeBtn.addEventListener('click', closeModal);
+    cancelBtn.addEventListener('click', closeModal);
+    window.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+
+    // Submit Form
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const id = document.getElementById('cust_id').value;
+      const fullName = document.getElementById('cust_fullName').value;
+      const phone = document.getElementById('cust_phone').value;
+      const email = document.getElementById('cust_email').value;
+      const idCard = document.getElementById('cust_idCard').value;
+      const taxCode = document.getElementById('cust_taxCode').value;
+      const address = document.getElementById('cust_address').value;
+      
+      const expiredAtVal = document.getElementById('cust_expiredAt').value;
+      const expiredAt = expiredAtVal ? new Date(expiredAtVal).getTime() : null;
+
+      const assignedStaffId = document.getElementById('cust_assignedStaffId').value;
+      const notes = document.getElementById('cust_notes').value;
+
+      try {
+        const res = await fetch('/api/crm/customers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id,
+            fullName,
+            phone,
+            email,
+            idCard,
+            taxCode,
+            address,
+            expiredAt,
+            assignedStaffId,
+            notes
+          }),
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          closeModal();
+          window.location.reload();
+        } else {
+          alert('Error creating customer: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Network error, could not create customer.');
+      }
+    });
+  </script>
 </DashboardLayout>
