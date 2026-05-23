@@ -33,7 +33,7 @@ function formatExpiration(timestamp: number | null) {
 
   const now = Date.now();
   const date = new Date(timestamp);
-  const formatted = date.toLocaleDateString('en-GB'); // Formats as DD/MM/YYYY
+  const formatted = date.toLocaleDateString('en-GB', { timeZone: 'Asia/Ho_Chi_Minh' }); // Formats as DD/MM/YYYY
 
   if (timestamp < now) {
     return { text: `Expired (${formatted})`, class: 'badge-expired' };

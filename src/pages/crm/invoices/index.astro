@@ -88,6 +88,7 @@ function formatVND(amount: number) {
 function formatDate(timestamp: number | null) {
   if (!timestamp) return 'N/A';
   return new Date(timestamp).toLocaleDateString('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

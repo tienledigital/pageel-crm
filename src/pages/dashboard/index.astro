@@ -431,7 +431,7 @@ const recentPayments = await db
                       {p.bank || 'Sepay Webhook'}
                     </td>
                     <td style="white-space: nowrap;">
-                      {new Date(p.paidAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                      {new Date(p.paidAt).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
                     </td>
                   </tr>
                 ))
@@ -602,7 +602,7 @@ const recentPayments = await db
                 recentLogs.map((log: any) => (
                   <tr>
                     <td style="white-space: nowrap;">
-                      {new Date(log.runAt || Date.now()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                      {new Date(log.runAt || Date.now()).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                     </td>
                     <td>
                       <span class={`badge ${log.status === 'success' ? 'badge-success' : 'badge-danger'}`}>
@@ -707,7 +707,7 @@ const recentPayments = await db
             `;
           } else {
             previewTableBody.innerHTML = data.payments.map((p: any) => {
-              const dateStr = new Date(p.paidAt).toLocaleDateString('vi-VN');
+              const dateStr = new Date(p.paidAt).toLocaleDateString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
               const customerName = p.customer ? p.customer.fullName : 'Chưa gán';
               const customerId = p.customer ? p.customer.id : 'N/A';
               const amountStr = new Intl.NumberFormat('vi-VN').format(p.amount) + ' đ';

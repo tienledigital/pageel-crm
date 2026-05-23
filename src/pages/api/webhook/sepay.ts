@@ -33,10 +33,11 @@ export const POST: APIRoute = async (context) => {
       );
     }
 
-    // Parse transaction date safely
+    // Parse transaction date safely (SePay sends in YYYY-MM-DD HH:mm:ss Vietnam time UTC+7)
     let paidAtTimestamp = Date.now();
     if (body.transactionDate) {
-      const parsedDate = new Date(body.transactionDate);
+      const isoStr = body.transactionDate.trim().replace(' ', 'T') + '+07:00';
+      const parsedDate = new Date(isoStr);
       if (!isNaN(parsedDate.getTime())) {
         paidAtTimestamp = parsedDate.getTime();
       }

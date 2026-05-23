@@ -306,9 +306,9 @@ export async function applyRulesToExistingPayments(db: any, rules: any[]): Promi
     const isAnonymous = payment.customerId === 'CUST-ANONYMOUS';
     const hasNoInvoice = !payment.invoiceId;
     
-    // Only reclassify if the payment is anonymous OR if we are seeking to auto-match an invoice and it doesn't have one.
-    if (!isAnonymous && !hasNoInvoice && payment.category !== 'non_revenue') {
-      // Already fully reconciled
+    // Only reclassify if the payment is anonymous OR if we are seeking to auto-match an invoice and it doesn't have one OR if it lacks a tag.
+    if (!isAnonymous && !hasNoInvoice && payment.taxCategory && payment.category !== 'non_revenue') {
+      // Already fully reconciled and tagged
       continue;
     }
 
