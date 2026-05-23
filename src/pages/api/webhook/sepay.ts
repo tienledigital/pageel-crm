@@ -2,6 +2,8 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { reconcilePayment } from '@/lib/reconciliation';
+import { config } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
 
 export const POST: APIRoute = async (context) => {
   try {
@@ -19,6 +21,17 @@ export const POST: APIRoute = async (context) => {
 
     const body = await context.request.json();
     const db = getDb(env);
+
+    // Verify that the transaction is for our configured bank account
+    const defaultAccountConfig = await db.select().from(config).where(eq(config.key, 'defaultAccount')).limit(1);
+    const configuredAccount = defaultAccountConfig[0]?.value || '0000000000';
+    if (configuredAccount !== '0000000000' && body.accountNumber && body.accountNumber.trim() !== '' && body.accountNumber !== configuredAccount) {
+      console.log(`Skipping transaction ${body.code} for non-configured bank account ${body.accountNumber}`);
+      return new Response(
+        JSON.stringify({ success: true, message: 'Transaction skipped: other bank account' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Parse transaction date safely
     let paidAtTimestamp = Date.now();
@@ -39,6 +52,7 @@ export const POST: APIRoute = async (context) => {
       senderName: body.senderName || null,
       senderBank: body.senderBank || null,
       paidAt: paidAtTimestamp,
+      type: body.transferType || 'in',
     };
 
     try {

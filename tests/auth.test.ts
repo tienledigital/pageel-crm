@@ -67,8 +67,8 @@ describe('Authentication Engine - Stateless Signed Session Cookie', () => {
     const cookieValue = await createSessionCookie(payload, SESSION_SECRET);
     const parts = cookieValue.split('.');
     
-    // Đổi chữ ký một chút
-    const tamperedSignature = parts[1].replace(/./, 'f');
+    // reliably tamper with the first character of the signature
+    const tamperedSignature = parts[1].startsWith('a') ? 'b' + parts[1].slice(1) : 'a' + parts[1].slice(1);
     const tamperedCookie = `${parts[0]}.${tamperedSignature}`;
     
     const decoded = await verifySessionCookie(tamperedCookie, SESSION_SECRET);
@@ -79,12 +79,12 @@ describe('Authentication Engine - Stateless Signed Session Cookie', () => {
     const cookieValue = await createSessionCookie(payload, SESSION_SECRET);
     const parts = cookieValue.split('.');
     
-    // Giải mã, sửa payload và mã hóa lại
+    // Decode payload, tamper role field, and re-encode
     const rawPayload = JSON.parse(Buffer.from(parts[0], 'base64url').toString('utf-8'));
     rawPayload.role = 'malicious-admin';
     const tamperedPayloadBase64 = Buffer.from(JSON.stringify(rawPayload)).toString('base64url');
     
-    // Giữ nguyên chữ ký cũ nhưng ghép payload mới
+    // Keep original signature but attach tampered payload
     const tamperedCookie = `${tamperedPayloadBase64}.${parts[1]}`;
     
     const decoded = await verifySessionCookie(tamperedCookie, SESSION_SECRET);
@@ -101,7 +101,7 @@ describe('Authentication API Endpoints - Integration Tests', () => {
   };
 
   beforeAll(async () => {
-    // 1. Chạy migrations để khởi tạo các bảng trong in-memory SQLite DB
+    // 1. Run migrations to initialize tables in the in-memory SQLite DB
     const db = getDb();
     migrate(db, { migrationsFolder: path.join(__dirname, '../drizzle') });
 
@@ -218,7 +218,7 @@ describe('Authentication API Endpoints - Integration Tests', () => {
 
   it('should auto-seed admin user when database is empty', async () => {
     const db = getDb();
-    // Xóa tất cả users để giả lập DB trống
+    // Delete all users to simulate an empty DB
     await db.delete(users);
 
     const mockRequest = new Request('http://localhost/api/auth/login', {

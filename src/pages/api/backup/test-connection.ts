@@ -77,7 +77,7 @@ export async function POST(context: any) {
     if (!hasPushAccess) {
       return new Response(JSON.stringify({
         success: false,
-        error: 'Token không có quyền ghi (Push access) vào repository này. Vui lòng cập nhật lại quyền Contents: Read & Write.'
+        error: 'Token does not have Push access to this repository. Please update permissions to Contents: Read & Write.'
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -86,7 +86,7 @@ export async function POST(context: any) {
 
     return new Response(JSON.stringify({
       success: true,
-      message: 'Kết nối thành công! Token có đủ quyền đọc/ghi.',
+      message: 'Connection successful! Token has read/write access.',
       repo: repoInfo.full_name,
       private: repoInfo.private,
     }), {

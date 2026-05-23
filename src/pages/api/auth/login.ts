@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { users } from '@/lib/db/schema';
+import { users, customers } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { verifyPassword, createSessionCookie, hashPassword } from '@/lib/auth';
 
@@ -31,6 +31,16 @@ export const POST: APIRoute = async (context) => {
         username: adminUsername,
         passwordHash: adminHash,
         role: 'admin',
+      });
+    }
+
+    // 1.6 Auto-Seed Anonymous Customer for unmatched SePay reconciliation
+    const existingAnon = await db.select().from(customers).where(eq(customers.id, 'CUST-ANONYMOUS')).limit(1);
+    if (existingAnon.length === 0) {
+      await db.insert(customers).values({
+        id: 'CUST-ANONYMOUS',
+        fullName: 'Anonymous / Unmatched Payments',
+        phone: '0000000000',
       });
     }
 

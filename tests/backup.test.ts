@@ -415,7 +415,7 @@ describe('Astro API Endpoint - POST /api/backup/test-connection', () => {
     expect(response.status).toBe(200);
     const data = await response.json();
     expect(data.success).toBe(false);
-    expect(data.error).toContain('Token không có quyền ghi');
+    expect(data.error).toContain('Token does not have Push access');
   });
 
   it('should return 200 with success: true and repository info when connection is healthy', async () => {

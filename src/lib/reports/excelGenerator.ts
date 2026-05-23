@@ -110,21 +110,21 @@ export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportP
   for (let i = 0; i < incomingPayments.length; i++) {
     const payment = incomingPayments[i];
     
-    // Nếu vượt quá khoảng trống của template (khoảng 7 dòng từ 12-18), ta mới insert thêm dòng.
-    // Nếu chưa, ta chỉ ghi đè lên dòng hiện tại để không làm lệch các merged cells bên dưới.
+    // If we exceed the template's placeholder rows (rows 12-18), insert new rows.
+    // Otherwise, overwrite existing rows to avoid shifting merged cells below.
     if (currentRow >= 19) {
       worksheet.insertRow(currentRow, []);
     }
     const row = worksheet.getRow(currentRow);
     
-    // 3 cột: Ngày tháng chứng từ (B), Diễn giải (C), Doanh thu (D)
+    // 3 columns: Document date (B), Description (C), Revenue (D)
     // format date: YYYY-MM-DD
     const dateStr = new Date(payment.paidAt).toISOString().split('T')[0];
     row.getCell(2).value = dateStr;
     row.getCell(3).value = sanitizeFormula(getPaymentDescription(payment));
     row.getCell(4).value = payment.amount;
 
-    // Apply basic styles cho các cột 2, 3, 4
+    // Apply basic styles for columns 2, 3, 4
     for (let col = 2; col <= 4; col++) {
       const cell = row.getCell(col);
       const currentStyle = cell.style || {};
@@ -159,7 +159,7 @@ export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportP
   
   totalRow.getCell(4).font = { bold: true, name: 'Times New Roman', size: 12 };
 
-  // Xóa các hàng dư thừa (kể cả "Tổng cộng" cũ) nằm giữa bảng và phần chữ ký
+  // Delete surplus rows (including old "Totals") between the data table and the signature block
   let signatureRow = -1;
   for (let r = currentRow + 1; r <= currentRow + 30; r++) {
     const row = worksheet.getRow(r);
@@ -179,11 +179,11 @@ export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportP
   if (signatureRow !== -1) {
     const rowsToDelete = signatureRow - (currentRow + 1);
     if (rowsToDelete > 1) {
-      // Giữ lại 1 dòng trắng giữa bảng và chữ ký
+      // Keep 1 blank row between the data table and the signature
       worksheet.spliceRows(currentRow + 1, rowsToDelete - 1);
     }
   } else {
-    // Fallback: Xóa 7 dòng thừa theo cấu trúc mẫu mặc định
+    // Fallback: Delete 7 surplus rows based on default template structure
     worksheet.spliceRows(currentRow + 1, 7);
   }
 
@@ -206,9 +206,9 @@ export const exportYearlyS1aZip = async (
 ): Promise<Blob> => {
   const zip = new JSZip();
 
-  // Tạo báo cáo cho 12 tháng
+  // Generate reports for 12 months
   for (let month = 1; month <= 12; month++) {
-    // Lọc thanh toán theo tháng/năm
+    // Filter payments by month/year
     const monthPayments = payments.filter(p => {
       const date = new Date(p.paidAt);
       const pYear = date.getUTCFullYear();
@@ -216,20 +216,20 @@ export const exportYearlyS1aZip = async (
       return pYear === year && pMonth === month;
     });
 
-    // Vẫn tạo file kể cả khi không có giao dịch (monthPayments rỗng)
+    // Still generate file even if no transactions (monthPayments is empty)
     const buffer = await generateS1a(templateBuffer, monthPayments);
     
-    // Thêm vào file nén
+    // Add to zip archive
     const monthStr = month.toString().padStart(2, '0');
     zip.file(`S1a-HKD_Thang_${monthStr}_${year}.xlsx`, buffer);
     
-    // Cập nhật tiến độ
+    // Update progress
     if (onProgress) {
       onProgress(Math.round((month / 12) * 100));
     }
   }
 
-  // Nén lại thành Blob
+  // Compress into a Blob
   const blob = await zip.generateAsync({ type: 'blob' });
   return blob;
 };

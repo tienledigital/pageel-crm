@@ -81,7 +81,7 @@ describe('Database Reconciliation Integration Tests', () => {
   it('should successfully reconcile payment and extend service period for valid customer', async () => {
     const initialExpiredAt = Date.now() + 10 * 24 * 60 * 60 * 1000; // 10 days in future
 
-    // Cập nhật customer 1005 có expiredAt trong tương lai để test gia hạn lũy kế
+    // Set customer 1005 expiredAt to a future date to test cumulative extension
     await db.update(customers)
       .set({ expiredAt: initialExpiredAt })
       .where(eq(customers.id, '1005'));
