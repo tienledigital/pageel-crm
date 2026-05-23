@@ -2,7 +2,7 @@
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { payments, customers, invoices } from '@/lib/db/schema';
+import { payments, customers, invoices, config } from '@/lib/db/schema';
 import { desc, eq, like, and, or, sql } from 'drizzle-orm';
 
 const db = getDb(env);
@@ -61,6 +61,8 @@ const transactionList = await db
     bank: payments.bank,
     accountNumber: payments.accountNumber,
     type: payments.type,
+    category: payments.category,
+    taxCategory: payments.taxCategory,
     content: payments.content,
     paidAt: payments.paidAt,
     customerName: customers.fullName,
@@ -75,29 +77,20 @@ const transactionList = await db
   .orderBy(desc(payments.paidAt));
 
 // 4. Calculate total revenue metrics (total in vs total out) based on all payments
-const rawStats = await db
+const statsQuery = await db
   .select({
-    type: payments.type,
-    total: sql<number>`SUM(${payments.amount})`,
-    count: sql<number>`COUNT(${payments.id})`,
+    totalRevenue: sql<number>`SUM(CASE WHEN ${payments.type} = 'in' AND ${payments.category} = 'revenue' AND ${payments.customerId} IS NOT NULL AND ${payments.customerId} != 'CUST-ANONYMOUS' THEN ${payments.amount} ELSE 0 END)`,
+    countRevenue: sql<number>`SUM(CASE WHEN ${payments.type} = 'in' AND ${payments.category} = 'revenue' AND ${payments.customerId} IS NOT NULL AND ${payments.customerId} != 'CUST-ANONYMOUS' THEN 1 ELSE 0 END)`,
+    totalExpenses: sql<number>`SUM(CASE WHEN ${payments.type} = 'out' THEN ${payments.amount} ELSE 0 END)`,
+    countExpenses: sql<number>`SUM(CASE WHEN ${payments.type} = 'out' THEN 1 ELSE 0 END)`,
   })
-  .from(payments)
-  .groupBy(payments.type);
+  .from(payments);
 
-let totalIn = 0;
-let totalOut = 0;
-let countIn = 0;
-let countOut = 0;
-
-rawStats.forEach((stat: any) => {
-  if (stat.type === 'in') {
-    totalIn = Number(stat.total || 0);
-    countIn = Number(stat.count || 0);
-  } else if (stat.type === 'out') {
-    totalOut = Number(stat.total || 0);
-    countOut = Number(stat.count || 0);
-  }
-});
+const stats = statsQuery[0] || { totalRevenue: 0, countRevenue: 0, totalExpenses: 0, countExpenses: 0 };
+const totalIn = Number(stats.totalRevenue || 0);
+const countIn = Number(stats.countRevenue || 0);
+const totalOut = Number(stats.totalExpenses || 0);
+const countOut = Number(stats.countExpenses || 0);
 
 // Format money to VND representation
 function formatVND(amount: number) {
@@ -113,6 +106,59 @@ function formatDate(timestamp: number) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+// Query custom payment classification rules
+const rulesRecord = await db.select().from(config).where(eq(config.key, 'payment_classification_rules')).limit(1);
+const classificationRules = rulesRecord.length > 0 ? JSON.parse(rulesRecord[0].value) : [];
+
+const defaultBankConfig = await db.select().from(config).where(eq(config.key, 'defaultBank')).limit(1);
+const defaultAccountConfig = await db.select().from(config).where(eq(config.key, 'defaultAccount')).limit(1);
+const orgNameConfig = await db.select().from(config).where(eq(config.key, 'orgName')).limit(1);
+
+const defaultBank = defaultBankConfig[0]?.value || 'MB';
+const defaultAccount = defaultAccountConfig[0]?.value || '0000000000';
+const orgName = orgNameConfig[0]?.value || 'Pageel';
+
+// Query all customer IDs and invoice numbers for trigger match checks
+const allCustomerIds = new Set(
+  (await db.select({ id: customers.id }).from(customers)).map((c: any) => c.id.toLowerCase())
+);
+const allInvoiceNumbers = new Set(
+  (await db.select({ invoiceNumber: invoices.invoiceNumber }).from(invoices)).map((i: any) => i.invoiceNumber.toLowerCase())
+);
+
+// Helper to check if a transaction matches any trigger rule
+function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
+  if (!txContent) return false;
+  const contentLower = txContent.toLowerCase();
+
+  for (const rule of rules) {
+    if (rule.matchType === 'auto_customer') {
+      const tokens = txContent.match(/[a-zA-Z0-9]+/g);
+      if (tokens) {
+        for (const token of tokens) {
+          const cleaned = token.trim().toLowerCase();
+          if (cleaned.length >= 2) {
+            if (allCustomerIds.has(cleaned)) return true;
+            const numMatch = cleaned.match(/^[a-zA-Z]+(\d+)$/);
+            if (numMatch && allCustomerIds.has(numMatch[1])) return true;
+          }
+        }
+      }
+    } else if (rule.matchType === 'auto_invoice') {
+      const tokens = txContent.match(/[a-zA-Z0-9-]+/g);
+      if (tokens) {
+        for (const token of tokens) {
+          const cleaned = token.trim().toLowerCase();
+          if (cleaned.length >= 3 && allInvoiceNumbers.has(cleaned)) return true;
+        }
+      }
+    } else if (rule.pattern && contentLower.includes(rule.pattern.toLowerCase())) {
+      return true;
+    }
+  }
+  return false;
 }
 ---
 
@@ -269,6 +315,8 @@ function formatDate(timestamp: number) {
 
     .table-responsive {
       overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      position: relative;
     }
 
     .custom-table {
@@ -285,6 +333,25 @@ function formatDate(timestamp: number) {
       text-transform: uppercase;
       letter-spacing: 0.5px;
       border-bottom: 1px solid var(--border-color);
+    }
+
+    /* Sticky columns on small screens */
+    .custom-table th:last-child,
+    .custom-table td:last-child {
+      position: sticky;
+      right: 0;
+      background-color: var(--bg-card);
+      border-left: 1px solid var(--border-color);
+      box-shadow: -4px 0 8px rgba(0, 0, 0, 0.02);
+      z-index: 2;
+    }
+
+    .custom-table th:last-child {
+      z-index: 3;
+    }
+
+    .custom-table tr:hover td:last-child {
+      background-color: var(--bg-hover);
     }
 
     .custom-table td {
@@ -472,6 +539,41 @@ function formatDate(timestamp: number) {
       border-color: var(--primary);
     }
 
+    .searchable-select-container {
+      position: relative;
+    }
+
+    .searchable-select-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      width: 100%;
+      max-height: 200px;
+      overflow-y: auto;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      z-index: 1010;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .searchable-select-option {
+      padding: 0.65rem 0.85rem;
+      cursor: pointer;
+      font-size: 0.875rem;
+      color: var(--text-primary);
+    }
+
+    .searchable-select-option:hover {
+      background-color: var(--primary);
+      color: #fff;
+    }
+
+    .searchable-select-option.selected {
+      background-color: var(--primary);
+      color: #fff;
+    }
+
     .modal-footer {
       display: flex;
       justify-content: flex-end;
@@ -544,9 +646,27 @@ function formatDate(timestamp: number) {
       <h1>Payments & Cashflow</h1>
       <p>Monitor transactions synced from SePay/MBBank, trace customer payments, and track net cashflow.</p>
     </div>
+    <div class="action-section">
+      <button id="btnSyncSepay" class="btn-filter" style="background-color: var(--primary); display: inline-flex; align-items: center; gap: 0.5rem;">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+        </svg>
+        <span>Quét giao dịch SePay</span>
+      </button>
+    </div>
   </div>
 
-  <!-- Stats Grid -->
+  <div class="tabs-container" style="display: flex; gap: 1rem; border-bottom: 1px solid var(--border-color); margin-bottom: 1.5rem; padding-bottom: 0.5rem; flex-wrap: wrap;">
+    <button class="tab-btn active" id="tabTransactionsBtn" style="background: none; border: none; font-size: 1rem; font-weight: 600; color: var(--primary); border-bottom: 2px solid var(--primary); padding: 0.5rem 1rem; cursor: pointer; transition: all 0.2s;">
+      Transactions
+    </button>
+    <button class="tab-btn" id="tabRulesBtn" style="background: none; border: none; font-size: 1rem; font-weight: 600; color: var(--text-secondary); padding: 0.5rem 1rem; cursor: pointer; transition: all 0.2s;">
+      Classification Rules
+    </button>
+  </div>
+
+  <div id="transactionsTabContent">
+    <!-- Stats Grid -->
   <div class="stats-banner">
     <!-- Income -->
     <div class="stat-card">
@@ -654,7 +774,22 @@ function formatDate(timestamp: number) {
                 </td>
                 <td>
                   <div>
-                    <span class="mono">{tx.transactionId}</span>
+                    <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                      <span class="mono">{tx.transactionId}</span>
+                       <span class={`direction-badge ${(tx.type === 'in' && tx.category === 'revenue' && tx.customerId && tx.customerId !== 'CUST-ANONYMOUS') ? 'direction-in' : 'direction-out'}`} style="font-size: 0.7rem; padding: 0.1rem 0.4rem;">
+                        {(tx.type === 'in' && tx.category === 'revenue' && tx.customerId && tx.customerId !== 'CUST-ANONYMOUS') ? 'Doanh thu' : 'Không phải doanh thu'}
+                      </span>
+                      {tx.type === 'in' && (!tx.customerId || tx.customerId === 'CUST-ANONYMOUS') && !hasMatchingTrigger(tx.content, classificationRules) && (
+                        <span style="font-size: 0.7rem; background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.3); padding: 0.1rem 0.4rem; border-radius: 4px; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem;">
+                          ⚠️ Chưa phân loại
+                        </span>
+                      )}
+                      {tx.taxCategory && (
+                        <span style="font-size: 0.7rem; background: var(--bg-hover); color: var(--text-primary); border: 1px solid var(--border-color); padding: 0.1rem 0.4rem; border-radius: 4px; font-weight: 500;">
+                          🏷️ {tx.taxCategory}
+                        </span>
+                      )}
+                    </div>
                     <div class="meta-subtext">{tx.content || 'No content description'}</div>
                   </div>
                 </td>
@@ -678,17 +813,29 @@ function formatDate(timestamp: number) {
                         📄 Invoice: <span class="mono">{tx.invoiceNumber}</span>
                       </span>
                     )}
-                    <button 
-                      class="btn-reconcile btn-action" 
-                      data-id={tx.id} 
-                      data-amount={tx.amount}
-                      data-content={tx.content || ''}
-                      data-customer-id={tx.customerId || ''} 
-                      data-invoice-id={tx.invoiceId || ''}
-                      style="align-self: flex-start; margin-top: 0.25rem; font-size: 0.7rem; padding: 0.25rem 0.5rem;"
-                    >
-                      ✏️ Link / Edit
-                    </button>
+                    <div style="display: flex; gap: 0.25rem; align-items: center; margin-top: 0.25rem;">
+                      <button 
+                        class="btn-reconcile btn-action" 
+                        data-id={tx.id} 
+                        data-amount={tx.amount}
+                        data-content={tx.content || ''}
+                        data-customer-id={tx.customerId || ''} 
+                        data-invoice-id={tx.invoiceId || ''}
+                        data-category={tx.category || ''}
+                        data-tax-category={tx.taxCategory || ''}
+                        data-type={tx.type || ''}
+                        style="font-size: 0.7rem; padding: 0.25rem 0.5rem;"
+                      >
+                        ✏️ Link / Edit
+                      </button>
+                      <button 
+                        class="btn-delete-payment btn-action" 
+                        data-id={tx.id}
+                        style="font-size: 0.7rem; padding: 0.25rem 0.5rem; background-color: #ef4444; border-color: #ef4444; color: white;"
+                      >
+                        🗑️ Delete
+                      </button>
+                    </div>
                   </div>
                 </td>
               </tr>
@@ -696,6 +843,231 @@ function formatDate(timestamp: number) {
           )}
         </tbody>
       </table>
+    </div>
+  </div>
+
+  </div><!-- End transactionsTabContent -->
+
+  <div id="rulesTabContent" style="display: none;">
+    <!-- Bank Account Settings Card -->
+    <div class="card-container" style="margin-bottom: 2rem;">
+      <h2 style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin: 0 0 0.5rem 0;">Bank Account Settings (Cấu hình Tài khoản Ngân hàng)</h2>
+      <p style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+        Cấu hình tài khoản ngân hàng nhận tiền để tạo mã VietQR tự động và đồng bộ giao dịch từ SePay.
+      </p>
+
+      <form id="bankConfigForm" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; align-items: end;">
+        <div>
+          <label style="display: block; font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">Ngân hàng (Bank Brand Name)</label>
+          <select id="bankBrandName" style="width: 100%; padding: 0.625rem; border: 1px solid var(--border); border-radius: 6px; background-color: var(--card-bg); color: var(--text-primary);">
+            <option value="MB" selected={defaultBank === 'MB'}>MB (MBBank)</option>
+            <option value="Techcombank" selected={defaultBank === 'Techcombank'}>Techcombank</option>
+            <option value="Vietcombank" selected={defaultBank === 'Vietcombank'}>Vietcombank</option>
+            <option value="ACB" selected={defaultBank === 'ACB'}>ACB</option>
+            <option value="VPBank" selected={defaultBank === 'VPBank'}>VPBank</option>
+            <option value="BIDV" selected={defaultBank === 'BIDV'}>BIDV</option>
+            <option value="VietinBank" selected={defaultBank === 'VietinBank'}>VietinBank</option>
+            <option value="TPBank" selected={defaultBank === 'TPBank'}>TPBank</option>
+            <option value="Sacombank" selected={defaultBank === 'Sacombank'}>Sacombank</option>
+            <option value="Agribank" selected={defaultBank === 'Agribank'}>Agribank</option>
+            <option value="VIB" selected={defaultBank === 'VIB'}>VIB</option>
+          </select>
+        </div>
+        <div>
+          <label style="display: block; font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">Số tài khoản (Account Number)</label>
+          <input type="text" id="bankAccountNumber" value={defaultAccount} placeholder="Ví dụ: 0399999999" required style="width: 100%; padding: 0.625rem; border: 1px solid var(--border); border-radius: 6px; background-color: var(--card-bg); color: var(--text-primary);" />
+        </div>
+        <div>
+          <label style="display: block; font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">Tên tổ chức (Organization Name)</label>
+          <input type="text" id="bankOrgName" value={orgName} placeholder="Ví dụ: Pageel CRM" required style="width: 100%; padding: 0.625rem; border: 1px solid var(--border); border-radius: 6px; background-color: var(--card-bg); color: var(--text-primary);" />
+        </div>
+        <div>
+          <button type="submit" class="btn-save" style="width: 100%; justify-content: center; height: 42px;">
+            Save Settings
+          </button>
+        </div>
+      </form>
+
+      <!-- Utility Action for Cleaning Mismatched Bank Payments -->
+      <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px dashed var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <h3 style="font-size: 0.95rem; font-weight: 600; color: var(--text-primary); margin: 0;">Dọn dẹp Giao dịch Sai số tài khoản (Data Cleanup)</h3>
+          <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.25rem;">
+            Xóa hàng loạt các giao dịch đã đồng bộ trước đây không khớp với số tài khoản được cấu hình ở trên ({defaultAccount}).
+          </p>
+        </div>
+        <button id="btnCleanupMismatched" class="btn-action" style="background-color: #ef4444; border-color: #ef4444; color: white; padding: 0.625rem 1.25rem; border-radius: 6px; font-weight: 500; display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+          </svg>
+          Dọn dẹp Giao dịch Sai
+        </button>
+      </div>
+    </div>
+
+    <div class="card-container" style="margin-bottom: 2rem;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
+        <div>
+          <h2 style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin: 0;">Classification Rules & Triggers</h2>
+          <p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">
+            Automatically match transactions to specific flow types (Income/Expense), tax categories, or customers by defining keywords.
+          </p>
+        </div>
+        <button id="btnAddRule" class="btn-save" style="display: inline-flex; align-items: center; gap: 0.5rem;">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          Add Rule
+        </button>
+      </div>
+
+      <div class="table-responsive">
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Pattern / Match Mode</th>
+              <th>Classification Flow</th>
+              <th>Tax Category</th>
+              <th>Customer Link</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="rulesTableBody">
+            {classificationRules.length === 0 ? (
+              <tr>
+                <td colspan="5" style="text-align: center; padding: 3rem; color: var(--text-muted);">
+                  No classification rules defined yet.
+                </td>
+              </tr>
+            ) : (
+              classificationRules.map((rule: any, idx: number) => {
+                const customer = allCustomers.find((c: any) => c.id === rule.targetCustomerId);
+                return (
+                  <tr data-index={idx}>
+                    <td class="mono" style="font-weight: 600; color: var(--primary);">
+                      {rule.matchType === 'auto_customer' ? (
+                        <span style="color: var(--success); font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem;">
+                          🔍 Auto-match Customer ID
+                        </span>
+                      ) : rule.matchType === 'auto_invoice' ? (
+                        <span style="color: var(--success); font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem;">
+                          🧾 Auto-match Invoice ID
+                        </span>
+                      ) : (
+                        rule.pattern
+                      )}
+                    </td>
+                    <td>
+                      <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                        <span class={`direction-badge ${rule.type === 'out' ? 'direction-out' : 'direction-in'}`}>
+                          {rule.type === 'out' ? 'Expense (Tiền ra)' : 'Income (Tiền vào)'}
+                        </span>
+                        <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 500;">
+                          {rule.category === 'revenue' ? 'Doanh thu' : 'Không phải doanh thu'}
+                        </span>
+                      </div>
+                    </td>
+                    <td>
+                      <span style="font-weight: 500; font-family: monospace; background: var(--bg-hover); padding: 0.2rem 0.5rem; border-radius: 4px; border: 1px solid var(--border-color);">
+                        {rule.taxCategory || 'N/A'}
+                      </span>
+                    </td>
+                    <td>
+                      {rule.matchType === 'auto_customer' ? (
+                        <span style="color: var(--text-muted); font-style: italic;">Auto-extracted from content</span>
+                      ) : rule.matchType === 'auto_invoice' ? (
+                        <span style="color: var(--text-muted); font-style: italic;">Linked via matched Invoice</span>
+                      ) : customer ? (
+                        <div style="font-weight: 600;">{customer.fullName} <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">({customer.id})</span></div>
+                      ) : (
+                        <span style="color: var(--text-muted); font-style: italic;">No Customer Link</span>
+                      )}
+                    </td>
+                    <td>
+                      <div style="display: flex; gap: 0.5rem;">
+                        <button type="button" class="btn-action btn-edit-rule" data-index={idx} data-rule={JSON.stringify(rule)}>✏️ Edit</button>
+                        <button type="button" class="btn-action btn-delete-rule" data-index={idx} style="border-color: rgba(239, 68, 68, 0.2); color: var(--error);">🗑️ Delete</button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Rule Edit Modal -->
+  <div class="modal-backdrop" id="ruleModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="ruleModalTitle">Add Classification Rule</h3>
+        <button class="modal-close" id="ruleModalCloseBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="ruleForm">
+          <input type="hidden" id="ruleIndex" />
+          
+          <div class="form-group">
+            <label for="ruleMatchType">Match Mode *</label>
+            <select id="ruleMatchType" class="form-select" required>
+              <option value="keyword">Match Keyword (Khớp từ khóa)</option>
+              <option value="auto_customer">Auto-Match Customer ID (Tự động khớp ID Khách hàng)</option>
+              <option value="auto_invoice">Auto-Match Invoice ID (Tự động khớp Mã Hóa đơn)</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="rulePatternGroup">
+            <label for="rulePattern">Keyword Pattern *</label>
+            <input type="text" id="rulePattern" class="form-input" placeholder="e.g. FB ADS, HOSTING, CLOUDFLARE..." />
+          </div>
+
+          <div class="form-group">
+            <label for="ruleType">Classification Flow *</label>
+            <select id="ruleType" class="form-select">
+              <option value="in">Income (Tiền vào)</option>
+              <option value="out">Expense (Tiền ra)</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="ruleCategoryGroup">
+            <label for="ruleCategorySelect">Classification Category</label>
+            <select id="ruleCategorySelect" class="form-select">
+              <option value="revenue">Doanh thu (Revenue)</option>
+              <option value="non_revenue">Không phải doanh thu (Non-revenue)</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="ruleTaxCategory">Tax Category / Classification Tag</label>
+            <input type="text" id="ruleTaxCategory" class="form-input" placeholder="e.g. Marketing, Infra, Operating Expense..." />
+          </div>
+
+          <!-- Customer Searchable Select for Rule -->
+          <div class="form-group" id="ruleCustomerLinkGroup">
+            <label for="ruleCustomerSearchInput">Link Customer (Optional)</label>
+            <div class="searchable-select-container">
+              <input type="text" id="ruleCustomerSearchInput" class="form-input" placeholder="Type to search customer..." autocomplete="off" />
+              <input type="hidden" id="ruleCustomerSelect" />
+              <div class="searchable-select-dropdown" id="ruleCustomerSearchDropdown" style="display: none;">
+                <div class="searchable-select-option" data-value="">-- No Customer Link --</div>
+                {allCustomers.map((cust: any) => (
+                  <div class="searchable-select-option" data-value={cust.id} data-search={`${cust.fullName.toLowerCase()} ${cust.id.toLowerCase()}`}>
+                    {cust.fullName} ({cust.id})
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn-cancel" id="ruleModalCancelBtn">Cancel</button>
+            <button type="submit" class="btn-save" id="ruleModalSaveBtn">Save Rule</button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 
@@ -725,15 +1097,21 @@ function formatDate(timestamp: number) {
         <form id="reconcileForm">
           <input type="hidden" id="modalPaymentId" />
           
-          <!-- Customer Select -->
+          <!-- Customer Searchable Select -->
           <div class="form-group">
-            <label for="modalCustomerSelect">Customer Link</label>
-            <select id="modalCustomerSelect" class="form-select">
-              <option value="">-- No Customer Link --</option>
-              {allCustomers.map((cust: any) => (
-                <option value={cust.id}>{cust.fullName} ({cust.id})</option>
-              ))}
-            </select>
+            <label for="customerSearchInput">Customer Link</label>
+            <div class="searchable-select-container">
+              <input type="text" id="customerSearchInput" class="form-input" placeholder="Type to search customer..." autocomplete="off" />
+              <input type="hidden" id="modalCustomerSelect" />
+              <div class="searchable-select-dropdown" id="customerSearchDropdown" style="display: none;">
+                <div class="searchable-select-option" data-value="">-- No Customer Link --</div>
+                {allCustomers.map((cust: any) => (
+                  <div class="searchable-select-option" data-value={cust.id} data-search={`${cust.fullName.toLowerCase()} ${cust.id.toLowerCase()}`}>
+                    {cust.fullName} ({cust.id})
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
           <!-- Invoice Select -->
@@ -754,6 +1132,21 @@ function formatDate(timestamp: number) {
             </select>
           </div>
 
+          <!-- Classification Category -->
+          <div class="form-group" id="modalCategoryGroup">
+            <label for="modalCategorySelect">Classification Category</label>
+            <select id="modalCategorySelect" class="form-select">
+              <option value="revenue">Doanh thu (Revenue)</option>
+              <option value="non_revenue">Không phải doanh thu (Non-revenue)</option>
+            </select>
+          </div>
+
+          <!-- Classification Tag -->
+          <div class="form-group">
+            <label for="modalTaxCategoryInput">Custom Classification Tag (Tag)</label>
+            <input type="text" id="modalTaxCategoryInput" class="form-input" placeholder="e.g. Marketing, Refunds, Subscriptions..." />
+          </div>
+
           <div class="modal-footer">
             <button type="button" class="btn-cancel" id="modalCancelBtn">Cancel</button>
             <button type="submit" class="btn-save">Save Changes</button>
@@ -764,7 +1157,7 @@ function formatDate(timestamp: number) {
   </div>
 
   <!-- Client script for modal handling -->
-  <script is:inline define:vars={{ allInvoices }}>
+  <script is:inline define:vars={{ allInvoices, classificationRules }}>
     const modal = document.getElementById('reconcileModal');
     const closeBtn = document.getElementById('modalCloseBtn');
     const cancelBtn = document.getElementById('modalCancelBtn');
@@ -776,10 +1169,67 @@ function formatDate(timestamp: number) {
     const modalTxContent = document.getElementById('modalTxContent');
     
     const customerSelect = document.getElementById('modalCustomerSelect');
+    const customerSearchInput = document.getElementById('customerSearchInput');
+    const customerSearchDropdown = document.getElementById('customerSearchDropdown');
+    const customerOptions = Array.from(customerSearchDropdown.querySelectorAll('.searchable-select-option'));
+
     const invoiceSelect = document.getElementById('modalInvoiceSelect');
+    const modalCategorySelect = document.getElementById('modalCategorySelect');
+    const modalTaxCategoryInput = document.getElementById('modalTaxCategoryInput');
 
     // Track all options of invoice select to filter them dynamically
     const invoiceOptions = Array.from(invoiceSelect.options);
+
+    // Searchable Select Handling
+    customerSearchInput.addEventListener('focus', () => {
+      // Show dropdown and reset list
+      customerSearchDropdown.style.display = 'block';
+      customerOptions.forEach(opt => opt.style.display = 'block');
+    });
+
+    customerSearchInput.addEventListener('input', () => {
+      const term = customerSearchInput.value.toLowerCase().trim();
+      customerOptions.forEach(opt => {
+        const text = opt.getAttribute('data-search') || '';
+        if (text.includes(term) || opt.getAttribute('data-value') === '') {
+          opt.style.display = 'block';
+        } else {
+          opt.style.display = 'none';
+        }
+      });
+    });
+
+    // Close dropdown on click outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.searchable-select-container')) {
+        customerSearchDropdown.style.display = 'none';
+      }
+    });
+
+    // Option selection
+    customerOptions.forEach(opt => {
+      opt.addEventListener('click', () => {
+        const val = opt.getAttribute('data-value');
+        const text = opt.textContent.trim();
+        selectCustomer(val, text);
+        customerSearchDropdown.style.display = 'none';
+      });
+    });
+
+    function selectCustomer(id, label) {
+      customerSelect.value = id;
+      customerSearchInput.value = id ? label : '';
+      
+      customerOptions.forEach(opt => {
+        if (opt.getAttribute('data-value') === id) {
+          opt.classList.add('selected');
+        } else {
+          opt.classList.remove('selected');
+        }
+      });
+
+      filterInvoices(id);
+    }
 
     // Open Modal
     document.querySelectorAll('.btn-reconcile').forEach(btn => {
@@ -789,6 +1239,9 @@ function formatDate(timestamp: number) {
         const content = btn.getAttribute('data-content');
         const customerId = btn.getAttribute('data-customer-id');
         const invoiceId = btn.getAttribute('data-invoice-id');
+        const category = btn.getAttribute('data-category') || 'non_revenue';
+        const taxCategory = btn.getAttribute('data-tax-category') || '';
+        const flowType = btn.getAttribute('data-type') || 'in';
 
         // Populate transaction info
         modalPaymentId.value = id;
@@ -796,21 +1249,32 @@ function formatDate(timestamp: number) {
         modalTxAmount.textContent = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
         modalTxContent.textContent = content || 'No content description';
 
-        // Set current dropdown values
-        customerSelect.value = customerId;
-        filterInvoices(customerId);
+        // Set category select behavior
+        if (modalCategorySelect) {
+          if (flowType === 'out') {
+            modalCategorySelect.value = 'non_revenue';
+            modalCategorySelect.disabled = true;
+          } else {
+            modalCategorySelect.value = category;
+            modalCategorySelect.disabled = false;
+          }
+        }
+
+        // Set tag input
+        if (modalTaxCategoryInput) {
+          modalTaxCategoryInput.value = taxCategory;
+        }
+
+        // Set current customer dropdown
+        const matchedOpt = customerOptions.find(opt => opt.getAttribute('data-value') === customerId);
+        const label = matchedOpt ? matchedOpt.textContent.trim() : '';
+        selectCustomer(customerId || '', label);
+
         invoiceSelect.value = invoiceId;
 
         // Display modal
         modal.style.display = 'flex';
       });
-    });
-
-    // Filter invoice options based on selected customer
-    customerSelect.addEventListener('change', () => {
-      const selectedCustomerId = customerSelect.value;
-      filterInvoices(selectedCustomerId);
-      invoiceSelect.value = ''; // Reset invoice selection when customer changes
     });
 
     function filterInvoices(customerId) {
@@ -853,12 +1317,14 @@ function formatDate(timestamp: number) {
       const paymentId = modalPaymentId.value;
       const customerId = customerSelect.value;
       const invoiceId = invoiceSelect.value;
+      const category = modalCategorySelect ? modalCategorySelect.value : 'non_revenue';
+      const taxCategory = modalTaxCategoryInput ? modalTaxCategoryInput.value.trim() : '';
 
       try {
         const res = await fetch('/api/crm/payments/reconcile', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ paymentId, customerId, invoiceId }),
+          body: JSON.stringify({ paymentId, customerId, invoiceId, category, taxCategory }),
         });
 
         const data = await res.json();
@@ -873,5 +1339,450 @@ function formatDate(timestamp: number) {
         alert('Network error, could not save manual reconciliation.');
       }
     });
+
+    // Handle SePay API scan button
+    const btnSyncSepay = document.getElementById('btnSyncSepay');
+    if (btnSyncSepay) {
+      btnSyncSepay.addEventListener('click', async () => {
+        const originalText = btnSyncSepay.innerHTML;
+        btnSyncSepay.disabled = true;
+        btnSyncSepay.innerHTML = '<span>Đang quét...</span>';
+
+        try {
+          const res = await fetch('/api/payments/sync-sepay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+          });
+
+          const data = await res.json();
+          console.log('[SePay Sync] Full response:', JSON.stringify(data, null, 2));
+
+          if (res.ok && data.success) {
+            const summary = [
+              data.message,
+              `\nChi tiết:`,
+              `- SePay API trả về: ${data.debug?.rawTransactionCount ?? '?'} giao dịch`,
+              `- Đã nạp mới: ${data.newReconciled}`,
+              `- Trùng lặp bỏ qua: ${data.duplicates}`,
+              `- Giao dịch ra bỏ qua: ${data.skippedOutgoing}`,
+              data.errors?.length ? `- Lỗi: ${data.errors.join(', ')}` : '',
+              `\n(Mở Console trình duyệt để xem chi tiết đầy đủ)`,
+            ].filter(Boolean).join('\n');
+
+            alert(summary);
+            if (data.newReconciled > 0) {
+              window.location.reload();
+            }
+          } else {
+            alert('Lỗi quét giao dịch: ' + (data.error || 'Unknown error'));
+          }
+        } catch (err) {
+          console.error(err);
+          alert('Lỗi kết nối mạng, không thể quét SePay.');
+        } finally {
+          btnSyncSepay.disabled = false;
+          btnSyncSepay.innerHTML = originalText;
+        }
+      });
+    }
+
+    // --- Tabs Switching Logic ---
+    const tabTransactionsBtn = document.getElementById('tabTransactionsBtn');
+    const tabRulesBtn = document.getElementById('tabRulesBtn');
+    const transactionsTabContent = document.getElementById('transactionsTabContent');
+    const rulesTabContent = document.getElementById('rulesTabContent');
+
+    function switchTab(activeTab) {
+      if (activeTab === 'rules') {
+        tabTransactionsBtn.classList.remove('active');
+        tabTransactionsBtn.style.color = 'var(--text-secondary)';
+        tabTransactionsBtn.style.borderBottom = 'none';
+        
+        tabRulesBtn.classList.add('active');
+        tabRulesBtn.style.color = 'var(--primary)';
+        tabRulesBtn.style.borderBottom = '2px solid var(--primary)';
+        
+        transactionsTabContent.style.display = 'none';
+        rulesTabContent.style.display = 'block';
+      } else {
+        tabRulesBtn.classList.remove('active');
+        tabRulesBtn.style.color = 'var(--text-secondary)';
+        tabRulesBtn.style.borderBottom = 'none';
+        
+        tabTransactionsBtn.classList.add('active');
+        tabTransactionsBtn.style.color = 'var(--primary)';
+        tabTransactionsBtn.style.borderBottom = '2px solid var(--primary)';
+        
+        rulesTabContent.style.display = 'none';
+        transactionsTabContent.style.display = 'block';
+      }
+      localStorage.setItem('payments_active_tab', activeTab);
+    }
+
+    if (tabTransactionsBtn && tabRulesBtn) {
+      tabTransactionsBtn.addEventListener('click', () => switchTab('transactions'));
+      tabRulesBtn.addEventListener('click', () => switchTab('rules'));
+
+      // Restore active tab
+      const savedTab = localStorage.getItem('payments_active_tab');
+      if (savedTab) {
+        switchTab(savedTab);
+      }
+    }
+
+    // --- Classification Rules Management Logic ---
+    const ruleModal = document.getElementById('ruleModal');
+    const btnAddRule = document.getElementById('btnAddRule');
+    const ruleModalCloseBtn = document.getElementById('ruleModalCloseBtn');
+    const ruleModalCancelBtn = document.getElementById('ruleModalCancelBtn');
+    const ruleForm = document.getElementById('ruleForm');
+    const ruleIndexInput = document.getElementById('ruleIndex');
+    const ruleMatchTypeSelect = document.getElementById('ruleMatchType');
+    const rulePatternGroup = document.getElementById('rulePatternGroup');
+    const ruleCustomerLinkGroup = document.getElementById('ruleCustomerLinkGroup');
+    const rulePatternInput = document.getElementById('rulePattern');
+    const ruleTypeSelect = document.getElementById('ruleType');
+    const ruleCategorySelect = document.getElementById('ruleCategorySelect');
+    const ruleTaxCategoryInput = document.getElementById('ruleTaxCategory');
+
+    if (ruleMatchTypeSelect) {
+      ruleMatchTypeSelect.addEventListener('change', () => {
+        const matchType = ruleMatchTypeSelect.value;
+        if (matchType === 'keyword') {
+          if (rulePatternGroup) rulePatternGroup.style.display = 'block';
+          if (rulePatternInput) rulePatternInput.required = true;
+          if (ruleCustomerLinkGroup) ruleCustomerLinkGroup.style.display = 'block';
+        } else {
+          if (rulePatternGroup) rulePatternGroup.style.display = 'none';
+          if (rulePatternInput) {
+            rulePatternInput.required = false;
+            rulePatternInput.value = '';
+          }
+          if (ruleCustomerLinkGroup) ruleCustomerLinkGroup.style.display = 'none';
+          selectRuleCustomer('', '');
+        }
+      });
+    }
+
+    if (ruleTypeSelect && ruleCategorySelect) {
+      ruleTypeSelect.addEventListener('change', () => {
+        if (ruleTypeSelect.value === 'out') {
+          ruleCategorySelect.value = 'non_revenue';
+          ruleCategorySelect.disabled = true;
+        } else {
+          ruleCategorySelect.disabled = false;
+        }
+      });
+    }
+
+    const ruleCustomerSelect = document.getElementById('ruleCustomerSelect');
+    const ruleCustomerSearchInput = document.getElementById('ruleCustomerSearchInput');
+    const ruleCustomerSearchDropdown = document.getElementById('ruleCustomerSearchDropdown');
+    
+    let ruleCustomerOptions = [];
+    if (ruleCustomerSearchDropdown) {
+      ruleCustomerOptions = Array.from(ruleCustomerSearchDropdown.querySelectorAll('.searchable-select-option'));
+    }
+
+    let currentRules = [...classificationRules];
+
+    // Rule Customer Searchable Select
+    if (ruleCustomerSearchInput) {
+      ruleCustomerSearchInput.addEventListener('focus', () => {
+        ruleCustomerSearchDropdown.style.display = 'block';
+        ruleCustomerOptions.forEach(opt => opt.style.display = 'block');
+      });
+
+      ruleCustomerSearchInput.addEventListener('input', () => {
+        const term = ruleCustomerSearchInput.value.toLowerCase().trim();
+        ruleCustomerOptions.forEach(opt => {
+          const text = opt.getAttribute('data-search') || '';
+          if (text.includes(term) || opt.getAttribute('data-value') === '') {
+            opt.style.display = 'block';
+          } else {
+            opt.style.display = 'none';
+          }
+        });
+      });
+    }
+
+    document.addEventListener('click', (e) => {
+      if (ruleCustomerSearchDropdown && !e.target.closest('#ruleModal .searchable-select-container')) {
+        ruleCustomerSearchDropdown.style.display = 'none';
+      }
+    });
+
+    ruleCustomerOptions.forEach(opt => {
+      opt.addEventListener('click', () => {
+        const val = opt.getAttribute('data-value');
+        const text = opt.textContent.trim();
+        selectRuleCustomer(val, text);
+        ruleCustomerSearchDropdown.style.display = 'none';
+      });
+    });
+
+    function selectRuleCustomer(id, label) {
+      if (ruleCustomerSelect) ruleCustomerSelect.value = id;
+      if (ruleCustomerSearchInput) ruleCustomerSearchInput.value = id ? label : '';
+      
+      ruleCustomerOptions.forEach(opt => {
+        if (opt.getAttribute('data-value') === id) {
+          opt.classList.add('selected');
+        } else {
+          opt.classList.remove('selected');
+        }
+      });
+    }
+
+    // Modal helpers
+    function openRuleModal(index = -1, ruleData = null) {
+      if (!ruleForm) return;
+      ruleForm.reset();
+      if (ruleIndexInput) ruleIndexInput.value = index;
+      selectRuleCustomer('', '');
+
+      const flowType = (ruleData && ruleData.type) || 'in';
+      const category = (ruleData && ruleData.category) || 'non_revenue';
+      const matchType = (ruleData && ruleData.matchType) || 'keyword';
+
+      if (ruleMatchTypeSelect) {
+        ruleMatchTypeSelect.value = matchType;
+      }
+
+      // Hide or show keyword/customer inputs depending on match mode
+      if (matchType === 'keyword') {
+        if (rulePatternGroup) rulePatternGroup.style.display = 'block';
+        if (rulePatternInput) {
+          rulePatternInput.required = true;
+          rulePatternInput.value = (ruleData && ruleData.pattern) || '';
+        }
+        if (ruleCustomerLinkGroup) ruleCustomerLinkGroup.style.display = 'block';
+      } else {
+        if (rulePatternGroup) rulePatternGroup.style.display = 'none';
+        if (rulePatternInput) {
+          rulePatternInput.required = false;
+          rulePatternInput.value = '';
+        }
+        if (ruleCustomerLinkGroup) ruleCustomerLinkGroup.style.display = 'none';
+      }
+
+      if (index !== -1 && ruleData) {
+        const titleEl = document.getElementById('ruleModalTitle');
+        if (titleEl) titleEl.textContent = 'Edit Classification Rule';
+        if (ruleTypeSelect) ruleTypeSelect.value = flowType;
+        if (ruleTaxCategoryInput) ruleTaxCategoryInput.value = ruleData.taxCategory || '';
+        
+        if (matchType === 'keyword' && ruleData.targetCustomerId) {
+          const matchedOpt = ruleCustomerOptions.find(opt => opt.getAttribute('data-value') === ruleData.targetCustomerId);
+          const label = matchedOpt ? matchedOpt.textContent.trim() : '';
+          selectRuleCustomer(ruleData.targetCustomerId, label);
+        }
+      } else {
+        const titleEl = document.getElementById('ruleModalTitle');
+        if (titleEl) titleEl.textContent = 'Add Classification Rule';
+      }
+
+      if (ruleCategorySelect) {
+        if (flowType === 'out') {
+          ruleCategorySelect.value = 'non_revenue';
+          ruleCategorySelect.disabled = true;
+        } else {
+          ruleCategorySelect.value = category;
+          ruleCategorySelect.disabled = false;
+        }
+      }
+
+      if (ruleModal) ruleModal.style.display = 'flex';
+    }
+
+    function closeRuleModal() {
+      if (ruleModal) ruleModal.style.display = 'none';
+    }
+
+    if (btnAddRule) btnAddRule.addEventListener('click', () => openRuleModal(-1));
+    if (ruleModalCloseBtn) ruleModalCloseBtn.addEventListener('click', closeRuleModal);
+    if (ruleModalCancelBtn) ruleModalCancelBtn.addEventListener('click', closeRuleModal);
+
+    // Edit Rule Trigger
+    document.querySelectorAll('.btn-edit-rule').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.getAttribute('data-index') || '-1', 10);
+        const ruleData = JSON.parse(btn.getAttribute('data-rule') || '{}');
+        openRuleModal(idx, ruleData);
+      });
+    });
+
+    // Delete Rule Trigger
+    document.querySelectorAll('.btn-delete-rule').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const idx = parseInt(btn.getAttribute('data-index') || '-1', 10);
+        if (idx === -1) return;
+        
+        if (confirm('Are you sure you want to delete this rule?')) {
+          currentRules.splice(idx, 1);
+          await saveRulesToServer(currentRules);
+        }
+      });
+    });
+
+    // Submit Rule Form
+    if (ruleForm) {
+      ruleForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const idx = parseInt(ruleIndexInput.value || '-1', 10);
+        const matchType = ruleMatchTypeSelect ? ruleMatchTypeSelect.value : 'keyword';
+        const newRule = {
+          matchType: matchType,
+          pattern: matchType === 'keyword' ? rulePatternInput.value.trim() : '',
+          type: ruleTypeSelect.value,
+          category: ruleTypeSelect.value === 'out' ? 'non_revenue' : (ruleCategorySelect ? ruleCategorySelect.value : 'non_revenue'),
+          taxCategory: ruleTaxCategoryInput.value.trim() || null,
+          targetCustomerId: matchType === 'keyword' ? (ruleCustomerSelect ? ruleCustomerSelect.value : null) : null
+        };
+
+        if (matchType === 'keyword' && !newRule.pattern) {
+          alert('Pattern keyword is required');
+          return;
+        }
+
+        if (idx === -1) {
+          currentRules.push(newRule);
+        } else {
+          currentRules[idx] = newRule;
+        }
+
+        await saveRulesToServer(currentRules);
+      });
+    }
+
+    // --- Bank Settings Configuration Form Logic ---
+    const bankConfigForm = document.getElementById('bankConfigForm');
+    const bankBrandName = document.getElementById('bankBrandName');
+    const bankAccountNumber = document.getElementById('bankAccountNumber');
+    const bankOrgName = document.getElementById('bankOrgName');
+
+    if (bankConfigForm) {
+      bankConfigForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        try {
+          // 1. Save defaultBank
+          const res1 = await fetch('/api/crm/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: 'defaultBank', value: bankBrandName.value }),
+          });
+
+          // 2. Save defaultAccount
+          const res2 = await fetch('/api/crm/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: 'defaultAccount', value: bankAccountNumber.value }),
+          });
+
+          // 3. Save orgName
+          const res3 = await fetch('/api/crm/config', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: 'orgName', value: bankOrgName.value }),
+          });
+
+          if (res1.ok && res2.ok && res3.ok) {
+            alert('Cấu hình tài khoản ngân hàng đã được cập nhật thành công!');
+            window.location.reload();
+          } else {
+            alert('Có lỗi xảy ra khi lưu cấu hình.');
+          }
+        } catch (err) {
+          console.error(err);
+          alert('Lỗi kết nối mạng, không thể lưu cấu hình.');
+        }
+      });
+    }
+
+    // --- Single Payment Deletion Logic ---
+    document.querySelectorAll('.btn-delete-payment').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const paymentId = btn.getAttribute('data-id');
+        if (!paymentId) return;
+
+        if (confirm('Bạn có chắc chắn muốn xóa giao dịch này không? Thao tác này không thể hoàn tác.')) {
+          try {
+            const res = await fetch(`/api/crm/payments/reconcile?id=${paymentId}`, {
+              method: 'DELETE',
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+              alert('Giao dịch đã được xóa thành công!');
+              window.location.reload();
+            } else {
+              alert('Lỗi khi xóa giao dịch: ' + (data.error || 'Unknown error'));
+            }
+          } catch (err) {
+            console.error(err);
+            alert('Lỗi kết nối mạng, không thể xóa giao dịch.');
+          }
+        }
+      });
+    });
+
+    // --- Bulk Cleanup Mismatched Payments Logic ---
+    const btnCleanupMismatched = document.getElementById('btnCleanupMismatched');
+    if (btnCleanupMismatched) {
+      btnCleanupMismatched.addEventListener('click', async () => {
+        if (confirm('Bạn có chắc chắn muốn xóa tất cả giao dịch đồng bộ từ số tài khoản khác với cấu hình hiện tại không?')) {
+          try {
+            btnCleanupMismatched.disabled = true;
+            btnCleanupMismatched.textContent = 'Đang dọn dẹp...';
+            
+            const res = await fetch('/api/crm/payments/cleanup', {
+              method: 'POST',
+            });
+            const data = await res.json();
+            
+            if (res.ok && data.success) {
+              alert(`Đã dọn dẹp thành công ${data.count} giao dịch sai số tài khoản!`);
+              window.location.reload();
+            } else {
+              const errMsg = data.error === 'Default bank account is not configured'
+                ? 'Chưa cấu hình tài khoản ngân hàng nhận tiền mặc định.'
+                : (data.error || 'Lỗi không xác định');
+              alert('Lỗi dọn dẹp giao dịch: ' + errMsg);
+            }
+          } catch (err) {
+            console.error(err);
+            alert('Lỗi kết nối mạng, không thể dọn dẹp giao dịch.');
+          } finally {
+            btnCleanupMismatched.disabled = false;
+            btnCleanupMismatched.textContent = 'Dọn dẹp Giao dịch Sai';
+          }
+        }
+      });
+    }
+
+    async function saveRulesToServer(rules) {
+      try {
+        const res = await fetch('/api/crm/payments/rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rules }),
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          closeRuleModal();
+          if (data.updatedCount !== undefined && data.updatedCount > 0) {
+            alert(`Đã lưu cấu hình trigger và tự động cập nhật phân loại cho ${data.updatedCount} giao dịch hiện có!`);
+          }
+          window.location.reload();
+        } else {
+          alert('Error saving rules: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Network error, could not save rules.');
+      }
+    }
   </script>
 </DashboardLayout>
