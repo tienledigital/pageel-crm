@@ -4,9 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [0.5.0] - Unreleased
 
+### Added
+- Integrated design system CSS and connected live database queries to dashboard.
+- Implemented responsive grid customer management layout and search functionality.
+- Implemented mobile responsive invoice list layout and status update actions.
+- Implemented bank settings, payment deletion, bulk cleanup, custom classification rules, and integration tests.
+
+### Changed
+- Optimized login authentication, Excel report export, webhook matching, backup connection, and core tests.
+
 ### Fixed
 - Fixed 500 Internal Server Error on production payments dashboard by applying missing database D1 migrations (`0002` and `0003`) containing the `category` column.
 - Hardened payments dashboard SSR logic with try-catch blocks for configuration rules JSON parsing, safe date parsing, and lowercase checks on customer/invoice IDs.
+- Updated payment classification skip guard and fixed SePay date parsing/formatting with Vietnam timezone.
 
 
 ## [0.4.1] - 2026-05-21
