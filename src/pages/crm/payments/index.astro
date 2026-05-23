@@ -97,21 +97,41 @@ function formatVND(amount: number) {
   return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
 }
 
-// Format date
-function formatDate(timestamp: number) {
-  return new Date(timestamp).toLocaleString('vi-VN', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+// Format date safely
+function formatDate(timestamp: any) {
+  if (!timestamp) return 'N/A';
+  try {
+    const date = new Date(Number(timestamp));
+    if (isNaN(date.getTime())) {
+      return 'N/A';
+    }
+    return date.toLocaleString('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch (e) {
+    return 'N/A';
+  }
 }
 
 // Query custom payment classification rules
 const rulesRecord = await db.select().from(config).where(eq(config.key, 'payment_classification_rules')).limit(1);
-const classificationRules = rulesRecord.length > 0 ? JSON.parse(rulesRecord[0].value) : [];
+let classificationRules = [];
+try {
+  classificationRules = rulesRecord.length > 0 && rulesRecord[0].value 
+    ? JSON.parse(rulesRecord[0].value) 
+    : [];
+  if (!Array.isArray(classificationRules)) {
+    classificationRules = [];
+  }
+} catch (e) {
+  console.error('[Classification Rules Parse Error]:', e);
+  classificationRules = [];
+}
 
 const defaultBankConfig = await db.select().from(config).where(eq(config.key, 'defaultBank')).limit(1);
 const defaultAccountConfig = await db.select().from(config).where(eq(config.key, 'defaultAccount')).limit(1);
@@ -123,10 +143,14 @@ const orgName = orgNameConfig[0]?.value || 'Pageel';
 
 // Query all customer IDs and invoice numbers for trigger match checks
 const allCustomerIds = new Set(
-  (await db.select({ id: customers.id }).from(customers)).map((c: any) => c.id.toLowerCase())
+  (await db.select({ id: customers.id }).from(customers))
+    .map((c: any) => c.id?.toLowerCase() || '')
+    .filter(Boolean)
 );
 const allInvoiceNumbers = new Set(
-  (await db.select({ invoiceNumber: invoices.invoiceNumber }).from(invoices)).map((i: any) => i.invoiceNumber.toLowerCase())
+  (await db.select({ invoiceNumber: invoices.invoiceNumber }).from(invoices))
+    .map((i: any) => i.invoiceNumber?.toLowerCase() || '')
+    .filter(Boolean)
 );
 
 // Helper to check if a transaction matches any trigger rule
