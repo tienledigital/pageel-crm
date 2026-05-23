@@ -1,0 +1,1 @@
+ALTER TABLE `payments` ADD `category` text DEFAULT 'revenue' NOT NULL;

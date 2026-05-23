@@ -1,0 +1,257 @@
+/* CRM Design System CSS */
+
+:root {
+  --bg-main: #f7f7f5; /* Notion-like light background */
+  --bg-card: #ffffff; /* White card */
+  --bg-hover: #efefef; /* Notion-like hover */
+  --border-color: #e9e9e7; /* Notion-like border */
+  --primary: #FF5D01; /* Pageel orange brand color */
+  --primary-glow: rgba(255, 93, 1, 0.08);
+  --text-primary: #37352F; /* Notion-like text */
+  --text-secondary: #787774; /* Notion-like secondary text */
+  --text-muted: #a09f9b; /* Notion-like muted text */
+  --success: #10b981;
+  --error: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-main);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* Namespaced Layout Classes to prevent Astro scoping issues */
+.crm-layout-container {
+  display: flex;
+  min-height: 100vh;
+}
+
+/* Sidebar Navigation */
+.crm-sidebar {
+  width: 260px;
+  background-color: var(--bg-card);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  padding: 1.5rem;
+  position: fixed;
+  height: 100vh;
+  z-index: 100;
+}
+
+.crm-logo-section {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 2.5rem;
+}
+
+.crm-logo-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1.5px solid var(--border-color);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.crm-logo-text {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+}
+
+.crm-nav-menu {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex-grow: 1;
+}
+
+.crm-nav-item {
+  border-radius: 10px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+}
+
+.crm-nav-item a {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.crm-nav-item svg {
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+  transition: all 0.2s ease;
+}
+
+.crm-nav-item:hover {
+  background-color: var(--bg-hover);
+}
+
+.crm-nav-item:hover a {
+  color: var(--text-primary);
+}
+
+.crm-nav-item:hover svg {
+  color: var(--primary);
+}
+
+.crm-nav-item.active {
+  background-color: var(--primary-glow);
+  border: 1px solid rgba(79, 70, 229, 0.1);
+}
+
+.crm-nav-item.active a {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.crm-nav-item.active svg {
+  color: var(--primary);
+}
+
+/* User Section */
+.crm-user-section {
+  margin-top: auto;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.crm-user-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.crm-user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background-color: var(--primary-glow);
+  border: 1px solid rgba(79, 70, 229, 0.1);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.crm-user-details {
+  display: flex;
+  flex-direction: column;
+}
+
+.crm-user-name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.crm-user-role {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.crm-logout-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.65rem;
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.crm-logout-btn:hover {
+  background-color: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.15);
+  color: var(--error);
+}
+
+/* Layout Body & Content */
+.crm-main-content {
+  flex-grow: 1;
+  margin-left: 260px;
+  padding: 2.5rem;
+  min-height: 100vh;
+}
+
+.crm-page-header {
+  margin-bottom: 2rem;
+}
+
+/* Table Scroll Container and Custom Webkit Scrollbars */
+.table-scroll-container {
+  overflow-x: auto;
+  width: 100%;
+}
+
+.table-scroll-container::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.table-scroll-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.table-scroll-container::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+.table-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}

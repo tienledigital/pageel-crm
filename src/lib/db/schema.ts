@@ -66,6 +66,7 @@ export const payments = sqliteTable('payments', {
   senderName: text('sender_name'),       // Sender bank name
   senderBank: text('sender_bank'),       // Sender bank code/name
   type: text('type').notNull().default('in'), // in (incoming payment), out (outgoing payment)
+  category: text('category').notNull().default('non_revenue'), // 'revenue' (Doanh thu), 'non_revenue' (Không phải doanh thu)
   taxCategory: text('tax_category'),     // Tax category classification
   content: text('content'),              // Original transfer description/content
   paidAt: integer('paid_at').notNull(),  // Bank transaction timestamp

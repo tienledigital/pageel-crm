@@ -90,6 +90,32 @@
    npx vitest run
    ```
 
+### 🔐 Đăng nhập môi trường Dev
+
+Khi khởi chạy cục bộ bằng `npm run dev` hoặc `npm run dev:cf`, ứng dụng sử dụng cơ sở dữ liệu mô phỏng local:
+
+*   **Tài khoản đăng nhập mặc định (D1 Local):**
+    *   **Username:** `admin`
+    *   **Password:** `admin123`
+*   **Nạp dữ liệu mẫu (Seed Data) vào D1 Local:**
+    Bạn có thể đặt tệp tin SQL chứa dữ liệu nhạy cảm vào `scripts/migration.sql` (tệp tin này đã được đưa vào `.gitignore` để đảm bảo an toàn, không bị commit) và nạp dữ liệu bằng lệnh:
+    ```bash
+    npx wrangler d1 execute pageel-crm-db --local --file=scripts/migration.sql
+    ```
+*   **Thêm/Cập nhật tài khoản tùy chỉnh vào D1 Local:**
+    Nếu bạn muốn sử dụng tài khoản riêng trong môi trường D1 Local emulator:
+    ```bash
+    npx wrangler d1 execute pageel-crm-db --local --command="INSERT OR REPLACE INTO users (id, username, password_hash, role) VALUES ('<id_tùy_ý>', '<tên_đăng_nhập>', '<mã_băm_pbkdf2>', 'admin');"
+    ```
+*   **Reset mật khẩu trên D1 Local:**
+    ```bash
+    node scripts/reset-password-local-d1.cjs <username> <new-password>
+    ```
+*   **Reset mật khẩu trên file SQLite (`local.db`):**
+    ```bash
+    node scripts/reset-password.cjs <username> <new-password>
+    ```
+
 ---
 
 ## 🚀 Triển khai hệ thống (Deployment)

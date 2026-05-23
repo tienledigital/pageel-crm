@@ -90,6 +90,32 @@
    npx vitest run
    ```
 
+### 🔐 Local Development Login
+
+When running the application locally using `npm run dev` or `npm run dev:cf`, the system connects to the local emulated database:
+
+*   **Default Login Credentials (D1 Local):**
+    *   **Username:** `admin`
+    *   **Password:** `admin123`
+*   **Seed Local Database (D1 Local):**
+    You can save your sensitive seed data file to `scripts/migration.sql` (this filename is listed in `.gitignore` and won't be committed) and run the execution command:
+    ```bash
+    npx wrangler d1 execute pageel-crm-db --local --file=scripts/migration.sql
+    ```
+*   **Add/Sync custom user to D1 Local:**
+    If you want to use a custom account with your hashed password on the emulated D1 database:
+    ```bash
+    npx wrangler d1 execute pageel-crm-db --local --command="INSERT OR REPLACE INTO users (id, username, password_hash, role) VALUES ('<any_id>', '<custom_username>', '<pbkdf2_hash_value>', 'admin');"
+    ```
+*   **Reset Password on D1 Local Emulator:**
+    ```bash
+    node scripts/reset-password-local-d1.cjs <username> <new-password>
+    ```
+*   **Reset Password on local SQLite File (`local.db`):**
+    ```bash
+    node scripts/reset-password.cjs <username> <new-password>
+    ```
+
 ---
 
 ## 🚀 Deployment

@@ -44,3 +44,8 @@ pnpm-debug.log*
 scripts/test-backup-manual.ts
 scripts/test-backup-manual.js
 
+# Local SQL dumps (sensitive data)
+*local.sql
+migration.sql
+scripts/*.sql
+

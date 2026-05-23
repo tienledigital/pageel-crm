@@ -2,8 +2,8 @@
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { users, syncLogs } from '@/lib/db/schema';
-import { desc } from 'drizzle-orm';
+import { users, syncLogs, customers, payments } from '@/lib/db/schema';
+import { desc, eq } from 'drizzle-orm';
 
 // Initialize database client to query analytics metrics
 const db = getDb(env);
@@ -11,6 +11,10 @@ const db = getDb(env);
 // Count users to display as an overview metric
 const userCountResult = await db.select().from(users);
 const totalUsers = userCountResult.length;
+
+// Count customers to display as an overview metric
+const customersResult = await db.select().from(customers);
+const totalCustomers = customersResult.length;
 
 // Fetch the 5 most recent sync/backup logs
 const recentLogs = await db
@@ -27,6 +31,29 @@ const lastBackupStatusText = lastBackup
 const lastBackupStatusClass = lastBackup 
   ? (lastBackup.status === 'success' ? 'text-success' : 'text-danger') 
   : '';
+
+// Calculate sync success rate safely
+const syncLogsResult = await db.select().from(syncLogs);
+const totalSyncs = syncLogsResult.length;
+const successSyncs = syncLogsResult.filter((log: any) => log.status === 'success').length;
+const syncSuccessRate = totalSyncs > 0 ? (successSyncs / totalSyncs) * 100 : 100.0;
+const syncSuccessRateText = `${syncSuccessRate.toFixed(1)}%`;
+
+// Fetch 5 most recent payment synchronizations
+const recentPayments = await db
+  .select({
+    id: payments.id,
+    amount: payments.amount,
+    content: payments.content,
+    paidAt: payments.paidAt,
+    customerName: customers.fullName,
+    customerId: customers.id,
+    bank: payments.bank,
+  })
+  .from(payments)
+  .leftJoin(customers, eq(payments.customerId, customers.id))
+  .orderBy(desc(payments.paidAt))
+  .limit(5);
 ---
 
 <DashboardLayout title="System Overview">
@@ -86,7 +113,7 @@ const lastBackupStatusClass = lastBackup
       font-size: 2.25rem;
       font-weight: 700;
       letter-spacing: -1px;
-      color: #fff;
+      color: var(--text-primary);
     }
 
     .metric-change {
@@ -209,12 +236,12 @@ const lastBackupStatusClass = lastBackup
     }
 
     .btn-secondary {
-      background-color: rgba(255, 255, 255, 0.05);
+      background-color: var(--bg-card);
       border: 1px solid var(--border-color);
       color: var(--text-primary);
     }
     .btn-secondary:hover {
-      background-color: rgba(255, 255, 255, 0.1);
+      background-color: var(--bg-hover);
       transform: translateY(-1px);
     }
 
@@ -245,7 +272,7 @@ const lastBackupStatusClass = lastBackup
     .control-section h3 {
       font-size: 1rem;
       font-weight: 600;
-      color: #fff;
+      color: var(--text-primary);
       margin: 0;
     }
 
@@ -283,11 +310,11 @@ const lastBackupStatusClass = lastBackup
     }
 
     .form-group input, .form-group select {
-      background-color: rgba(255, 255, 255, 0.03);
+      background-color: var(--bg-card);
       border: 1px solid var(--border-color);
       border-radius: 8px;
       padding: 0.5rem 0.75rem;
-      color: #fff;
+      color: var(--text-primary);
       font-size: 0.875rem;
       outline: none;
       transition: border-color 0.2s ease;
@@ -299,7 +326,7 @@ const lastBackupStatusClass = lastBackup
 
     /* Backup Status */
     .backup-status-banner {
-      background-color: rgba(255, 255, 255, 0.02);
+      background-color: var(--bg-hover);
       border: 1px solid var(--border-color);
       border-radius: 8px;
       padding: 0.75rem 1rem;
@@ -334,12 +361,12 @@ const lastBackupStatusClass = lastBackup
     <!-- Active Customers -->
     <div class="metric-card">
       <span class="metric-label">Total Customers</span>
-      <span class="metric-value">1,482</span>
+      <span class="metric-value">{totalCustomers}</span>
       <span class="metric-change change-up">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width: 12px; height: 12px;">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
         </svg>
-        +12.4% vs last month
+        Active
       </span>
     </div>
 
@@ -358,7 +385,7 @@ const lastBackupStatusClass = lastBackup
     <!-- Sync Success Rate -->
     <div class="metric-card">
       <span class="metric-label">Sync Success Rate</span>
-      <span class="metric-value">99.8%</span>
+      <span class="metric-value">{syncSuccessRateText}</span>
       <span class="metric-change change-up">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width: 12px; height: 12px;">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
@@ -376,7 +403,7 @@ const lastBackupStatusClass = lastBackup
         <div class="panel-header">
           <h2 class="panel-title">Recent Synchronizations</h2>
         </div>
-        <div class="data-table-container">
+        <div class="data-table-container table-scroll-container">
           <table class="data-table">
             <thead>
               <tr>
@@ -387,24 +414,28 @@ const lastBackupStatusClass = lastBackup
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td>Nguyen Van A</td>
-                <td><span class="badge badge-success">Completed</span></td>
-                <td>Sepay Webhook</td>
-                <td>2 mins ago</td>
-              </tr>
-              <tr>
-                <td>Tran Thi B</td>
-                <td><span class="badge badge-success">Completed</span></td>
-                <td>Sepay Webhook</td>
-                <td>15 mins ago</td>
-              </tr>
-              <tr>
-                <td>Le Van C</td>
-                <td><span class="badge badge-success">Completed</span></td>
-                <td>Manual Sync</td>
-                <td>1 hour ago</td>
-              </tr>
+              {recentPayments.length === 0 ? (
+                <tr>
+                  <td colspan="4" style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">Không có giao dịch đồng bộ nào gần đây</td>
+                </tr>
+              ) : (
+                recentPayments.map((p: any) => (
+                  <tr>
+                    <td>
+                      <strong>{p.customerId || 'N/A'}</strong> - {p.customerName || 'Ẩn danh'}
+                    </td>
+                    <td>
+                      <span class="badge badge-success">Completed</span>
+                    </td>
+                    <td>
+                      {p.bank || 'Sepay Webhook'}
+                    </td>
+                    <td style="white-space: nowrap;">
+                      {new Date(p.paidAt).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>
@@ -474,10 +505,10 @@ const lastBackupStatusClass = lastBackup
             <!-- Preview section container -->
             <div id="preview-section" style="display: none; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.25rem;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                <h4 style="margin: 0; font-size: 0.875rem; font-weight: 600; color: #fff;">Dữ liệu Xem trước</h4>
+                <h4 style="margin: 0; font-size: 0.875rem; font-weight: 600; color: var(--text-primary);">Dữ liệu Xem trước</h4>
                 <span class="badge badge-success" id="preview-summary" style="font-size: 0.7rem;">0 dòng - 0 đ</span>
               </div>
-              <div class="data-table-container" style="max-height: 250px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px;">
+              <div class="data-table-container table-scroll-container" style="max-height: 250px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 8px;">
                 <table class="data-table" style="font-size: 0.75rem; width: 100%;">
                   <thead style="position: sticky; top: 0; background-color: var(--bg-card); z-index: 1;">
                     <tr>
@@ -553,7 +584,7 @@ const lastBackupStatusClass = lastBackup
         <div class="panel-header">
           <h2 class="panel-title">Recent Backup Logs</h2>
         </div>
-        <div class="data-table-container">
+        <div class="data-table-container table-scroll-container">
           <table class="data-table">
             <thead>
               <tr>
@@ -685,7 +716,7 @@ const lastBackupStatusClass = lastBackup
                   <td style="white-space: nowrap;">${dateStr}</td>
                   <td><strong>${customerId}</strong> - ${customerName}</td>
                   <td>${p.content}</td>
-                  <td style="text-align: right; font-weight: 600; color: #fff;">${amountStr}</td>
+                  <td style="text-align: right; font-weight: 600; color: var(--text-primary);">${amountStr}</td>
                 </tr>
               `;
             }).join('');

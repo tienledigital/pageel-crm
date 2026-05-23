@@ -15,6 +15,20 @@
       "when": 1779268686738,
       "tag": "0001_young_hiroim",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1779444336286,
+      "tag": "0002_silly_prowler",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1779445763178,
+      "tag": "0003_wakeful_tony_stark",
+      "breakpoints": true
     }
   ]
 }
