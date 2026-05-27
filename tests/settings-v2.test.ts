@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { getDb } from '../src/lib/db';
-import { users, config, auditLogs } from '../src/lib/db/schema';
+import { users, config, auditLogs, debugLogs } from '../src/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import path from 'path';
 import { createSessionCookie, hashPassword } from '../src/lib/auth';
@@ -10,10 +10,14 @@ import { GET as getStatusHandler } from '../src/pages/api/settings/status';
 import { GET as getDbStatsHandler } from '../src/pages/api/settings/db-stats';
 import { POST as postDbOptimizeHandler } from '../src/pages/api/settings/db-optimize';
 
-// Import handlers from Phase 2 (Currently stubs, will fail tests)
+// Import handlers from Phase 2
 import { POST as changePasswordHandler } from '../src/pages/api/settings/change-password';
 import { GET as getUsersHandler, POST as createUserHandler } from '../src/pages/api/settings/users/index';
 import { DELETE as deleteUserHandler } from '../src/pages/api/settings/users/[id]';
+
+// Import handlers from Phase 3 (Currently stubs, will fail tests)
+import { GET as getAuditLogsHandler } from '../src/pages/api/settings/audit-logs';
+import { GET as getDebugLogsHandler } from '../src/pages/api/settings/debug-logs';
 
 const SESSION_SECRET = 'fallback-secret-key-must-be-at-least-32-chars-long';
 process.env.SESSION_SECRET = SESSION_SECRET;
@@ -66,6 +70,7 @@ describe('Settings v2 API Integration Tests (Phase 1 & Phase 2)', () => {
 
   beforeEach(async () => {
     await db.delete(auditLogs);
+    await db.delete(debugLogs);
     await db.delete(users);
     await db.delete(config);
 
@@ -255,6 +260,95 @@ describe('Settings v2 API Integration Tests (Phase 1 & Phase 2)', () => {
       const deleteLog = logs.find((l: any) => l.action === 'user.delete');
       expect(deleteLog).toBeDefined();
       expect(deleteLog.target).toBe('usr-staff');
+    });
+  });
+
+  // =========================================================================
+  // PHASE 3 TESTS (Audit Logs & Debug Logs Query) - Expected to FAIL (RED state)
+  // =========================================================================
+  describe('Phase 3: GET /api/settings/audit-logs', () => {
+    it('should return 401 if unauthorized', async () => {
+      const context: any = createMockContext('GET');
+      const response = await getAuditLogsHandler(context);
+      expect(response.status).toBe(401);
+    });
+
+    it('should return paginated audit logs for admin', async () => {
+      // Seed audit log
+      await db.insert(auditLogs).values({
+        id: 'log-1',
+        action: 'test.action',
+        target: 'test-target',
+        createdAt: Date.now()
+      });
+
+      const context: any = createMockContext('GET', null, adminToken);
+      context.url.searchParams.set('page', '1');
+      context.url.searchParams.set('limit', '10');
+
+      const response = await getAuditLogsHandler(context);
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data).toHaveProperty('logs');
+      expect(data).toHaveProperty('total');
+      expect(data.logs.length).toBe(1);
+      expect(data.logs[0].action).toBe('test.action');
+    });
+
+    it('should filter audit logs by action', async () => {
+      await db.insert(auditLogs).values({
+        id: 'log-1',
+        action: 'action.yes',
+        createdAt: Date.now()
+      });
+      await db.insert(auditLogs).values({
+        id: 'log-2',
+        action: 'action.no',
+        createdAt: Date.now()
+      });
+
+      const context: any = createMockContext('GET', null, adminToken);
+      context.url.searchParams.set('action', 'action.yes');
+
+      const response = await getAuditLogsHandler(context);
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data.logs.length).toBe(1);
+      expect(data.logs[0].action).toBe('action.yes');
+    });
+  });
+
+  describe('Phase 3: GET /api/settings/debug-logs', () => {
+    it('should return 401 if unauthorized', async () => {
+      const context: any = createMockContext('GET');
+      const response = await getDebugLogsHandler(context);
+      expect(response.status).toBe(401);
+    });
+
+    it('should return paginated debug logs filtered by level', async () => {
+      await db.insert(debugLogs).values({
+        id: 'dbg-1',
+        level: 'error',
+        message: 'critical error',
+        createdAt: Date.now()
+      });
+      await db.insert(debugLogs).values({
+        id: 'dbg-2',
+        level: 'info',
+        message: 'just info',
+        createdAt: Date.now()
+      });
+
+      const context: any = createMockContext('GET', null, adminToken);
+      context.url.searchParams.set('level', 'error');
+
+      const response = await getDebugLogsHandler(context);
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data).toHaveProperty('logs');
+      expect(data.logs.length).toBe(1);
+      expect(data.logs[0].level).toBe('error');
+      expect(data.logs[0].message).toBe('critical error');
     });
   });
 });

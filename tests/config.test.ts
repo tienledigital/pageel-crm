@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { getDb } from '../src/lib/db';
-import { config, users } from '../src/lib/db/schema';
+import { config, users, auditLogs } from '../src/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import path from 'path';
 import { POST as configHandler } from '../src/pages/api/crm/config';
@@ -45,6 +45,7 @@ describe('CRM Configuration API - Integration Tests', () => {
   });
 
   beforeEach(async () => {
+    await db.delete(auditLogs);
     await db.delete(config);
     await db.delete(users);
   });
