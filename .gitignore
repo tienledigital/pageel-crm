@@ -49,3 +49,6 @@ scripts/test-backup-manual.js
 migration.sql
 scripts/*.sql
 
+# TypeScript build cache
+*.tsbuildinfo
+
