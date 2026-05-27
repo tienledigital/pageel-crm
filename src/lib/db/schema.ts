@@ -88,3 +88,36 @@ export const syncLogs = sqliteTable('sync_logs', {
   message: text('message'),
   runAt: integer('run_at').default(sql`(strftime('%s', 'now') * 1000)`),
 });
+
+// 8. audit_logs
+export const auditLogs = sqliteTable('audit_logs', {
+  id: text('id').primaryKey(),
+  userId: text('user_id').references(() => users.id), // Nullable for system or anonymous tasks
+  username: text('username'), // Nullable for anonymous tasks
+  action: text('action').notNull(), // e.g. user.create, user.delete, config.update, db.optimize
+  target: text('target'), // affected key or ID
+  detail: text('detail'), // JSON payload storing old/new values or action details
+  ipAddress: text('ip_address'),
+  createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`),
+}, (table) => [
+  index('idx_audit_logs_action').on(table.action),
+  index('idx_audit_logs_created').on(table.createdAt),
+]);
+
+// 9. debug_logs
+export const debugLogs = sqliteTable('debug_logs', {
+  id: text('id').primaryKey(),
+  level: text('level').notNull().default('error'), // error, warn, info, debug
+  endpoint: text('endpoint'),
+  method: text('method'),
+  statusCode: integer('status_code'),
+  message: text('message').notNull(),
+  stack: text('stack'),
+  requestBody: text('request_body'), // sanitized body payload
+  createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`),
+}, (table) => [
+  index('idx_debug_logs_level').on(table.level),
+  index('idx_debug_logs_endpoint').on(table.endpoint),
+  index('idx_debug_logs_created').on(table.createdAt),
+]);
+

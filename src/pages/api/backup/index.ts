@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { exportDatabaseToJson, pushBackupToGit } from '@/lib/backup/githubClient';
 import { syncLogs } from '@/lib/db/schema';
+import { logDebug } from '@/lib/debug-logger';
 
 export async function POST(context: any) {
   // 1. Verify authentication & authorization
@@ -71,6 +72,16 @@ export async function POST(context: any) {
   } catch (error: any) {
     const safeErrorMessage = sanitizeError(error);
     console.error('[Backup Error]:', safeErrorMessage);
+
+    // Log to debug logs table
+    await logDebug(db, {
+      level: 'error',
+      endpoint: '/api/backup',
+      method: 'POST',
+      statusCode: 500,
+      message: safeErrorMessage,
+      stack: error.stack
+    });
 
     // 5. Log failure in sync_logs
     await db.insert(syncLogs).values({
