@@ -9,7 +9,7 @@
   <p>Self-hosted financial and invoicing engine tailored for Vietnamese small businesses.</p>
 
   [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-  [![Version](https://img.shields.io/badge/Version-v0.4.1-blue.svg)](CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/Version-v0.8.0-blue.svg)](CHANGELOG.md)
   ![Status](https://img.shields.io/badge/Status-Beta-orange.svg)
   [![Built with Astro](https://img.shields.io/badge/Built%20with-Astro-BC52EE.svg?logo=astro&logoColor=white)](https://astro.build)
 
@@ -43,6 +43,7 @@
 - **Dynamic Database Routing:** Automatically uses an in-memory SQLite database for testing, local SQLite database for development, and Cloudflare D1 for production deployment.
 - **Financial Compliance:** Auto-generates quarterly and monthly tax report spreadsheets complying with standard Vietnamese bookkeeping guidelines (S1a-HKD).
 - **TDD-First Architecture:** Decoupled codebase utilizing Repository patterns, tested locally with Vitest.
+- **Security Hardening (v0.8.0):** Production-grade session auth security, built-in client-side XSS protection, production verbose error masking, and sliding-window rate limiting on login via Cloudflare KV namespace.
 
 ---
 
@@ -76,6 +77,12 @@
      ```bash
      npx wrangler d1 migrations apply pageel-crm-db --local
      ```
+3.5. Configure local development secrets:
+   - Create a `.dev.vars` file in the root of the `repo` directory:
+     ```bash
+     cp .dev.vars.example .dev.vars
+     ```
+     Ensure you define a secure random `SESSION_SECRET` key (at least 32 characters) inside `.dev.vars`. Hardcoded fallback keys are removed, so this variable is strictly required.
 4. Run the development server:
    - For Cloudflare emulated environment (D1 & KV bindings active):
      ```bash
