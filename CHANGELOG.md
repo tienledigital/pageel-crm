@@ -2,15 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.5.0] - Unreleased
+## [0.8.1] - 2026-05-27
 
 ### Added
+- **Customer Edit Feature**: Implemented customer profile updates API and modal dialog (supporting Name, Phone, Email, Address, Notes, Tax code, Assigned Staff, etc.) with automated testing.
+- **Data Backup & Restore Panel**: Created a backup/restore component in Settings with manual restore triggers, dynamic tables, table cleanup capabilities, and log downloads.
+- **Bilingual Payment Page**: Translated all payment classification rules, trigger forms, manual reconciliation modals, and bank settings cards.
 - Integrated design system CSS and connected live database queries to dashboard.
 - Implemented responsive grid customer management layout and search functionality.
 - Implemented mobile responsive invoice list layout and status update actions.
 - Implemented bank settings, payment deletion, bulk cleanup, custom classification rules, and integration tests.
 
 ### Changed
+- **Renamed Invoices to Orders (Đơn hàng)**: Renamed references of "Invoices" to "Orders / Đơn hàng" across dashboard menus, sidebar layouts, lists, backup scripts, and SVG database schemas.
+- **Settings Layout Tabs**: Refactored the settings page into modular horizontal tabs (General, SePay, Database, Security, Logs, Backup) and removed redundant sidebar links.
 - Optimized login authentication, Excel report export, webhook matching, backup connection, and core tests.
 
 ### Fixed
