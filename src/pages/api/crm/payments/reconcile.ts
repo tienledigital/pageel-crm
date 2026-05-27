@@ -9,7 +9,7 @@ export const POST: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions
     const sessionCookie = context.cookies.get('session')?.value;
-    const secret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
+    const secret = getSessionSecret();
     
     if (!sessionCookie) {
       return new Response(JSON.stringify({ error: 'Unauthorized: No session cookie' }), {
@@ -97,7 +97,7 @@ export const DELETE: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions
     const sessionCookie = context.cookies.get('session')?.value;
-    const secret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
+    const secret = getSessionSecret();
     
     if (!sessionCookie) {
       return new Response(JSON.stringify({ error: 'Unauthorized: No session cookie' }), {

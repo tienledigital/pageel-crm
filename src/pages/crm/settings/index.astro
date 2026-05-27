@@ -21,7 +21,7 @@ const lang = Astro.locals.lang;
 const title = t('sidebar.settings', lang);
 
 const sessionCookie = Astro.cookies.get('session')?.value;
-const sessionSecret = env.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
+const sessionSecret = getSessionSecret();
 
 if (!sessionCookie) {
   return Astro.redirect('/login');
@@ -1252,7 +1252,7 @@ const i18nData = {
 </style>
 
 <script>
-  function escapeHtml(unsafe) {
+  function escapeHtml(unsafe: any) {
     if (unsafe === null || unsafe === undefined) return '';
     return String(unsafe)
       .replace(/&/g, "&amp;")

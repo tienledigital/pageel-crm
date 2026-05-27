@@ -18,7 +18,7 @@ import {
 export const GET: APIRoute = async (context) => {
   try {
     const sessionCookie = context.cookies.get('session')?.value;
-    const sessionSecret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
+    const sessionSecret = getSessionSecret();
 
     if (!sessionCookie) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
