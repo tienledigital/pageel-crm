@@ -4,8 +4,10 @@ import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { payments, customers, invoices, config } from '@/lib/db/schema';
 import { desc, eq, like, and, or, sql } from 'drizzle-orm';
+import { t } from '@/lib/i18n';
 
 const db = getDb(env);
+const lang = Astro.locals.lang || 'vi';
 
 // Fetch all customers for manual link dropdown
 const allCustomers = await db
@@ -668,15 +670,13 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
 
   <div class="header-container">
     <div class="title-section">
-      <h1>Payments & Cashflow</h1>
-      <p>Monitor transactions synced from SePay/MBBank, trace customer payments, and track net cashflow.</p>
     </div>
     <div class="action-section">
       <button id="btnSyncSepay" class="btn-filter" style="background-color: var(--primary); display: inline-flex; align-items: center; gap: 0.5rem;">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;">
           <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
         </svg>
-        <span>Quét giao dịch SePay</span>
+        <span>{t('payments.scan_btn', lang)}</span>
       </button>
     </div>
   </div>
@@ -876,14 +876,14 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
   <div id="rulesTabContent" style="display: none;">
     <!-- Bank Account Settings Card -->
     <div class="card-container" style="margin-bottom: 2rem;">
-      <h2 style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin: 0 0 0.5rem 0;">Bank Account Settings (Cấu hình Tài khoản Ngân hàng)</h2>
+      <h2 style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin: 0 0 0.5rem 0;">{lang === 'vi' ? 'Cấu hình Tài khoản Ngân hàng nhận tiền' : 'Bank Account Settings'}</h2>
       <p style="font-size: 0.875rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
-        Cấu hình tài khoản ngân hàng nhận tiền để tạo mã VietQR tự động và đồng bộ giao dịch từ SePay.
+        {lang === 'vi' ? 'Cấu hình tài khoản ngân hàng nhận tiền để tạo mã VietQR tự động và đồng bộ giao dịch từ SePay.' : 'Configure the receiving bank account to generate auto-VietQR codes and sync transactions from SePay.'}
       </p>
 
       <form id="bankConfigForm" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.5rem; align-items: end;">
         <div>
-          <label style="display: block; font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">Ngân hàng (Bank Brand Name)</label>
+          <label style="display: block; font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">{lang === 'vi' ? 'Ngân hàng nhận' : 'Bank Brand Name'}</label>
           <select id="bankBrandName" style="width: 100%; padding: 0.625rem; border: 1px solid var(--border); border-radius: 6px; background-color: var(--card-bg); color: var(--text-primary);">
             <option value="MB" selected={defaultBank === 'MB'}>MB (MBBank)</option>
             <option value="Techcombank" selected={defaultBank === 'Techcombank'}>Techcombank</option>
@@ -899,16 +899,16 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
           </select>
         </div>
         <div>
-          <label style="display: block; font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">Số tài khoản (Account Number)</label>
-          <input type="text" id="bankAccountNumber" value={defaultAccount} placeholder="Ví dụ: 0399999999" required style="width: 100%; padding: 0.625rem; border: 1px solid var(--border); border-radius: 6px; background-color: var(--card-bg); color: var(--text-primary);" />
+          <label style="display: block; font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">{lang === 'vi' ? 'Số tài khoản' : 'Account Number'}</label>
+          <input type="text" id="bankAccountNumber" value={defaultAccount} placeholder={lang === 'vi' ? 'Ví dụ: 0399999999' : 'e.g. 0399999999'} required style="width: 100%; padding: 0.625rem; border: 1px solid var(--border); border-radius: 6px; background-color: var(--card-bg); color: var(--text-primary);" />
         </div>
         <div>
-          <label style="display: block; font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">Tên tổ chức (Organization Name)</label>
-          <input type="text" id="bankOrgName" value={orgName} placeholder="Ví dụ: Pageel CRM" required style="width: 100%; padding: 0.625rem; border: 1px solid var(--border); border-radius: 6px; background-color: var(--card-bg); color: var(--text-primary);" />
+          <label style="display: block; font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">{lang === 'vi' ? 'Tên tổ chức / Cửa hàng' : 'Organization Name'}</label>
+          <input type="text" id="bankOrgName" value={orgName} placeholder={lang === 'vi' ? 'Ví dụ: Pageel CRM' : 'e.g. Pageel CRM'} required style="width: 100%; padding: 0.625rem; border: 1px solid var(--border); border-radius: 6px; background-color: var(--card-bg); color: var(--text-primary);" />
         </div>
         <div>
           <button type="submit" class="btn-save" style="width: 100%; justify-content: center; height: 42px;">
-            Save Settings
+            {lang === 'vi' ? 'Lưu cấu hình' : 'Save Settings'}
           </button>
         </div>
       </form>
@@ -916,16 +916,16 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
       <!-- Utility Action for Cleaning Mismatched Bank Payments -->
       <div style="margin-top: 1.5rem; padding-top: 1.5rem; border-top: 1px dashed var(--border); display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
         <div>
-          <h3 style="font-size: 0.95rem; font-weight: 600; color: var(--text-primary); margin: 0;">Dọn dẹp Giao dịch Sai số tài khoản (Data Cleanup)</h3>
+          <h3 style="font-size: 0.95rem; font-weight: 600; color: var(--text-primary); margin: 0;">{lang === 'vi' ? 'Dọn dẹp Giao dịch Sai số tài khoản (Data Cleanup)' : 'Cleanup Mismatched Bank Transactions'}</h3>
           <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 0.25rem;">
-            Xóa hàng loạt các giao dịch đã đồng bộ trước đây không khớp với số tài khoản được cấu hình ở trên ({defaultAccount}).
+            {lang === 'vi' ? `Xóa hàng loạt các giao dịch đã đồng bộ trước đây không khớp với số tài khoản được cấu hình ở trên (${defaultAccount}).` : `Bulk delete previously synced transactions that do not match the configured receiving account above (${defaultAccount}).`}
           </p>
         </div>
         <button id="btnCleanupMismatched" class="btn-action" style="background-color: #ef4444; border-color: #ef4444; color: white; padding: 0.625rem 1.25rem; border-radius: 6px; font-weight: 500; display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer;">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;">
             <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
           </svg>
-          Dọn dẹp Giao dịch Sai
+          {lang === 'vi' ? 'Dọn dẹp Giao dịch Sai' : 'Clean Mismatched Transactions'}
         </button>
       </div>
     </div>
@@ -933,16 +933,16 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
     <div class="card-container" style="margin-bottom: 2rem;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; flex-wrap: wrap; gap: 1rem;">
         <div>
-          <h2 style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin: 0;">Classification Rules & Triggers</h2>
+          <h2 style="font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin: 0;">{t('payments.rules_title', lang)}</h2>
           <p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.25rem;">
-            Automatically match transactions to specific flow types (Income/Expense), tax categories, or customers by defining keywords.
+            {t('payments.rules_desc', lang)}
           </p>
         </div>
         <button id="btnAddRule" class="btn-save" style="display: inline-flex; align-items: center; gap: 0.5rem;">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;">
             <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
           </svg>
-          Add Rule
+          {t('payments.add_rule', lang)}
         </button>
       </div>
 
@@ -950,18 +950,18 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         <table class="custom-table">
           <thead>
             <tr>
-              <th>Pattern / Match Mode</th>
-              <th>Classification Flow</th>
-              <th>Tax Category</th>
-              <th>Customer Link</th>
-              <th>Actions</th>
+              <th>{t('payments.pattern_mode', lang)}</th>
+              <th>{t('payments.flow', lang)}</th>
+              <th>{t('payments.tax_category', lang)}</th>
+              <th>{t('payments.customer_link', lang)}</th>
+              <th>{t('payments.actions', lang)}</th>
             </tr>
           </thead>
           <tbody id="rulesTableBody">
             {classificationRules.length === 0 ? (
               <tr>
                 <td colspan="5" style="text-align: center; padding: 3rem; color: var(--text-muted);">
-                  No classification rules defined yet.
+                  {t('payments.no_rules', lang)}
                 </td>
               </tr>
             ) : (
@@ -972,11 +972,11 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
                     <td class="mono" style="font-weight: 600; color: var(--primary);">
                       {rule.matchType === 'auto_customer' ? (
                         <span style="color: var(--success); font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem;">
-                          🔍 Auto-match Customer ID
+                          {t('payments.auto_match_cust', lang)}
                         </span>
                       ) : rule.matchType === 'auto_invoice' ? (
                         <span style="color: var(--success); font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem;">
-                          🧾 Auto-match Invoice ID
+                          {t('payments.auto_match_invoice', lang)}
                         </span>
                       ) : (
                         rule.pattern
@@ -985,10 +985,10 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
                     <td>
                       <div style="display: flex; flex-direction: column; gap: 0.25rem;">
                         <span class={`direction-badge ${rule.type === 'out' ? 'direction-out' : 'direction-in'}`}>
-                          {rule.type === 'out' ? 'Expense (Tiền ra)' : 'Income (Tiền vào)'}
+                          {rule.type === 'out' ? t('payments.expense', lang) : t('payments.income', lang)}
                         </span>
                         <span style="font-size: 0.75rem; color: var(--text-secondary); font-weight: 500;">
-                          {rule.category === 'revenue' ? 'Doanh thu' : 'Không phải doanh thu'}
+                          {rule.category === 'revenue' ? t('payments.revenue', lang) : t('payments.non_revenue', lang)}
                         </span>
                       </div>
                     </td>
@@ -999,19 +999,19 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
                     </td>
                     <td>
                       {rule.matchType === 'auto_customer' ? (
-                        <span style="color: var(--text-muted); font-style: italic;">Auto-extracted from content</span>
+                        <span style="color: var(--text-muted); font-style: italic;">{t('payments.auto_extract', lang)}</span>
                       ) : rule.matchType === 'auto_invoice' ? (
-                        <span style="color: var(--text-muted); font-style: italic;">Linked via matched Invoice</span>
+                        <span style="color: var(--text-muted); font-style: italic;">{t('payments.linked_invoice', lang)}</span>
                       ) : customer ? (
                         <div style="font-weight: 600;">{customer.fullName} <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal;">({customer.id})</span></div>
                       ) : (
-                        <span style="color: var(--text-muted); font-style: italic;">No Customer Link</span>
+                        <span style="color: var(--text-muted); font-style: italic;">{t('payments.no_customer_link', lang)}</span>
                       )}
                     </td>
                     <td>
                       <div style="display: flex; gap: 0.5rem;">
-                        <button type="button" class="btn-action btn-edit-rule" data-index={idx} data-rule={JSON.stringify(rule)}>✏️ Edit</button>
-                        <button type="button" class="btn-action btn-delete-rule" data-index={idx} style="border-color: rgba(239, 68, 68, 0.2); color: var(--error);">🗑️ Delete</button>
+                        <button type="button" class="btn-action btn-edit-rule" data-index={idx} data-rule={JSON.stringify(rule)}>✏️ {t('payments.edit', lang)}</button>
+                        <button type="button" class="btn-action btn-delete-rule" data-index={idx} style="border-color: rgba(239, 68, 68, 0.2); color: var(--error);">🗑️ {t('payments.delete', lang)}</button>
                       </div>
                     </td>
                   </tr>
@@ -1028,7 +1028,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
   <div class="modal-backdrop" id="ruleModal">
     <div class="modal-content">
       <div class="modal-header">
-        <h3 id="ruleModalTitle">Add Classification Rule</h3>
+        <h3 id="ruleModalTitle">{t('payments.add_rule_title', lang)}</h3>
         <button class="modal-close" id="ruleModalCloseBtn">&times;</button>
       </div>
       <div class="modal-body">
@@ -1036,48 +1036,48 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
           <input type="hidden" id="ruleIndex" />
           
           <div class="form-group">
-            <label for="ruleMatchType">Match Mode *</label>
+            <label for="ruleMatchType">{t('payments.match_mode', lang)} *</label>
             <select id="ruleMatchType" class="form-select" required>
-              <option value="keyword">Match Keyword (Khớp từ khóa)</option>
-              <option value="auto_customer">Auto-Match Customer ID (Tự động khớp ID Khách hàng)</option>
-              <option value="auto_invoice">Auto-Match Invoice ID (Tự động khớp Mã Hóa đơn)</option>
+              <option value="keyword">{lang === 'vi' ? 'Khớp từ khóa' : 'Match Keyword'}</option>
+              <option value="auto_customer">{lang === 'vi' ? 'Tự động khớp ID Khách hàng' : 'Auto-Match Customer ID'}</option>
+              <option value="auto_invoice">{lang === 'vi' ? 'Tự động khớp Mã Đơn hàng' : 'Auto-Match Order ID'}</option>
             </select>
           </div>
 
           <div class="form-group" id="rulePatternGroup">
-            <label for="rulePattern">Keyword Pattern *</label>
-            <input type="text" id="rulePattern" class="form-input" placeholder="e.g. FB ADS, HOSTING, CLOUDFLARE..." />
+            <label for="rulePattern">{t('payments.keyword_pattern', lang)} *</label>
+            <input type="text" id="rulePattern" class="form-input" placeholder={lang === 'vi' ? 'Ví dụ: FB ADS, HOSTING, CLOUDFLARE...' : 'e.g. FB ADS, HOSTING, CLOUDFLARE...'} />
           </div>
 
           <div class="form-group">
-            <label for="ruleType">Classification Flow *</label>
+            <label for="ruleType">{t('payments.flow', lang)} *</label>
             <select id="ruleType" class="form-select">
-              <option value="in">Income (Tiền vào)</option>
-              <option value="out">Expense (Tiền ra)</option>
+              <option value="in">{lang === 'vi' ? 'Tiền vào' : 'Income'}</option>
+              <option value="out">{lang === 'vi' ? 'Tiền ra' : 'Expense'}</option>
             </select>
           </div>
 
           <div class="form-group" id="ruleCategoryGroup">
-            <label for="ruleCategorySelect">Classification Category</label>
+            <label for="ruleCategorySelect">{lang === 'vi' ? 'Phân loại doanh thu' : 'Classification Category'}</label>
             <select id="ruleCategorySelect" class="form-select">
-              <option value="revenue">Doanh thu (Revenue)</option>
-              <option value="non_revenue">Không phải doanh thu (Non-revenue)</option>
+              <option value="revenue">{lang === 'vi' ? 'Doanh thu' : 'Revenue'}</option>
+              <option value="non_revenue">{lang === 'vi' ? 'Không phải doanh thu' : 'Non-Revenue'}</option>
             </select>
           </div>
 
           <div class="form-group">
-            <label for="ruleTaxCategory">Tax Category / Classification Tag</label>
-            <input type="text" id="ruleTaxCategory" class="form-input" placeholder="e.g. Marketing, Infra, Operating Expense..." />
+            <label for="ruleTaxCategory">{t('payments.tax_category', lang)}</label>
+            <input type="text" id="ruleTaxCategory" class="form-input" placeholder={lang === 'vi' ? 'Ví dụ: Marketing, Infra, Operating Expense...' : 'e.g. Marketing, Infra, Operating Expense...'} />
           </div>
 
           <!-- Customer Searchable Select for Rule -->
           <div class="form-group" id="ruleCustomerLinkGroup">
-            <label for="ruleCustomerSearchInput">Link Customer (Optional)</label>
+            <label for="ruleCustomerSearchInput">{t('payments.link_customer_opt', lang)}</label>
             <div class="searchable-select-container">
-              <input type="text" id="ruleCustomerSearchInput" class="form-input" placeholder="Type to search customer..." autocomplete="off" />
+              <input type="text" id="ruleCustomerSearchInput" class="form-input" placeholder={t('payments.type_search_customer', lang)} autocomplete="off" />
               <input type="hidden" id="ruleCustomerSelect" />
               <div class="searchable-select-dropdown" id="ruleCustomerSearchDropdown" style="display: none;">
-                <div class="searchable-select-option" data-value="">-- No Customer Link --</div>
+                <div class="searchable-select-option" data-value="">{t('payments.no_customer_link_opt', lang)}</div>
                 {allCustomers.map((cust: any) => (
                   <div class="searchable-select-option" data-value={cust.id} data-search={`${cust.fullName.toLowerCase()} ${cust.id.toLowerCase()}`}>
                     {cust.fullName} ({cust.id})
@@ -1088,8 +1088,8 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
           </div>
 
           <div class="modal-footer">
-            <button type="button" class="btn-cancel" id="ruleModalCancelBtn">Cancel</button>
-            <button type="submit" class="btn-save" id="ruleModalSaveBtn">Save Rule</button>
+            <button type="button" class="btn-cancel" id="ruleModalCancelBtn">{t('payments.cancel', lang)}</button>
+            <button type="submit" class="btn-save" id="ruleModalSaveBtn">{t('payments.save_rule', lang)}</button>
           </div>
         </form>
       </div>
@@ -1100,21 +1100,21 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
   <div class="modal-backdrop" id="reconcileModal">
     <div class="modal-content">
       <div class="modal-header">
-        <h3>Manual Reconcile</h3>
+        <h3>{t('payments.manual_reconcile', lang)}</h3>
         <button class="modal-close" id="modalCloseBtn">&times;</button>
       </div>
       <div class="modal-body">
         <div class="tx-info-box">
           <div class="tx-info-row">
-            <span class="tx-info-label">Transaction ID:</span>
+            <span class="tx-info-label">{t('payments.tx_id', lang)}</span>
             <span class="tx-info-val mono" id="modalTxId">TX123456</span>
           </div>
           <div class="tx-info-row">
-            <span class="tx-info-label">Amount:</span>
+            <span class="tx-info-label">{t('payments.amount', lang)}</span>
             <span class="tx-info-val text-success" id="modalTxAmount">100,000 đ</span>
           </div>
           <div class="tx-info-row">
-            <span class="tx-info-label">Description:</span>
+            <span class="tx-info-label">{t('payments.description', lang)}</span>
             <span class="tx-info-val" id="modalTxContent" style="font-size: 0.8rem; word-break: break-all;">Transfer info</span>
           </div>
         </div>
@@ -1124,12 +1124,12 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
           
           <!-- Customer Searchable Select -->
           <div class="form-group">
-            <label for="customerSearchInput">Customer Link</label>
+            <label for="customerSearchInput">{t('payments.customer_link', lang)}</label>
             <div class="searchable-select-container">
-              <input type="text" id="customerSearchInput" class="form-input" placeholder="Type to search customer..." autocomplete="off" />
+              <input type="text" id="customerSearchInput" class="form-input" placeholder={t('payments.type_search_customer', lang)} autocomplete="off" />
               <input type="hidden" id="modalCustomerSelect" />
               <div class="searchable-select-dropdown" id="customerSearchDropdown" style="display: none;">
-                <div class="searchable-select-option" data-value="">-- No Customer Link --</div>
+                <div class="searchable-select-option" data-value="">{t('payments.no_customer_link_opt', lang)}</div>
                 {allCustomers.map((cust: any) => (
                   <div class="searchable-select-option" data-value={cust.id} data-search={`${cust.fullName.toLowerCase()} ${cust.id.toLowerCase()}`}>
                     {cust.fullName} ({cust.id})
@@ -1141,9 +1141,9 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
 
           <!-- Invoice Select -->
           <div class="form-group">
-            <label for="modalInvoiceSelect">Invoice Link</label>
+            <label for="modalInvoiceSelect">{t('payments.invoice_link', lang)}</label>
             <select id="modalInvoiceSelect" class="form-select">
-              <option value="">-- No Invoice Link --</option>
+              <option value="">{t('payments.no_invoice_link', lang)}</option>
               {allInvoices.map((inv: any) => (
                 <option 
                   value={inv.id} 
@@ -1159,22 +1159,22 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
 
           <!-- Classification Category -->
           <div class="form-group" id="modalCategoryGroup">
-            <label for="modalCategorySelect">Classification Category</label>
+            <label for="modalCategorySelect">{lang === 'vi' ? 'Phân loại doanh thu' : 'Classification Category'}</label>
             <select id="modalCategorySelect" class="form-select">
-              <option value="revenue">Doanh thu (Revenue)</option>
-              <option value="non_revenue">Không phải doanh thu (Non-revenue)</option>
+              <option value="revenue">{lang === 'vi' ? 'Doanh thu' : 'Revenue'}</option>
+              <option value="non_revenue">{lang === 'vi' ? 'Không phải doanh thu' : 'Non-Revenue'}</option>
             </select>
           </div>
 
           <!-- Classification Tag -->
           <div class="form-group">
-            <label for="modalTaxCategoryInput">Custom Classification Tag (Tag)</label>
-            <input type="text" id="modalTaxCategoryInput" class="form-input" placeholder="e.g. Marketing, Refunds, Subscriptions..." />
+            <label for="modalTaxCategoryInput">{lang === 'vi' ? 'Tag thuế / Phân loại tùy chỉnh (Tag)' : 'Custom Classification Tag (Tag)'}</label>
+            <input type="text" id="modalTaxCategoryInput" class="form-input" placeholder={lang === 'vi' ? 'Ví dụ: Marketing, Refunds, Subscriptions...' : 'e.g. Marketing, Refunds, Subscriptions...'} />
           </div>
 
           <div class="modal-footer">
-            <button type="button" class="btn-cancel" id="modalCancelBtn">Cancel</button>
-            <button type="submit" class="btn-save">Save Changes</button>
+            <button type="button" class="btn-cancel" id="modalCancelBtn">{t('payments.cancel', lang)}</button>
+            <button type="submit" class="btn-save">{t('payments.save_changes', lang)}</button>
           </div>
         </form>
       </div>
@@ -1182,7 +1182,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
   </div>
 
   <!-- Client script for modal handling -->
-  <script is:inline define:vars={{ allInvoices, classificationRules }}>
+  <script is:inline define:vars={{ allInvoices, classificationRules, lang }}>
     const modal = document.getElementById('reconcileModal');
     const closeBtn = document.getElementById('modalCloseBtn');
     const cancelBtn = document.getElementById('modalCancelBtn');
@@ -1371,7 +1371,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
       btnSyncSepay.addEventListener('click', async () => {
         const originalText = btnSyncSepay.innerHTML;
         btnSyncSepay.disabled = true;
-        btnSyncSepay.innerHTML = '<span>Đang quét...</span>';
+        btnSyncSepay.innerHTML = '<span>' + (lang === 'vi' ? 'Đang quét...' : 'Scanning...') + '</span>';
 
         try {
           const res = await fetch('/api/payments/sync-sepay', {
@@ -1383,7 +1383,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
           console.log('[SePay Sync] Full response:', JSON.stringify(data, null, 2));
 
           if (res.ok && data.success) {
-            const summary = [
+            const summary = lang === 'vi' ? [
               data.message,
               `\nChi tiết:`,
               `- SePay API trả về: ${data.debug?.rawTransactionCount ?? '?'} giao dịch`,
@@ -1392,6 +1392,15 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
               `- Giao dịch ra bỏ qua: ${data.skippedOutgoing}`,
               data.errors?.length ? `- Lỗi: ${data.errors.join(', ')}` : '',
               `\n(Mở Console trình duyệt để xem chi tiết đầy đủ)`,
+            ].filter(Boolean).join('\n') : [
+              data.message,
+              `\nDetails:`,
+              `- SePay API returned: ${data.debug?.rawTransactionCount ?? '?'} transactions`,
+              `- Newly imported: ${data.newReconciled}`,
+              `- Duplicates skipped: ${data.duplicates}`,
+              `- Outgoing skipped: ${data.skippedOutgoing}`,
+              data.errors?.length ? `- Errors: ${data.errors.join(', ')}` : '',
+              `\n(Open browser Console for full details)`,
             ].filter(Boolean).join('\n');
 
             alert(summary);
@@ -1399,11 +1408,11 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
               window.location.reload();
             }
           } else {
-            alert('Lỗi quét giao dịch: ' + (data.error || 'Unknown error'));
+            alert(lang === 'vi' ? 'Lỗi quét giao dịch: ' + (data.error || 'Không rõ lỗi') : 'Scan error: ' + (data.error || 'Unknown error'));
           }
         } catch (err) {
           console.error(err);
-          alert('Lỗi kết nối mạng, không thể quét SePay.');
+          alert(lang === 'vi' ? 'Lỗi kết nối mạng, không thể quét SePay.' : 'Network connection error, unable to scan SePay.');
         } finally {
           btnSyncSepay.disabled = false;
           btnSyncSepay.innerHTML = originalText;
@@ -1593,7 +1602,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
 
       if (index !== -1 && ruleData) {
         const titleEl = document.getElementById('ruleModalTitle');
-        if (titleEl) titleEl.textContent = 'Edit Classification Rule';
+        if (titleEl) titleEl.textContent = lang === 'vi' ? 'Sửa luật phân loại' : 'Edit Classification Rule';
         if (ruleTypeSelect) ruleTypeSelect.value = flowType;
         if (ruleTaxCategoryInput) ruleTaxCategoryInput.value = ruleData.taxCategory || '';
         
@@ -1604,7 +1613,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         }
       } else {
         const titleEl = document.getElementById('ruleModalTitle');
-        if (titleEl) titleEl.textContent = 'Add Classification Rule';
+        if (titleEl) titleEl.textContent = lang === 'vi' ? 'Thêm luật phân loại' : 'Add Classification Rule';
       }
 
       if (ruleCategorySelect) {
@@ -1714,14 +1723,14 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
           });
 
           if (res1.ok && res2.ok && res3.ok) {
-            alert('Cấu hình tài khoản ngân hàng đã được cập nhật thành công!');
+            alert(lang === 'vi' ? 'Cấu hình tài khoản ngân hàng đã được cập nhật thành công!' : 'Bank account settings updated successfully!');
             window.location.reload();
           } else {
-            alert('Có lỗi xảy ra khi lưu cấu hình.');
+            alert(lang === 'vi' ? 'Có lỗi xảy ra khi lưu cấu hình.' : 'An error occurred while saving configurations.');
           }
         } catch (err) {
           console.error(err);
-          alert('Lỗi kết nối mạng, không thể lưu cấu hình.');
+          alert(lang === 'vi' ? 'Lỗi kết nối mạng, không thể lưu cấu hình.' : 'Network connection error, unable to save configuration.');
         }
       });
     }
@@ -1732,21 +1741,21 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         const paymentId = btn.getAttribute('data-id');
         if (!paymentId) return;
 
-        if (confirm('Bạn có chắc chắn muốn xóa giao dịch này không? Thao tác này không thể hoàn tác.')) {
+        if (confirm(lang === 'vi' ? 'Bạn có chắc chắn muốn xóa giao dịch này không? Thao tác này không thể hoàn tác.' : 'Are you sure you want to delete this transaction? This action cannot be undone.')) {
           try {
             const res = await fetch(`/api/crm/payments/reconcile?id=${paymentId}`, {
               method: 'DELETE',
             });
             const data = await res.json();
             if (res.ok && data.success) {
-              alert('Giao dịch đã được xóa thành công!');
+              alert(lang === 'vi' ? 'Giao dịch đã được xóa thành công!' : 'Transaction deleted successfully!');
               window.location.reload();
             } else {
-              alert('Lỗi khi xóa giao dịch: ' + (data.error || 'Unknown error'));
+              alert(lang === 'vi' ? 'Lỗi khi xóa giao dịch: ' + (data.error || 'Không rõ lỗi') : 'Error deleting transaction: ' + (data.error || 'Unknown error'));
             }
           } catch (err) {
             console.error(err);
-            alert('Lỗi kết nối mạng, không thể xóa giao dịch.');
+            alert(lang === 'vi' ? 'Lỗi kết nối mạng, không thể xóa giao dịch.' : 'Network connection error, unable to delete transaction.');
           }
         }
       });
@@ -1756,10 +1765,10 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
     const btnCleanupMismatched = document.getElementById('btnCleanupMismatched');
     if (btnCleanupMismatched) {
       btnCleanupMismatched.addEventListener('click', async () => {
-        if (confirm('Bạn có chắc chắn muốn xóa tất cả giao dịch đồng bộ từ số tài khoản khác với cấu hình hiện tại không?')) {
+        if (confirm(lang === 'vi' ? 'Bạn có chắc chắn muốn xóa tất cả giao dịch đồng bộ từ số tài khoản khác với cấu hình hiện tại không?' : 'Are you sure you want to delete all transactions synced from account numbers other than the current configuration?')) {
           try {
             btnCleanupMismatched.disabled = true;
-            btnCleanupMismatched.textContent = 'Đang dọn dẹp...';
+            btnCleanupMismatched.textContent = lang === 'vi' ? 'Đang dọn dẹp...' : 'Cleaning up...';
             
             const res = await fetch('/api/crm/payments/cleanup', {
               method: 'POST',
@@ -1767,20 +1776,20 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
             const data = await res.json();
             
             if (res.ok && data.success) {
-              alert(`Đã dọn dẹp thành công ${data.count} giao dịch sai số tài khoản!`);
+              alert(lang === 'vi' ? `Đã dọn dẹp thành công ${data.count} giao dịch sai số tài khoản!` : `Successfully cleaned up ${data.count} mismatched account number transactions!`);
               window.location.reload();
             } else {
               const errMsg = data.error === 'Default bank account is not configured'
-                ? 'Chưa cấu hình tài khoản ngân hàng nhận tiền mặc định.'
-                : (data.error || 'Lỗi không xác định');
-              alert('Lỗi dọn dẹp giao dịch: ' + errMsg);
+                ? (lang === 'vi' ? 'Chưa cấu hình tài khoản ngân hàng nhận tiền mặc định.' : 'Default receiving bank account is not configured.')
+                : (data.error || (lang === 'vi' ? 'Lỗi không xác định' : 'Unknown error'));
+              alert((lang === 'vi' ? 'Lỗi dọn dẹp giao dịch: ' : 'Cleanup error: ') + errMsg);
             }
           } catch (err) {
             console.error(err);
-            alert('Lỗi kết nối mạng, không thể dọn dẹp giao dịch.');
+            alert(lang === 'vi' ? 'Lỗi kết nối mạng, không thể dọn dẹp giao dịch.' : 'Network connection error, unable to clean up transactions.');
           } finally {
             btnCleanupMismatched.disabled = false;
-            btnCleanupMismatched.textContent = 'Dọn dẹp Giao dịch Sai';
+            btnCleanupMismatched.textContent = lang === 'vi' ? 'Dọn dẹp Giao dịch Sai' : 'Clean Mismatched Transactions';
           }
         }
       });
@@ -1798,15 +1807,15 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         if (res.ok && data.success) {
           closeRuleModal();
           if (data.updatedCount !== undefined && data.updatedCount > 0) {
-            alert(`Đã lưu cấu hình trigger và tự động cập nhật phân loại cho ${data.updatedCount} giao dịch hiện có!`);
+            alert(lang === 'vi' ? `Đã lưu cấu hình trigger và tự động cập nhật phân loại cho ${data.updatedCount} giao dịch hiện có!` : `Saved trigger configurations and auto-updated classification for ${data.updatedCount} existing transactions!`);
           }
           window.location.reload();
         } else {
-          alert('Error saving rules: ' + (data.error || 'Unknown error'));
+          alert((lang === 'vi' ? 'Lỗi khi lưu cấu hình luật: ' : 'Error saving rules: ') + (data.error || (lang === 'vi' ? 'Lỗi không xác định' : 'Unknown error')));
         }
       } catch (err) {
         console.error(err);
-        alert('Network error, could not save rules.');
+        alert(lang === 'vi' ? 'Lỗi kết nối mạng, không thể lưu cấu hình luật.' : 'Network error, could not save rules.');
       }
     }
   </script>

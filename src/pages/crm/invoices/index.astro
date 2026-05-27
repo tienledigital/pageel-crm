@@ -6,6 +6,7 @@ import { invoices, customers, staff } from '@/lib/db/schema';
 import { desc, eq, like, and, or, sql } from 'drizzle-orm';
 
 const db = getDb(env);
+const lang = Astro.locals.lang || 'vi';
 
 // 1. Parse query parameters
 const url = new URL(Astro.request.url);
@@ -96,7 +97,7 @@ function formatDate(timestamp: number | null) {
 }
 ---
 
-<DashboardLayout title="Invoices Management">
+<DashboardLayout title={lang === 'vi' ? 'Quản lý Đơn hàng' : 'Orders Management'}>
   <style>
     .header-container {
       display: flex;
@@ -417,12 +418,7 @@ function formatDate(timestamp: number | null) {
     }
   </style>
 
-  <div class="header-container">
-    <div class="title-section">
-      <h1>Invoices Management</h1>
-      <p>Create and manage customer service invoices, track payments, and verify collection status.</p>
-    </div>
-  </div>
+
 
   <!-- Stats Grid -->
   <div class="stats-banner">
@@ -434,9 +430,9 @@ function formatDate(timestamp: number | null) {
         </svg>
       </div>
       <div class="stat-details">
-        <span class="stat-label">Total Invoiced</span>
+        <span class="stat-label">{lang === 'vi' ? 'Tổng giá trị đơn hàng' : 'Total Ordered'}</span>
         <span class="stat-value">{formatVND(totalInvoiced)}</span>
-        <span style="font-size: 0.75rem; color: var(--text-secondary);">From {invoiceList.length} invoices</span>
+        <span style="font-size: 0.75rem; color: var(--text-secondary);">{lang === 'vi' ? `Từ ${invoiceList.length} đơn hàng` : `From ${invoiceList.length} orders`}</span>
       </div>
     </div>
 
@@ -448,9 +444,9 @@ function formatDate(timestamp: number | null) {
         </svg>
       </div>
       <div class="stat-details">
-        <span class="stat-label">Total Collected</span>
+        <span class="stat-label">{lang === 'vi' ? 'Đã thu hồi' : 'Total Collected'}</span>
         <span class="stat-value" style="color: var(--success);">{formatVND(totalCollected)}</span>
-        <span style="font-size: 0.75rem; color: var(--text-secondary);">{countPaid} paid invoices</span>
+        <span style="font-size: 0.75rem; color: var(--text-secondary);">{lang === 'vi' ? `${countPaid} đơn hàng đã thanh toán` : `${countPaid} paid orders`}</span>
       </div>
     </div>
 
@@ -462,9 +458,9 @@ function formatDate(timestamp: number | null) {
         </svg>
       </div>
       <div class="stat-details">
-        <span class="stat-label">Outstanding</span>
+        <span class="stat-label">{lang === 'vi' ? 'Chưa thanh toán' : 'Outstanding'}</span>
         <span class="stat-value" style="color: #f59e0b;">{formatVND(pendingCollected)}</span>
-        <span style="font-size: 0.75rem; color: var(--text-secondary);">{countPending} pending invoices</span>
+        <span style="font-size: 0.75rem; color: var(--text-secondary);">{lang === 'vi' ? `${countPending} đơn hàng chưa thanh toán` : `${countPending} pending orders`}</span>
       </div>
     </div>
   </div>
@@ -474,19 +470,19 @@ function formatDate(timestamp: number | null) {
     <input 
       type="text" 
       name="search" 
-      placeholder="Search by invoice number, content, or customer..." 
+      placeholder={lang === 'vi' ? 'Tìm kiếm theo mã đơn hàng, nội dung hoặc khách hàng...' : 'Search by order number, content, or customer...'} 
       value={search} 
       class="search-input" 
     />
     <select name="status" class="select-filter">
-      <option value="">All Statuses</option>
-      <option value="paid" selected={statusFilter === 'paid'}>Đã thanh toán (Paid)</option>
-      <option value="pending" selected={statusFilter === 'pending'}>Chưa thanh toán (Pending)</option>
-      <option value="cancelled" selected={statusFilter === 'cancelled'}>Đã hủy (Cancelled)</option>
+      <option value="">{lang === 'vi' ? 'Tất cả trạng thái' : 'All Statuses'}</option>
+      <option value="paid" selected={statusFilter === 'paid'}>{lang === 'vi' ? 'Đã thanh toán (Paid)' : 'Paid'}</option>
+      <option value="pending" selected={statusFilter === 'pending'}>{lang === 'vi' ? 'Chưa thanh toán (Pending)' : 'Pending'}</option>
+      <option value="cancelled" selected={statusFilter === 'cancelled'}>{lang === 'vi' ? 'Đã hủy (Cancelled)' : 'Cancelled'}</option>
     </select>
-    <button type="submit" class="btn-filter">Apply Filters</button>
+    <button type="submit" class="btn-filter">{lang === 'vi' ? 'Lọc đơn hàng' : 'Apply Filters'}</button>
     {(search || statusFilter) && (
-      <a href="/crm/invoices" class="btn-reset">Reset</a>
+      <a href="/crm/invoices" class="btn-reset">{lang === 'vi' ? 'Đặt lại' : 'Reset'}</a>
     )}
   </form>
 
@@ -497,20 +493,20 @@ function formatDate(timestamp: number | null) {
       <table class="custom-table">
         <thead>
           <tr>
-            <th>Invoice Number</th>
-            <th>Customer</th>
-            <th>Description</th>
-            <th>Amount</th>
-            <th>Status</th>
-            <th>Issued Date</th>
-            <th>Actions</th>
+            <th>{lang === 'vi' ? 'Mã đơn hàng' : 'Order Number'}</th>
+            <th>{lang === 'vi' ? 'Khách hàng' : 'Customer'}</th>
+            <th>{lang === 'vi' ? 'Mô tả / Nội dung' : 'Description'}</th>
+            <th>{lang === 'vi' ? 'Số tiền' : 'Amount'}</th>
+            <th>{lang === 'vi' ? 'Trạng thái' : 'Status'}</th>
+            <th>{lang === 'vi' ? 'Ngày phát hành' : 'Issued Date'}</th>
+            <th>{lang === 'vi' ? 'Thao tác' : 'Actions'}</th>
           </tr>
         </thead>
         <tbody>
           {invoiceList.length === 0 ? (
             <tr>
               <td colspan="7" style="text-align: center; padding: 3rem; color: var(--text-secondary);">
-                No invoices matching the criteria.
+                {lang === 'vi' ? 'Không có đơn hàng nào khớp với điều kiện tìm kiếm.' : 'No orders matching the criteria.'}
               </td>
             </tr>
           ) : (
@@ -532,7 +528,7 @@ function formatDate(timestamp: number | null) {
                   <div>
                     <span>{invoice.content}</span>
                     <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.15rem;">
-                      Staff: {invoice.staffName || 'Unassigned'}
+                      {lang === 'vi' ? 'Nhân sự' : 'Staff'}: {invoice.staffName || (lang === 'vi' ? 'Chưa phân công' : 'Unassigned')}
                     </div>
                   </div>
                 </td>
@@ -541,9 +537,9 @@ function formatDate(timestamp: number | null) {
                 </td>
                 <td>
                   <span class={`badge badge-${invoice.status}`}>
-                    {invoice.status === 'paid' && 'Đã thanh toán'}
-                    {invoice.status === 'pending' && 'Chưa thanh toán'}
-                    {invoice.status === 'cancelled' && 'Đã hủy'}
+                    {invoice.status === 'paid' && (lang === 'vi' ? 'Đã thanh toán' : 'Paid')}
+                    {invoice.status === 'pending' && (lang === 'vi' ? 'Chưa thanh toán' : 'Pending')}
+                    {invoice.status === 'cancelled' && (lang === 'vi' ? 'Đã hủy' : 'Cancelled')}
                   </span>
                 </td>
                 <td>
@@ -554,7 +550,7 @@ function formatDate(timestamp: number | null) {
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px;">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" />
                     </svg>
-                    Pay QR
+                    {lang === 'vi' ? 'Thanh toán QR' : 'Pay QR'}
                   </a>
                 </td>
               </tr>
@@ -568,7 +564,7 @@ function formatDate(timestamp: number | null) {
     <div class="mobile-card-grid">
       {invoiceList.length === 0 ? (
         <div style="text-align: center; padding: 2rem; color: var(--text-secondary);">
-          No invoices matching the criteria.
+          {lang === 'vi' ? 'Không có đơn hàng nào khớp với điều kiện tìm kiếm.' : 'No orders matching the criteria.'}
         </div>
       ) : (
         invoiceList.map((invoice: any) => (
@@ -585,28 +581,28 @@ function formatDate(timestamp: number | null) {
                 )}
               </div>
               <span class={`badge badge-${invoice.status}`}>
-                {invoice.status === 'paid' && 'Đã thanh toán'}
-                {invoice.status === 'pending' && 'Chưa thanh toán'}
-                {invoice.status === 'cancelled' && 'Đã hủy'}
+                {invoice.status === 'paid' && (lang === 'vi' ? 'Đã thanh toán' : 'Paid')}
+                {invoice.status === 'pending' && (lang === 'vi' ? 'Chưa thanh toán' : 'Pending')}
+                {invoice.status === 'cancelled' && (lang === 'vi' ? 'Đã hủy' : 'Cancelled')}
               </span>
             </div>
             
             <div class="mobile-card-body">
               <div class="mobile-card-row">
-                <span class="mobile-card-label">Description</span>
+                <span class="mobile-card-label">{lang === 'vi' ? 'Mô tả / Nội dung' : 'Description'}</span>
                 <span class="mobile-card-value" style="text-align: right;">{invoice.content}</span>
               </div>
               <div class="mobile-card-row">
-                <span class="mobile-card-label">Amount</span>
+                <span class="mobile-card-label">{lang === 'vi' ? 'Số tiền' : 'Amount'}</span>
                 <span class="mobile-card-value" style="font-weight: 600; color: var(--text-primary);">{formatVND(invoice.amount)}</span>
               </div>
               <div class="mobile-card-row">
-                <span class="mobile-card-label">Issued Date</span>
+                <span class="mobile-card-label">{lang === 'vi' ? 'Ngày phát hành' : 'Issued Date'}</span>
                 <span class="mobile-card-value">{formatDate(invoice.createdAt)}</span>
               </div>
               <div class="mobile-card-row">
-                <span class="mobile-card-label">Staff</span>
-                <span class="mobile-card-value" style="font-size: 0.75rem; color: var(--text-secondary);">{invoice.staffName || 'Unassigned'}</span>
+                <span class="mobile-card-label">{lang === 'vi' ? 'Nhân sự' : 'Staff'}</span>
+                <span class="mobile-card-value" style="font-size: 0.75rem; color: var(--text-secondary);">{invoice.staffName || (lang === 'vi' ? 'Chưa phân công' : 'Unassigned')}</span>
               </div>
             </div>
 
@@ -615,7 +611,7 @@ function formatDate(timestamp: number | null) {
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px;">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" />
                 </svg>
-                Pay QR
+                {lang === 'vi' ? 'Thanh toán QR' : 'Pay QR'}
               </a>
             </div>
           </div>

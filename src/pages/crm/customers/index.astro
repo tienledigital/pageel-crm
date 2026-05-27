@@ -3,9 +3,45 @@ import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { customers, staff } from '@/lib/db/schema';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, like, and, or, sql } from 'drizzle-orm';
 
 const db = getDb(env);
+
+// 1. Parse query parameters
+const url = new URL(Astro.request.url);
+const search = url.searchParams.get('search') || '';
+const statusFilter = url.searchParams.get('status') || ''; // 'active', 'expired', 'none'
+const staffFilter = url.searchParams.get('staffId') || '';
+
+// 2. Build where conditions
+const conditions = [];
+
+if (search) {
+  conditions.push(
+    or(
+      like(customers.fullName, `%${search}%`),
+      like(customers.phone, `%${search}%`),
+      like(customers.email, `%${search}%`),
+      like(customers.idCard, `%${search}%`),
+      like(customers.id, `%${search}%`)
+    )
+  );
+}
+
+if (staffFilter) {
+  conditions.push(eq(customers.assignedStaffId, staffFilter));
+}
+
+const now = Date.now();
+if (statusFilter === 'active') {
+  conditions.push(sql`${customers.expiredAt} >= ${now}`);
+} else if (statusFilter === 'expired') {
+  conditions.push(sql`${customers.expiredAt} < ${now}`);
+} else if (statusFilter === 'none') {
+  conditions.push(sql`${customers.expiredAt} IS NULL`);
+}
+
+const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
 // Query customers joining with staff to get assigned staff name
 const customerList = await db
@@ -16,14 +52,26 @@ const customerList = await db
     email: customers.email,
     idCard: customers.idCard,
     expiredAt: customers.expiredAt,
+    address: customers.address,
+    taxCode: customers.taxCode,
+    assignedStaffId: customers.assignedStaffId,
+    notes: customers.notes,
     staffName: staff.fullName,
   })
   .from(customers)
   .leftJoin(staff, eq(customers.assignedStaffId, staff.id))
+  .where(whereClause)
   .orderBy(desc(customers.id));
 
 // Query all staff members for the dropdown
 const staffList = await db.select().from(staff).orderBy(staff.fullName);
+
+// Calculate Stats Metrics
+const allCustomers = await db.select({ expiredAt: customers.expiredAt }).from(customers);
+const totalCustomers = allCustomers.length;
+const activeCustomers = allCustomers.filter((c: any) => c.expiredAt && c.expiredAt >= now).length;
+const expiredCustomers = allCustomers.filter((c: any) => c.expiredAt && c.expiredAt < now).length;
+const inactiveCustomers = allCustomers.filter((c: any) => !c.expiredAt).length;
 
 // Helper function to format service expiration date
 function formatExpiration(timestamp: number | null) {
@@ -54,16 +102,136 @@ function formatExpiration(timestamp: number | null) {
       margin-bottom: 2rem;
     }
 
-    .title-section h1 {
-      font-size: 1.75rem;
+    /* Stats Grid */
+    .stats-banner {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .stat-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stat-icon.customer-total {
+      background-color: rgba(99, 102, 241, 0.1);
+      color: var(--primary);
+    }
+
+    .stat-icon.customer-active {
+      background-color: rgba(16, 185, 129, 0.1);
+      color: var(--success);
+    }
+
+    .stat-icon.customer-expired {
+      background-color: rgba(239, 68, 68, 0.1);
+      color: var(--error);
+    }
+
+    .stat-details {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-value {
+      font-size: 1.35rem;
       font-weight: 700;
       color: var(--text-primary);
     }
 
-    .title-section p {
+    /* Filter Bar */
+    .filter-bar {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+      flex-wrap: wrap;
+    }
+
+    .search-input {
+      flex-grow: 1;
+      min-width: 240px;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 0.65rem 1rem;
+      border-radius: 8px;
       font-size: 0.875rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .search-input:focus {
+      border-color: var(--primary);
+    }
+
+    .select-filter {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 0.65rem 1rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .btn-filter {
+      background-color: var(--primary);
+      border: 1px solid var(--primary);
+      color: #fff;
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-filter:hover {
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+    }
+
+    .btn-reset {
+      background-color: transparent;
+      border: 1px solid var(--border-color);
       color: var(--text-secondary);
-      margin-top: 0.25rem;
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+
+    .btn-reset:hover {
+      background-color: var(--bg-hover);
+      color: var(--text-primary);
     }
 
     .card-container {
@@ -414,8 +582,6 @@ function formatExpiration(timestamp: number | null) {
 
   <div class="header-container">
     <div class="title-section">
-      <h1>Customers List</h1>
-      <p>Manage customer subscription status, view profiles, and issue payment QR codes.</p>
     </div>
     <div class="action-section">
       <button id="btnNewCustomer" class="btn-save" style="display: inline-flex; align-items: center; gap: 0.5rem;">
@@ -426,6 +592,78 @@ function formatExpiration(timestamp: number | null) {
       </button>
     </div>
   </div>
+
+  <!-- Stats Grid -->
+  <div class="stats-banner">
+    <!-- Total Customers -->
+    <div class="stat-card">
+      <div class="stat-icon customer-total">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 24px; height: 24px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.109A11.386 11.386 0 0110.089 20M14.214 16.058A9.396 9.396 0 0010 15a9.396 9.396 0 00-4.214 1.058M14.214 16.058a9.306 9.306 0 01-2.224 2.898M10 15a9.38 9.38 0 00-2.625.372 9.337 9.337 0 00-4.121.952 4.125 4.125 0 007.533 2.493M10 15v-.003c0-1.113.285-2.16.786-3.07M10 15v.109A11.386 11.386 0 005.089 16.5M10 7.5a3 3 0 110-6 3 3 0 010 6zm5 3a3 3 0 110-6 3 3 0 010 6z" />
+        </svg>
+      </div>
+      <div class="stat-details">
+        <span class="stat-label">Total Customers</span>
+        <span class="stat-value">{totalCustomers}</span>
+        <span style="font-size: 0.75rem; color: var(--text-secondary);">Registered profiles</span>
+      </div>
+    </div>
+
+    <!-- Active Service -->
+    <div class="stat-card">
+      <div class="stat-icon customer-active">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 24px; height: 24px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <div class="stat-details">
+        <span class="stat-label">Active Services</span>
+        <span class="stat-value" style="color: var(--success);">{activeCustomers}</span>
+        <span style="font-size: 0.75rem; color: var(--text-secondary);">Currently active</span>
+      </div>
+    </div>
+
+    <!-- Expired & No Service -->
+    <div class="stat-card">
+      <div class="stat-icon customer-expired">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 24px; height: 24px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <div class="stat-details">
+        <span class="stat-label">Expired / Unsubscribed</span>
+        <span class="stat-value" style="color: var(--error);">{expiredCustomers + inactiveCustomers}</span>
+        <span style="font-size: 0.75rem; color: var(--text-secondary);">{expiredCustomers} expired &bull; {inactiveCustomers} inactive</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filters -->
+  <form method="GET" class="filter-bar">
+    <input 
+      type="text" 
+      name="search" 
+      placeholder="Search by name, phone, email, CCCD, or ID..." 
+      value={search} 
+      class="search-input" 
+    />
+    <select name="status" class="select-filter">
+      <option value="">All Statuses</option>
+      <option value="active" selected={statusFilter === 'active'}>Còn hạn (Active)</option>
+      <option value="expired" selected={statusFilter === 'expired'}>Hết hạn (Expired)</option>
+      <option value="none" selected={statusFilter === 'none'}>Chưa đăng ký (No Service)</option>
+    </select>
+    <select name="staffId" class="select-filter">
+      <option value="">All Assigned Staff</option>
+      {staffList.map((st: any) => (
+        <option value={st.id} selected={staffFilter === st.id}>{st.fullName}</option>
+      ))}
+    </select>
+    <button type="submit" class="btn-filter">Apply Filters</button>
+    {(search || statusFilter || staffFilter) && (
+      <a href="/crm/customers" class="btn-reset">Reset</a>
+    )}
+  </form>
 
   <div class="card-container">
     <!-- Desktop Table View -->
@@ -442,90 +680,118 @@ function formatExpiration(timestamp: number | null) {
           </tr>
         </thead>
         <tbody>
-          {customerList.map((customer: any) => {
-            const serviceStatus = formatExpiration(customer.expiredAt);
-            return (
-              <tr>
-                <td>
-                  <div class="customer-info">
-                    <span class="customer-name">{customer.fullName}</span>
-                    <span class="customer-id">ID: {customer.id}</span>
-                  </div>
-                </td>
-                <td>
-                  <div style="display: flex; flex-direction: column; gap: 0.15rem;">
-                    <span>{customer.phone}</span>
-                    <span style="font-size: 0.75rem; color: var(--text-secondary);">{customer.email || 'No email'}</span>
-                  </div>
-                </td>
-                <td>
-                  <span style="font-family: monospace;">{customer.idCard || 'N/A'}</span>
-                </td>
-                <td>
-                  <span class={`badge ${serviceStatus.class}`}>{serviceStatus.text}</span>
-                </td>
-                <td>
-                  <span style="color: var(--text-secondary);">{customer.staffName || 'Unassigned'}</span>
-                </td>
-                <td>
-                  <a href={`/crm/qr-tool?customerId=${customer.id}`} class="btn-action">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" />
-                    </svg>
-                    QR Tool
-                  </a>
-                </td>
-              </tr>
-            );
-          })}
+          {customerList.length === 0 ? (
+            <tr>
+              <td colspan="6" style="text-align: center; padding: 3rem; color: var(--text-secondary);">
+                No customers matching the criteria.
+              </td>
+            </tr>
+          ) : (
+            customerList.map((customer: any) => {
+              const serviceStatus = formatExpiration(customer.expiredAt);
+              return (
+                <tr>
+                  <td>
+                    <div class="customer-info">
+                      <span class="customer-name">{customer.fullName}</span>
+                      <span class="customer-id">ID: {customer.id}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <div style="display: flex; flex-direction: column; gap: 0.15rem;">
+                      <span>{customer.phone}</span>
+                      <span style="font-size: 0.75rem; color: var(--text-secondary);">{customer.email || 'No email'}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span style="font-family: monospace;">{customer.idCard || 'N/A'}</span>
+                  </td>
+                  <td>
+                    <span class={`badge ${serviceStatus.class}`}>{serviceStatus.text}</span>
+                  </td>
+                  <td>
+                    <span style="color: var(--text-secondary);">{customer.staffName || 'Unassigned'}</span>
+                  </td>
+                  <td>
+                    <div style="display: flex; gap: 0.5rem;">
+                      <a href={`/crm/qr-tool?customerId=${customer.id}`} class="btn-action">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" />
+                        </svg>
+                        QR Tool
+                      </a>
+                      <button class="btn-action btn-edit-customer" data-customer={JSON.stringify(customer)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                        </svg>
+                        Edit
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })
+          )}
         </tbody>
       </table>
     </div>
 
     <!-- Mobile Card View -->
     <div class="mobile-card-grid">
-      {customerList.map((customer: any) => {
-        const serviceStatus = formatExpiration(customer.expiredAt);
-        return (
-          <div class="mobile-card">
-            <div class="mobile-card-header">
-              <div class="customer-info">
-                <span class="customer-name">{customer.fullName}</span>
-                <span class="customer-id">ID: {customer.id}</span>
+      {customerList.length === 0 ? (
+        <div style="text-align: center; padding: 2rem; color: var(--text-secondary);">
+          No customers matching the criteria.
+        </div>
+      ) : (
+        customerList.map((customer: any) => {
+          const serviceStatus = formatExpiration(customer.expiredAt);
+          return (
+            <div class="mobile-card">
+              <div class="mobile-card-header">
+                <div class="customer-info">
+                  <span class="customer-name">{customer.fullName}</span>
+                  <span class="customer-id">ID: {customer.id}</span>
+                </div>
+                <span class={`badge ${serviceStatus.class}`}>{serviceStatus.text}</span>
               </div>
-              <span class={`badge ${serviceStatus.class}`}>{serviceStatus.text}</span>
+              
+              <div class="mobile-card-body">
+                <div class="mobile-card-row">
+                  <span class="mobile-card-label">Phone</span>
+                  <span class="mobile-card-value">{customer.phone}</span>
+                </div>
+                <div class="mobile-card-row">
+                  <span class="mobile-card-label">Email</span>
+                  <span class="mobile-card-value" style="font-size: 0.8125rem;">{customer.email || 'No email'}</span>
+                </div>
+                <div class="mobile-card-row">
+                  <span class="mobile-card-label">CCCD / ID Card</span>
+                  <span class="mobile-card-value" style="font-family: monospace;">{customer.idCard || 'N/A'}</span>
+                </div>
+                <div class="mobile-card-row">
+                  <span class="mobile-card-label">Assigned Staff</span>
+                  <span class="mobile-card-value" style="color: var(--text-secondary);">{customer.staffName || 'Unassigned'}</span>
+                </div>
+              </div>
+  
+              <div class="mobile-card-footer" style="display: flex; gap: 0.5rem; width: 100%;">
+                <a href={`/crm/qr-tool?customerId=${customer.id}`} class="btn-action" style="flex: 1; justify-content: center;">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" />
+                  </svg>
+                  QR Tool
+                </a>
+                <button class="btn-action btn-edit-customer" data-customer={JSON.stringify(customer)} style="flex: 1; justify-content: center;">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                  </svg>
+                  Edit
+                </button>
+              </div>
             </div>
-            
-            <div class="mobile-card-body">
-              <div class="mobile-card-row">
-                <span class="mobile-card-label">Phone</span>
-                <span class="mobile-card-value">{customer.phone}</span>
-              </div>
-              <div class="mobile-card-row">
-                <span class="mobile-card-label">Email</span>
-                <span class="mobile-card-value" style="font-size: 0.8125rem;">{customer.email || 'No email'}</span>
-              </div>
-              <div class="mobile-card-row">
-                <span class="mobile-card-label">CCCD / ID Card</span>
-                <span class="mobile-card-value" style="font-family: monospace;">{customer.idCard || 'N/A'}</span>
-              </div>
-              <div class="mobile-card-row">
-                <span class="mobile-card-label">Assigned Staff</span>
-                <span class="mobile-card-value" style="color: var(--text-secondary);">{customer.staffName || 'Unassigned'}</span>
-              </div>
-            </div>
-
-            <div class="mobile-card-footer">
-              <a href={`/crm/qr-tool?customerId=${customer.id}`} class="btn-action" style="width: 100%; justify-content: center;">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" />
-                </svg>
-                QR Tool
-              </a>
-            </div>
-          </div>
-        );
-      })}
+          );
+        })
+      )}
     </div>
   </div>
 
@@ -604,7 +870,79 @@ function formatExpiration(timestamp: number | null) {
     </div>
   </div>
 
+  <!-- Edit Customer Modal -->
+  <div class="modal-backdrop" id="editCustomerModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Edit Customer Profile</h3>
+        <button class="modal-close" id="editModalCloseBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="editCustomerForm">
+          <input type="hidden" id="edit_cust_id" />
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="edit_cust_fullName">Full Name *</label>
+              <input type="text" id="edit_cust_fullName" class="form-input" required placeholder="e.g. John Doe" />
+            </div>
+
+            <div class="form-group">
+              <label for="edit_cust_phone">Phone Number *</label>
+              <input type="tel" id="edit_cust_phone" class="form-input" required placeholder="e.g. 0901234567" />
+            </div>
+
+            <div class="form-group">
+              <label for="edit_cust_email">Email</label>
+              <input type="email" id="edit_cust_email" class="form-input" placeholder="e.g. john@example.com" />
+            </div>
+
+            <div class="form-group">
+              <label for="edit_cust_idCard">CCCD / ID Card</label>
+              <input type="text" id="edit_cust_idCard" class="form-input" placeholder="e.g. 037123456789" />
+            </div>
+
+            <div class="form-group">
+              <label for="edit_cust_taxCode">Tax Code</label>
+              <input type="text" id="edit_cust_taxCode" class="form-input" placeholder="e.g. 8123456789" />
+            </div>
+
+            <div class="form-group">
+              <label for="edit_cust_address">Address</label>
+              <input type="text" id="edit_cust_address" class="form-input" placeholder="e.g. 123 Main St" />
+            </div>
+
+            <div class="form-group">
+              <label for="edit_cust_expiredAt">Service Expiration</label>
+              <input type="date" id="edit_cust_expiredAt" class="form-input" />
+            </div>
+
+            <div class="form-group full-width">
+              <label for="edit_cust_assignedStaffId">Assigned Staff</label>
+              <select id="edit_cust_assignedStaffId" class="form-select">
+                <option value="">-- Select Staff Member --</option>
+                {staffList.map((st: any) => (
+                  <option value={st.id}>{st.fullName}</option>
+                ))}
+              </select>
+            </div>
+
+            <div class="form-group full-width">
+              <label for="edit_cust_notes">Notes</label>
+              <textarea id="edit_cust_notes" class="form-textarea" placeholder="Add additional information..."></textarea>
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn-cancel" id="editModalCancelBtn">Cancel</button>
+            <button type="submit" class="btn-save">Save Changes</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <script is:inline>
+    // New Customer Modal
     const modal = document.getElementById('newCustomerModal');
     const openBtn = document.getElementById('btnNewCustomer');
     const closeBtn = document.getElementById('modalCloseBtn');
@@ -624,11 +962,58 @@ function formatExpiration(timestamp: number | null) {
 
     closeBtn.addEventListener('click', closeModal);
     cancelBtn.addEventListener('click', closeModal);
-    window.addEventListener('click', (e) => {
-      if (e.target === modal) closeModal();
+
+    // Edit Customer Modal
+    const editModal = document.getElementById('editCustomerModal');
+    const editCloseBtn = document.getElementById('editModalCloseBtn');
+    const editCancelBtn = document.getElementById('editModalCancelBtn');
+    const editForm = document.getElementById('editCustomerForm');
+
+    // Event delegation for Edit buttons
+    document.addEventListener('click', (e) => {
+      const editBtn = e.target.closest('.btn-edit-customer');
+      if (editBtn) {
+        const customerData = JSON.parse(editBtn.dataset.customer);
+        
+        // Pre-populate fields
+        document.getElementById('edit_cust_id').value = customerData.id;
+        document.getElementById('edit_cust_fullName').value = customerData.fullName || '';
+        document.getElementById('edit_cust_phone').value = customerData.phone || '';
+        document.getElementById('edit_cust_email').value = customerData.email || '';
+        document.getElementById('edit_cust_idCard').value = customerData.idCard || '';
+        document.getElementById('edit_cust_taxCode').value = customerData.taxCode || '';
+        document.getElementById('edit_cust_address').value = customerData.address || '';
+        document.getElementById('edit_cust_assignedStaffId').value = customerData.assignedStaffId || '';
+        document.getElementById('edit_cust_notes').value = customerData.notes || '';
+        
+        if (customerData.expiredAt) {
+          const d = new Date(customerData.expiredAt);
+          const year = d.getFullYear();
+          const month = String(d.getMonth() + 1).padStart(2, '0');
+          const day = String(d.getDate()).padStart(2, '0');
+          document.getElementById('edit_cust_expiredAt').value = `${year}-${month}-${day}`;
+        } else {
+          document.getElementById('edit_cust_expiredAt').value = '';
+        }
+        
+        editModal.style.display = 'flex';
+      }
     });
 
-    // Submit Form
+    function closeEditModal() {
+      editModal.style.display = 'none';
+    }
+
+    editCloseBtn.addEventListener('click', closeEditModal);
+    editCancelBtn.addEventListener('click', closeEditModal);
+
+    // Global Modal Backdrop Click Closer
+    window.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+      if (e.target === editModal) closeEditModal();
+    });
+
+    // Submit Create Form
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
 
@@ -674,6 +1059,54 @@ function formatExpiration(timestamp: number | null) {
       } catch (err) {
         console.error(err);
         alert('Network error, could not create customer.');
+      }
+    });
+
+    // Submit Edit Form
+    editForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const id = document.getElementById('edit_cust_id').value;
+      const fullName = document.getElementById('edit_cust_fullName').value;
+      const phone = document.getElementById('edit_cust_phone').value;
+      const email = document.getElementById('edit_cust_email').value;
+      const idCard = document.getElementById('edit_cust_idCard').value;
+      const taxCode = document.getElementById('edit_cust_taxCode').value;
+      const address = document.getElementById('edit_cust_address').value;
+      
+      const expiredAtVal = document.getElementById('edit_cust_expiredAt').value;
+      const expiredAt = expiredAtVal ? new Date(expiredAtVal).getTime() : null;
+      
+      const assignedStaffId = document.getElementById('edit_cust_assignedStaffId').value;
+      const notes = document.getElementById('edit_cust_notes').value;
+      
+      try {
+        const res = await fetch(`/api/crm/customers/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fullName,
+            phone,
+            email,
+            idCard,
+            taxCode,
+            address,
+            expiredAt,
+            assignedStaffId,
+            notes
+          }),
+        });
+        
+        const data = await res.json();
+        if (res.ok && data.success) {
+          closeEditModal();
+          window.location.reload();
+        } else {
+          alert('Error updating customer: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Network error, could not update customer.');
       }
     });
   </script>

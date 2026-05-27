@@ -1,0 +1,399 @@
+---
+import { t } from '@/lib/i18n';
+
+interface Props {
+  lang: 'vi' | 'en';
+  isAdmin: boolean;
+}
+
+const { lang, isAdmin } = Astro.props;
+---
+
+{isAdmin && (
+  <section id="logs" class="settings-card tab-panel">
+    <h2>{t('settings.logs', lang)}</h2>
+    <div class="card-body">
+      <!-- Tabs -->
+      <div class="tabs-header">
+        <button class="tab-btn active" data-tab="audit">{t('settings.audit_log', lang)}</button>
+        <button class="tab-btn" data-tab="debug">{t('settings.debug_log', lang)}</button>
+        <button class="tab-btn" data-tab="sync">{lang === 'vi' ? 'Nhật ký đồng bộ' : 'Sync History'}</button>
+      </div>
+
+      <!-- Tab Content: Audit Logs -->
+      <div class="tab-content active" id="auditTab">
+        <div class="log-filters">
+          <input type="text" id="auditActionFilter" class="form-input-small" placeholder="Filter by action..." />
+          <button id="applyAuditFilter" class="btn-small-secondary">Filter</button>
+        </div>
+        <div class="table-container mt-1">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>User</th>
+                <th>Action</th>
+                <th>Target</th>
+                <th>Detail</th>
+              </tr>
+            </thead>
+            <tbody id="auditLogsBody">
+              <tr>
+                <td colspan="5" class="text-center">Click to load or search logs</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination-row">
+          <button id="prevAuditPage" class="btn-pager" disabled>&larr; Prev</button>
+          <span id="auditPageInfo">Page 1 of 1</span>
+          <button id="nextAuditPage" class="btn-pager" disabled>Next &rarr;</button>
+        </div>
+      </div>
+
+      <!-- Tab Content: Debug Logs -->
+      <div class="tab-content" id="debugTab">
+        <div class="log-filters">
+          <select id="debugLevelFilter" class="form-input-small">
+            <option value="">All Levels</option>
+            <option value="error">Error</option>
+            <option value="warn">Warn</option>
+            <option value="info">Info</option>
+            <option value="debug">Debug</option>
+          </select>
+          <button id="applyDebugFilter" class="btn-small-secondary">Filter</button>
+        </div>
+        <div class="table-container mt-1">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Level</th>
+                <th>Endpoint</th>
+                <th>Status</th>
+                <th>Message</th>
+              </tr>
+            </thead>
+            <tbody id="debugLogsBody">
+              <tr>
+                <td colspan="5" class="text-center">Click to load or search logs</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination-row">
+          <button id="prevDebugPage" class="btn-pager" disabled>&larr; Prev</button>
+          <span id="debugPageInfo">Page 1 of 1</span>
+          <button id="nextDebugPage" class="btn-pager" disabled>Next &rarr;</button>
+        </div>
+      </div>
+
+      <!-- Tab Content: Sync Logs -->
+      <div class="tab-content" id="syncTab">
+        <div class="log-filters">
+          <select id="syncActionFilter" class="form-input-small">
+            <option value="">{lang === 'vi' ? 'Tất cả loại đồng bộ' : 'All Sync Actions'}</option>
+            <option value="github_backup">github_backup</option>
+            <option value="github_restore">github_restore</option>
+            <option value="sepay_sync">sepay_sync</option>
+          </select>
+          <button id="applySyncFilter" class="btn-small-secondary">Filter</button>
+        </div>
+        <div class="table-container mt-1">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Status</th>
+                <th>Message</th>
+              </tr>
+            </thead>
+            <tbody id="syncLogsBody">
+              <tr>
+                <td colspan="4" class="text-center">Click to load or search logs</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination-row">
+          <button id="prevSyncPage" class="btn-pager" disabled>&larr; Prev</button>
+          <span id="syncPageInfo">Page 1 of 1</span>
+          <button id="nextSyncPage" class="btn-pager" disabled>Next &rarr;</button>
+        </div>
+      </div>
+    </div>
+  </section>
+)}
+
+<script>
+  const layout = document.querySelector('.settings-layout') as HTMLDivElement;
+  const isAdmin = layout?.getAttribute('data-is-admin') === 'true';
+
+  function escapeHtml(unsafe: any) {
+    if (unsafe === null || unsafe === undefined) return '';
+    return String(unsafe)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  if (isAdmin) {
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+
+    tabBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabContents.forEach(c => c.classList.remove('active'));
+
+        btn.classList.add('active');
+        const tabId = btn.getAttribute('data-tab');
+        document.getElementById(`${tabId}Tab`)?.classList.add('active');
+
+        // Automatically fetch initial page when tab is activated
+        if (tabId === 'audit' && auditPage === 1) loadAuditLogs();
+        if (tabId === 'debug' && debugPage === 1) loadDebugLogs();
+        if (tabId === 'sync' && syncPage === 1) loadSyncLogs();
+      });
+    });
+
+    // Pagination variables
+    let auditPage = 1;
+    let debugPage = 1;
+    let syncPage = 1;
+    const limit = 10;
+
+    // Elements
+    const auditLogsBody = document.getElementById('auditLogsBody') as HTMLTableSectionElement;
+    const debugLogsBody = document.getElementById('debugLogsBody') as HTMLTableSectionElement;
+    const syncLogsBody = document.getElementById('syncLogsBody') as HTMLTableSectionElement;
+
+    async function loadAuditLogs() {
+      const actionInput = document.getElementById('auditActionFilter') as HTMLInputElement;
+      const action = actionInput ? actionInput.value : '';
+      try {
+        auditLogsBody.innerHTML = `<tr><td colspan="5" class="text-center">Loading audit logs...</td></tr>`;
+        const res = await fetch(`/api/settings/audit-logs?page=${auditPage}&limit=${limit}&action=${encodeURIComponent(action)}`);
+        
+        if (res.status === 501) {
+          auditLogsBody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary">Audit Logs API not implemented yet</td></tr>`;
+          return;
+        }
+        if (!res.ok) throw new Error('Failed to fetch audit logs');
+        const data = await res.json();
+
+        if (data.logs.length === 0) {
+          auditLogsBody.innerHTML = `<tr><td colspan="5" class="text-center">No logs matching filter</td></tr>`;
+        } else {
+          auditLogsBody.innerHTML = data.logs.map((log: any) => `
+            <tr>
+              <td class="whitespace-nowrap">${escapeHtml(new Date(log.createdAt).toLocaleString())}</td>
+              <td>${escapeHtml(log.username) || 'System'}</td>
+              <td><span class="badge-action">${escapeHtml(log.action)}</span></td>
+              <td>${escapeHtml(log.target) || '-'}</td>
+              <td class="text-secondary overflow-ellipsis max-width-300" title="${escapeHtml(log.detail)}">
+                ${escapeHtml(log.detail) || '-'}
+              </td>
+            </tr>
+          `).join('');
+        }
+
+        // Pager buttons state
+        const totalPages = Math.ceil(data.total / limit) || 1;
+        const pageInfo = document.getElementById('auditPageInfo') as HTMLSpanElement;
+        if (pageInfo) pageInfo.textContent = `Page ${auditPage} of ${totalPages}`;
+        
+        const prevBtn = document.getElementById('prevAuditPage') as HTMLButtonElement;
+        if (prevBtn) prevBtn.disabled = auditPage <= 1;
+        
+        const nextBtn = document.getElementById('nextAuditPage') as HTMLButtonElement;
+        if (nextBtn) nextBtn.disabled = auditPage >= totalPages;
+
+      } catch (err: any) {
+        auditLogsBody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary">Error: ${escapeHtml(err.message)}</td></tr>`;
+      }
+    }
+
+    async function loadDebugLogs() {
+      const levelSelect = document.getElementById('debugLevelFilter') as HTMLSelectElement;
+      const level = levelSelect ? levelSelect.value : '';
+      try {
+        debugLogsBody.innerHTML = `<tr><td colspan="5" class="text-center">Loading debug logs...</td></tr>`;
+        const res = await fetch(`/api/settings/debug-logs?page=${debugPage}&limit=${limit}&level=${level}`);
+
+        if (res.status === 501) {
+          debugLogsBody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary">Debug Logs API not implemented yet</td></tr>`;
+          return;
+        }
+        if (!res.ok) throw new Error('Failed to fetch debug logs');
+        const data = await res.json();
+
+        if (data.logs.length === 0) {
+          debugLogsBody.innerHTML = `<tr><td colspan="5" class="text-center">No logs matching filter</td></tr>`;
+        } else {
+          debugLogsBody.innerHTML = data.logs.map((log: any) => `
+            <tr class="debug-row-main" style="cursor: pointer;">
+              <td class="whitespace-nowrap">${escapeHtml(new Date(log.createdAt).toLocaleString())}</td>
+              <td><span class="badge-action ${escapeHtml(log.level)}">${escapeHtml(log.level)}</span></td>
+              <td>${escapeHtml(log.endpoint) || '-'}</td>
+              <td>${escapeHtml(log.statusCode) || '-'}</td>
+              <td class="text-secondary">${escapeHtml(log.message)}</td>
+            </tr>
+            <tr class="debug-row-detail" style="display: none; background: #fafafa;">
+              <td colspan="5">
+                <div style="padding: 0.5rem; font-family: monospace; font-size: 0.8rem; overflow-x: auto; white-space: pre-wrap;">
+                  <strong>Request Body:</strong> ${escapeHtml(log.requestBody) || 'None'}<br/><br/>
+                  <strong>Stack Trace:</strong><br/>${escapeHtml(log.stack) || 'No stack trace available'}
+                </div>
+              </td>
+            </tr>
+          `).join('');
+
+          // Click handler to toggle detail
+          const mainRows = document.querySelectorAll('.debug-row-main');
+          mainRows.forEach((row) => {
+            row.addEventListener('click', () => {
+              const detailRow = row.nextElementSibling as HTMLTableRowElement;
+              if (detailRow) {
+                detailRow.style.display = detailRow.style.display === 'none' ? 'table-row' : 'none';
+              }
+            });
+          });
+        }
+
+        const totalPages = Math.ceil(data.total / limit) || 1;
+        const pageInfo = document.getElementById('debugPageInfo') as HTMLSpanElement;
+        if (pageInfo) pageInfo.textContent = `Page ${debugPage} of ${totalPages}`;
+        
+        const prevBtn = document.getElementById('prevDebugPage') as HTMLButtonElement;
+        if (prevBtn) prevBtn.disabled = debugPage <= 1;
+        
+        const nextBtn = document.getElementById('nextDebugPage') as HTMLButtonElement;
+        if (nextBtn) nextBtn.disabled = debugPage >= totalPages;
+
+      } catch (err: any) {
+        debugLogsBody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary">Error: ${escapeHtml(err.message)}</td></tr>`;
+      }
+    }
+
+    async function loadSyncLogs() {
+      const actionSelect = document.getElementById('syncActionFilter') as HTMLSelectElement;
+      const action = actionSelect ? actionSelect.value : '';
+      try {
+        syncLogsBody.innerHTML = `<tr><td colspan="4" class="text-center">Loading sync logs...</td></tr>`;
+        const res = await fetch(`/api/settings/sync-logs?page=${syncPage}&limit=${limit}&action=${encodeURIComponent(action)}`);
+        
+        if (!res.ok) throw new Error('Failed to fetch sync logs');
+        const data = await res.json();
+
+        if (data.logs.length === 0) {
+          syncLogsBody.innerHTML = `<tr><td colspan="4" class="text-center">No sync logs found</td></tr>`;
+        } else {
+          syncLogsBody.innerHTML = data.logs.map((log: any) => `
+            <tr>
+              <td class="whitespace-nowrap">${escapeHtml(new Date(log.runAt).toLocaleString())}</td>
+              <td><span class="badge-action">${escapeHtml(log.action)}</span></td>
+              <td>
+                <span class="status-dot ${log.status === 'success' ? 'green' : 'red'}"></span>
+                ${escapeHtml(log.status)}
+              </td>
+              <td class="text-secondary overflow-ellipsis max-width-300" title="${escapeHtml(log.message)}">
+                ${escapeHtml(log.message) || '-'}
+              </td>
+            </tr>
+          `).join('');
+        }
+
+        const totalPages = Math.ceil(data.total / limit) || 1;
+        const pageInfo = document.getElementById('syncPageInfo') as HTMLSpanElement;
+        if (pageInfo) pageInfo.textContent = `Page ${syncPage} of ${totalPages}`;
+        
+        const prevBtn = document.getElementById('prevSyncPage') as HTMLButtonElement;
+        if (prevBtn) prevBtn.disabled = syncPage <= 1;
+        
+        const nextBtn = document.getElementById('nextSyncPage') as HTMLButtonElement;
+        if (nextBtn) nextBtn.disabled = syncPage >= totalPages;
+
+      } catch (err: any) {
+        syncLogsBody.innerHTML = `<tr><td colspan="4" class="text-center text-secondary">Error: ${escapeHtml(err.message)}</td></tr>`;
+      }
+    }
+
+    // Attach filters
+    document.getElementById('applyAuditFilter')?.addEventListener('click', () => {
+      auditPage = 1;
+      loadAuditLogs();
+    });
+    document.getElementById('applyDebugFilter')?.addEventListener('click', () => {
+      debugPage = 1;
+      loadDebugLogs();
+    });
+    document.getElementById('applySyncFilter')?.addEventListener('click', () => {
+      syncPage = 1;
+      loadSyncLogs();
+    });
+
+    // Attach Pager
+    document.getElementById('prevAuditPage')?.addEventListener('click', () => {
+      if (auditPage > 1) {
+        auditPage--;
+        loadAuditLogs();
+      }
+    });
+    document.getElementById('nextAuditPage')?.addEventListener('click', () => {
+      auditPage++;
+      loadAuditLogs();
+    });
+    document.getElementById('prevDebugPage')?.addEventListener('click', () => {
+      if (debugPage > 1) {
+        debugPage--;
+        loadDebugLogs();
+      }
+    });
+    document.getElementById('nextDebugPage')?.addEventListener('click', () => {
+      debugPage++;
+      loadDebugLogs();
+    });
+    document.getElementById('prevSyncPage')?.addEventListener('click', () => {
+      if (syncPage > 1) {
+        syncPage--;
+        loadSyncLogs();
+      }
+    });
+    document.getElementById('nextSyncPage')?.addEventListener('click', () => {
+      syncPage++;
+      loadSyncLogs();
+    });
+
+    // Initial load based on tab query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const activeSubTab = urlParams.get('subtab') || '';
+
+    if (activeSubTab === 'sync' || window.location.hash === '#logs-sync') {
+      tabBtns.forEach(b => {
+        if (b.getAttribute('data-tab') === 'sync') b.classList.add('active');
+        else b.classList.remove('active');
+      });
+      tabContents.forEach(c => {
+        if (c.id === 'syncTab') c.classList.add('active');
+        else c.classList.remove('active');
+      });
+      loadSyncLogs();
+    } else if (activeSubTab === 'debug') {
+      tabBtns.forEach(b => {
+        if (b.getAttribute('data-tab') === 'debug') b.classList.add('active');
+        else b.classList.remove('active');
+      });
+      tabContents.forEach(c => {
+        if (c.id === 'debugTab') c.classList.add('active');
+        else c.classList.remove('active');
+      });
+      loadDebugLogs();
+    } else {
+      loadAuditLogs();
+    }
+  }
+</script>

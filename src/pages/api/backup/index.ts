@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { exportDatabaseToJson, pushBackupToGit } from '@/lib/backup/githubClient';
+import { exportDatabaseToJson, pushBackupToGit, listBackupsFromGit } from '@/lib/backup/githubClient';
 import { syncLogs } from '@/lib/db/schema';
 import { logDebug } from '@/lib/debug-logger';
 
@@ -93,6 +93,53 @@ export async function POST(context: any) {
     });
 
     return new Response(JSON.stringify({ success: false, error: safeErrorMessage }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+}
+
+export async function GET(context: any) {
+  // 1. Verify authentication & authorization
+  const user = context.locals.user;
+  if (!user) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  if (user.role !== 'admin') {
+    return new Response(JSON.stringify({ error: 'Forbidden - Admin access required' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  // 2. Read configuration from env
+  const token = env.GITHUB_BACKUP_TOKEN || process.env.GITHUB_BACKUP_TOKEN;
+  const owner = env.GITHUB_BACKUP_OWNER || process.env.GITHUB_BACKUP_OWNER;
+  const repo = env.GITHUB_BACKUP_REPO || process.env.GITHUB_BACKUP_REPO;
+
+  if (!token || !owner || !repo) {
+    return new Response(
+      JSON.stringify({ error: 'Missing GitHub backup configuration (Token, Owner, or Repo)' }),
+      {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    );
+  }
+
+  try {
+    const backups = await listBackupsFromGit({ token, owner, repo });
+    return new Response(JSON.stringify({ success: true, backups }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (error: any) {
+    console.error('[Backup List Error]:', error.message);
+    return new Response(JSON.stringify({ success: false, error: error.message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });

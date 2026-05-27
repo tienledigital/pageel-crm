@@ -17,6 +17,14 @@ import {
   payments
 } from '@/lib/db/schema';
 
+// Subcomponents
+import GeneralSettings from '@/components/settings/GeneralSettings.astro';
+import SepaySettings from '@/components/settings/SepaySettings.astro';
+import DatabaseSettings from '@/components/settings/DatabaseSettings.astro';
+import SecuritySettings from '@/components/settings/SecuritySettings.astro';
+import LogsSettings from '@/components/settings/LogsSettings.astro';
+import BackupSettings from '@/components/settings/BackupSettings.astro';
+
 const lang = Astro.locals.lang;
 const title = t('sidebar.settings', lang);
 
@@ -41,15 +49,10 @@ const configMap = new Map<string, string>();
 configs.forEach((c: any) => {
   configMap.set(c.key, c.value || '');
 });
-const orgName = configMap.get('org_name') || '';
-const orgLogo = configMap.get('org_logo') || '';
-const defaultBankAccount = configMap.get('default_bank_account') || '';
-
-// Fetch 10 recent sync logs
-const recentSyncLogs = await db.select()
-  .from(syncLogs)
-  .orderBy(desc(syncLogs.runAt))
-  .limit(10);
+const orgName = configMap.get('orgName') || configMap.get('org_name') || '';
+const orgLogo = configMap.get('orgLogo') || configMap.get('org_logo') || '';
+const defaultBank = configMap.get('defaultBank') || 'MB';
+const defaultAccount = configMap.get('defaultAccount') || '';
 
 // Fetch DB stats for admin
 let dbStats = [];
@@ -110,15 +113,25 @@ const i18nData = {
   githubTestSuccess: t('settings.github_test_success', lang),
   githubBackupSuccess: t('settings.github_backup_success', lang),
   githubBackupConfirm: t('settings.github_backup_confirm', lang),
+  dbClearSuccess: t('settings.db_clear_success', lang),
+  dbClearConfirmTitle: t('settings.db_clear_confirm_title', lang),
+  dbClearConfirmDesc: t('settings.db_clear_confirm_desc', lang),
   saveLabel: t('settings.save', lang)
 };
 ---
 
 <DashboardLayout title={title}>
   <div class="settings-layout" data-is-admin={isAdmin ? "true" : "false"} data-lang={lang} data-i18n={JSON.stringify(i18nData)}>
-    <!-- Navigation Sidebar -->
-    <aside class="settings-sidebar">
-      <nav class="settings-nav">
+    <!-- Main Content -->
+    <main class="settings-content">
+      <!-- Header -->
+      <header class="settings-header-card">
+        <h1>{t('settings.title', lang)}</h1>
+        <p>{t('sidebar.settings', lang)} &bull; {user.username} ({user.role})</p>
+      </header>
+
+      <!-- Horizontal Tabs Navigation -->
+      <div class="settings-tabs-nav">
         <a href="#general" class="nav-item active">
           <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -140,6 +153,12 @@ const i18nData = {
             </svg>
             {t('settings.database', lang)}
           </a>
+          <a href="#backup" class="nav-item">
+            <svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+            </svg>
+            {lang === 'vi' ? 'Sao lưu' : 'Backup'}
+          </a>
         )}
 
         <a href="#security" class="nav-item">
@@ -157,400 +176,19 @@ const i18nData = {
             {t('settings.logs', lang)}
           </a>
         )}
-      </nav>
-    </aside>
+      </div>
 
-    <!-- Main Scrollable Content -->
-    <main class="settings-content">
-      <!-- Header -->
-      <header class="settings-header-card">
-        <h1>{t('settings.title', lang)}</h1>
-        <p>{t('sidebar.settings', lang)} &bull; {user.username} ({user.role})</p>
-      </header>
-
-      <!-- SECTION 1: GENERAL -->
-      <section id="general" class="settings-card">
-        <h2>{t('settings.general', lang)}</h2>
-        <div class="card-body">
-          <!-- Language Selector -->
-          <div class="form-group">
-            <label class="form-label">{t('settings.language', lang)}</label>
-            <div class="language-options">
-              <div class={`lang-card ${lang === 'vi' ? 'active' : ''}`} data-lang="vi">
-                <span class="lang-flag">🇻🇳</span>
-                <div class="lang-info">
-                  <span class="lang-name">{t('settings.vietnamese', lang)}</span>
-                  <span class="lang-desc">Tiếng Việt</span>
-                </div>
-                <div class="lang-radio-check"></div>
-              </div>
-              <div class={`lang-card ${lang === 'en' ? 'active' : ''}`} data-lang="en">
-                <span class="lang-flag">🇺🇸</span>
-                <div class="lang-info">
-                  <span class="lang-name">{t('settings.english', lang)}</span>
-                  <span class="lang-desc">English</span>
-                </div>
-                <div class="lang-radio-check"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Org Info -->
-          <div class="form-group grid-2">
-            <div>
-              <label for="orgNameInput" class="form-label">{t('settings.org_name', lang)}</label>
-              <input type="text" id="orgNameInput" class="form-input" value={orgName} placeholder="My CRM shop" />
-            </div>
-            <div>
-              <label for="orgLogoInput" class="form-label">{t('settings.org_logo', lang)}</label>
-              <input type="url" id="orgLogoInput" class="form-input" value={orgLogo} placeholder="https://example.com/logo.png" />
-            </div>
-          </div>
-
-          <div class="action-row">
-            <button id="saveGeneralBtn" class="btn-primary">
-              <span class="spinner" id="genSpinner"></span>
-              {t('settings.save', lang)}
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {isAdmin && (
-        <!-- SECTION 2: INTEGRATIONS -->
-        <section id="integrations" class="settings-card">
-          <h2>{t('settings.integrations', lang)}</h2>
-          <div class="card-body">
-            <!-- SePay Integrations -->
-            <div class="sub-section">
-              <h3>{t('settings.sepay_api', lang)}</h3>
-              <div class="status-grid">
-                <div class="status-tile">
-                  <span>{t('settings.webhook_secret', lang)}</span>
-                  <span class={`status-badge ${envStatus.sepay.webhookSecret ? 'success' : 'warning'}`}>
-                    <span class="pulse-dot"></span>
-                    {envStatus.sepay.webhookSecret ? 'Configured' : 'Missing'}
-                  </span>
-                </div>
-                <div class="status-tile">
-                  <span>{t('settings.api_token', lang)}</span>
-                  <span class={`status-badge ${envStatus.sepay.apiToken ? 'success' : 'warning'}`}>
-                    <span class="pulse-dot"></span>
-                    {envStatus.sepay.apiToken ? 'Configured' : 'Missing'}
-                  </span>
-                </div>
-              </div>
-
-              <div class="form-group mt-1">
-                <label for="defaultBankInput" class="form-label">{t('settings.default_bank', lang)}</label>
-                <input type="text" id="defaultBankInput" class="form-input" value={defaultBankAccount} placeholder="e.g. MB Bank - 123456789" />
-              </div>
-            </div>
-
-            <!-- GitHub Backup -->
-            <div class="sub-section border-top">
-              <h3>{t('settings.github_backup', lang)}</h3>
-              <div class="status-grid">
-                <div class="status-tile">
-                  <span>Token</span>
-                  <span class={`status-badge ${envStatus.github.token ? 'success' : 'warning'}`}>
-                    <span class="pulse-dot"></span>
-                    {envStatus.github.token ? 'Configured' : 'Missing'}
-                  </span>
-                </div>
-                <div class="status-tile">
-                  <span>Repo Owner</span>
-                  <span class={`status-badge ${envStatus.github.owner ? 'success' : 'warning'}`}>
-                    <span class="pulse-dot"></span>
-                    {envStatus.github.owner ? 'Configured' : 'Missing'}
-                  </span>
-                </div>
-                <div class="status-tile">
-                  <span>Repository</span>
-                  <span class={`status-badge ${envStatus.github.repo ? 'success' : 'warning'}`}>
-                    <span class="pulse-dot"></span>
-                    {envStatus.github.repo ? 'Configured' : 'Missing'}
-                  </span>
-                </div>
-                <div class="status-tile">
-                  <span>Branch</span>
-                  <span class={`status-badge ${envStatus.github.branch ? 'success' : 'warning'}`}>
-                    <span class="pulse-dot"></span>
-                    {envStatus.github.branch ? 'Configured' : 'Missing'}
-                  </span>
-                </div>
-              </div>
-
-              <div class="action-buttons-group">
-                <button id="testGithubBtn" class="btn-secondary">
-                  <span class="spinner" id="testGitSpinner"></span>
-                  {t('settings.test_connection', lang)}
-                </button>
-                <button id="triggerBackupBtn" class="btn-accent">
-                  <span class="spinner" id="backupSpinner"></span>
-                  {t('settings.trigger_backup', lang)}
-                </button>
-              </div>
-            </div>
-
-            <div class="action-row border-top">
-              <button id="saveIntegrationsBtn" class="btn-primary">
-                <span class="spinner" id="integSpinner"></span>
-                {t('settings.save', lang)}
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <!-- SECTION 3: DATABASE -->
-        <section id="database" class="settings-card">
-          <h2>{t('settings.database', lang)}</h2>
-          <div class="card-body">
-            <!-- DB Stats -->
-            <div class="sub-section">
-              <h3>{t('settings.db_stats', lang)}</h3>
-              <div class="db-stats-grid">
-                {dbStats.map(stat => (
-                  <div class="db-stat-tile">
-                    <span class="stat-name">{stat.name}</span>
-                    <span class="stat-count">{stat.count} rows</span>
-                  </div>
-                ))}
-              </div>
-              <div class="db-total-rows">
-                Total Rows: <strong>{totalRows}</strong>
-              </div>
-
-              <div class="action-buttons-group">
-                <button id="optimizeDbBtn" class="btn-accent">
-                  <span class="spinner" id="optSpinner"></span>
-                  {t('settings.optimize_db', lang)}
-                </button>
-              </div>
-            </div>
-
-            <!-- Sync Logs -->
-            <div class="sub-section border-top">
-              <h3>{t('settings.sync_history', lang)}</h3>
-              <div class="table-container">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Action</th>
-                      <th>Status</th>
-                      <th>Message</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentSyncLogs.length === 0 ? (
-                      <tr>
-                        <td colspan="4" class="text-center">No logs found</td>
-                      </tr>
-                    ) : (
-                      recentSyncLogs.map((log: any) => (
-                        <tr>
-                          <td class="whitespace-nowrap">{new Date(log.runAt || 0).toLocaleString()}</td>
-                          <td><span class="badge-action">{log.action}</span></td>
-                          <td>
-                            <span class={`status-dot ${log.status === 'success' ? 'green' : 'red'}`}></span>
-                            {log.status}
-                          </td>
-                          <td class="text-secondary max-width-300 overflow-ellipsis" title={log.message}>{log.message}</td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
-
-      <!-- SECTION 4: SECURITY -->
-      <section id="security" class="settings-card">
-        <h2>{t('settings.security', lang)}</h2>
-        <div class="card-body">
-          <!-- Password Change -->
-          <div class="sub-section">
-            <h3>{t('settings.change_password', lang)}</h3>
-            <form id="changePasswordForm" class="form-grid">
-              <div class="form-group">
-                <label for="currentPassword" class="form-label">{t('settings.current_password', lang)}</label>
-                <input type="password" id="currentPassword" class="form-input" required />
-              </div>
-              <div class="form-group grid-2">
-                <div>
-                  <label for="newPassword" class="form-label">{t('settings.new_password', lang)}</label>
-                  <input type="password" id="newPassword" class="form-input" required />
-                </div>
-                <div>
-                  <label for="confirmPassword" class="form-label">{t('settings.confirm_password', lang)}</label>
-                  <input type="password" id="confirmPassword" class="form-input" required />
-                </div>
-              </div>
-              <div class="action-row">
-                <button type="submit" id="changePasswordBtn" class="btn-primary">
-                  <span class="spinner" id="pwdSpinner"></span>
-                  {t('settings.change_password', lang)}
-                </button>
-              </div>
-            </form>
-          </div>
-
-          <!-- User Management (Admin Only) -->
-          {isAdmin && (
-            <div class="sub-section border-top">
-              <div class="flex-header">
-                <h3>{t('settings.user_mgmt', lang)}</h3>
-                <button id="openAddUserModal" class="btn-small-primary">
-                  + {t('settings.add_user', lang)}
-                </button>
-              </div>
-
-              <div class="table-container mt-1">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>{t('settings.username', lang)}</th>
-                      <th>{t('settings.role', lang)}</th>
-                      <th>{t('settings.created_at', lang)}</th>
-                      <th>{t('settings.action', lang)}</th>
-                    </tr>
-                  </thead>
-                  <tbody id="userTableBody">
-                    <tr>
-                      <td colspan="4" class="text-center">Loading users...</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
-      </section>
-
-      <!-- SECTION 5: AUDIT & DEBUG LOGS (Admin Only) -->
-      {isAdmin && (
-        <section id="logs" class="settings-card">
-          <h2>{t('settings.logs', lang)}</h2>
-          <div class="card-body">
-            <!-- Tabs -->
-            <div class="tabs-header">
-              <button class="tab-btn active" data-tab="audit">{t('settings.audit_log', lang)}</button>
-              <button class="tab-btn" data-tab="debug">{t('settings.debug_log', lang)}</button>
-            </div>
-
-            <!-- Tab Content: Audit Logs -->
-            <div class="tab-content active" id="auditTab">
-              <div class="log-filters">
-                <input type="text" id="auditActionFilter" class="form-input-small" placeholder="Filter by action..." />
-                <button id="applyAuditFilter" class="btn-small-secondary">Filter</button>
-              </div>
-              <div class="table-container mt-1">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>User</th>
-                      <th>Action</th>
-                      <th>Target</th>
-                      <th>Detail</th>
-                    </tr>
-                  </thead>
-                  <tbody id="auditLogsBody">
-                    <tr>
-                      <td colspan="5" class="text-center">Click to load or search logs</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div class="pagination-row">
-                <button id="prevAuditPage" class="btn-pager" disabled>&larr; Prev</button>
-                <span id="auditPageInfo">Page 1 of 1</span>
-                <button id="nextAuditPage" class="btn-pager" disabled>Next &rarr;</button>
-              </div>
-            </div>
-
-            <!-- Tab Content: Debug Logs -->
-            <div class="tab-content" id="debugTab">
-              <div class="log-filters">
-                <select id="debugLevelFilter" class="form-input-small">
-                  <option value="">All Levels</option>
-                  <option value="error">Error</option>
-                  <option value="warn">Warn</option>
-                  <option value="info">Info</option>
-                  <option value="debug">Debug</option>
-                </select>
-                <button id="applyDebugFilter" class="btn-small-secondary">Filter</button>
-              </div>
-              <div class="table-container mt-1">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th>Time</th>
-                      <th>Level</th>
-                      <th>Endpoint</th>
-                      <th>Status</th>
-                      <th>Message</th>
-                    </tr>
-                  </thead>
-                  <tbody id="debugLogsBody">
-                    <tr>
-                      <td colspan="5" class="text-center">Click to load or search logs</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div class="pagination-row">
-                <button id="prevDebugPage" class="btn-pager" disabled>&larr; Prev</button>
-                <span id="debugPageInfo">Page 1 of 1</span>
-                <button id="nextDebugPage" class="btn-pager" disabled>Next &rarr;</button>
-              </div>
-            </div>
-          </div>
-        </section>
-      )}
+      <!-- TAB PANEL CONTAINER -->
+      <div class="tab-panels">
+        <GeneralSettings lang={lang} orgName={orgName} orgLogo={orgLogo} />
+        <SepaySettings lang={lang} isAdmin={isAdmin} defaultBank={defaultBank} defaultAccount={defaultAccount} envStatus={envStatus} />
+        <DatabaseSettings lang={lang} isAdmin={isAdmin} dbStats={dbStats} totalRows={totalRows} />
+        {isAdmin && <BackupSettings lang={lang} isAdmin={isAdmin} envStatus={envStatus} />}
+        <SecuritySettings lang={lang} isAdmin={isAdmin} />
+        <LogsSettings lang={lang} isAdmin={isAdmin} />
+      </div>
     </main>
   </div>
-
-  <!-- Add User Modal (Admin Only) -->
-  {isAdmin && (
-    <div class="modal" id="addUserModal">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>{t('settings.add_user', lang)}</h3>
-          <button class="close-btn" id="closeAddUserModal">&times;</button>
-        </div>
-        <form id="addUserForm" class="form-grid modal-body">
-          <div class="form-group">
-            <label for="newUsername" class="form-label">{t('settings.username', lang)}</label>
-            <input type="text" id="newUsername" class="form-input" required />
-          </div>
-          <div class="form-group">
-            <label for="newUserPassword" class="form-label">{t('settings.new_password', lang)}</label>
-            <input type="password" id="newUserPassword" class="form-input" required />
-          </div>
-          <div class="form-group">
-            <label for="newUserRole" class="form-label">{t('settings.role', lang)}</label>
-            <select id="newUserRole" class="form-input" required>
-              <option value="staff">Staff</option>
-              <option value="accountant">Accountant</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="btn-secondary" id="cancelAddUser">Cancel</button>
-            <button type="submit" class="btn-primary">
-              <span class="spinner" id="createUserSpinner"></span>
-              Create
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  )}
 
   <!-- Toast Notification System -->
   <div id="toastNotification" class="toast-notification">
@@ -559,61 +197,84 @@ const i18nData = {
 </DashboardLayout>
 
 <style>
+  /* Tab Panel hiding/showing */
+  :global(.tab-panel) {
+    display: none !important;
+  }
+  :global(.tab-panel.active) {
+    display: block !important;
+    animation: tabFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes tabFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   /* Settings Page Layout */
   .settings-layout {
-    display: grid;
-    grid-template-columns: 240px 1fr;
-    gap: 2rem;
-    max-width: 1200px;
-    margin: 1.5rem auto;
-    padding: 0 1rem;
-  }
-
-  /* Sidebar Navigation */
-  .settings-sidebar {
-    position: sticky;
-    top: 5rem;
-    height: fit-content;
-  }
-
-  .settings-nav {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    background: white;
-    border: 1px solid var(--border-color);
+    gap: 1.5rem;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* Horizontal Tabs Navigation */
+  .settings-tabs-nav {
+    display: flex;
+    gap: 0.25rem;
+    background: #f1f5f9; /* Slate 100 track */
     border-radius: 12px;
-    padding: 0.75rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    padding: 0.25rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  
+  .settings-tabs-nav::-webkit-scrollbar {
+    display: none;
   }
 
   .nav-item {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.55rem 1rem;
     color: var(--text-secondary);
     text-decoration: none;
     font-size: 0.875rem;
     font-weight: 500;
     border-radius: 8px;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    white-space: nowrap;
+    cursor: pointer;
   }
 
   .nav-item:hover {
-    color: var(--primary);
-    background: rgba(255, 93, 1, 0.04);
+    color: var(--text-primary);
+    background: rgba(0, 0, 0, 0.03);
   }
 
   .nav-item.active {
-    color: white;
-    background: var(--primary);
-    box-shadow: 0 4px 12px rgba(255, 93, 1, 0.15);
+    color: var(--primary);
+    background: white;
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.02);
   }
 
   .nav-icon {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
   }
 
   /* Main Content Area */
@@ -643,17 +304,16 @@ const i18nData = {
     color: var(--text-secondary);
   }
 
-  /* Cards */
-  .settings-card {
+  /* Cards (imported from sub-components) */
+  :global(.settings-card) {
     background: white;
     border: 1px solid var(--border-color);
     border-radius: 12px;
     padding: 2rem;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-    scroll-margin-top: 5.5rem;
   }
 
-  .settings-card h2 {
+  :global(.settings-card h2) {
     font-size: 1.25rem;
     font-weight: 600;
     color: var(--text-primary);
@@ -662,54 +322,54 @@ const i18nData = {
     margin-bottom: 1.5rem;
   }
 
-  .card-body {
+  :global(.card-body) {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
   }
 
-  .sub-section {
+  :global(.sub-section) {
     padding-bottom: 1.5rem;
   }
 
-  .sub-section h3 {
+  :global(.sub-section h3) {
     font-size: 1rem;
     font-weight: 600;
     color: var(--text-primary);
     margin-bottom: 1rem;
   }
 
-  .border-top {
+  :global(.border-top) {
     border-top: 1px solid var(--border-color);
     padding-top: 1.5rem;
   }
 
   /* Form Elements */
-  .form-group {
+  :global(.form-group) {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
   }
 
-  .form-grid {
+  :global(.form-grid) {
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
   }
 
-  .grid-2 {
+  :global(.grid-2) {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
   }
 
-  .form-label {
+  :global(.form-label) {
     font-size: 0.8rem;
     font-weight: 600;
     color: var(--text-secondary);
   }
 
-  .form-input {
+  :global(.form-input) {
     padding: 0.65rem 0.75rem;
     border: 1.5px solid var(--border-color);
     border-radius: 8px;
@@ -717,16 +377,18 @@ const i18nData = {
     color: var(--text-primary);
     background: var(--bg-main);
     transition: all 0.15s;
+    width: 100%;
+    box-sizing: border-box;
   }
 
-  .form-input:focus {
+  :global(.form-input:focus) {
     border-color: var(--primary);
     background: white;
     outline: none;
     box-shadow: 0 0 0 3px rgba(255, 93, 1, 0.1);
   }
 
-  .form-input-small {
+  :global(.form-input-small) {
     padding: 0.45rem 0.65rem;
     border: 1.5px solid var(--border-color);
     border-radius: 6px;
@@ -734,13 +396,13 @@ const i18nData = {
     background: var(--bg-main);
   }
 
-  .form-input-small:focus {
+  :global(.form-input-small:focus) {
     border-color: var(--primary);
     outline: none;
   }
 
   /* Buttons */
-  .btn-primary, .btn-secondary, .btn-accent, .btn-pager {
+  :global(.btn-primary), :global(.btn-secondary), :global(.btn-accent), :global(.btn-pager), :global(.btn-small-primary), :global(.btn-small-secondary) {
     padding: 0.65rem 1.5rem;
     border-radius: 8px;
     font-size: 0.875rem;
@@ -753,44 +415,44 @@ const i18nData = {
     gap: 0.5rem;
   }
 
-  .btn-primary {
+  :global(.btn-primary) {
     background: var(--primary);
     color: white;
     border: none;
     box-shadow: 0 2px 4px rgba(255, 93, 1, 0.2);
   }
 
-  .btn-primary:hover {
+  :global(.btn-primary:hover) {
     background: #e05300;
     box-shadow: 0 4px 10px rgba(255, 93, 1, 0.3);
   }
 
-  .btn-primary:active {
+  :global(.btn-primary:active) {
     transform: scale(0.98);
   }
 
-  .btn-secondary {
+  :global(.btn-secondary) {
     background: white;
     color: var(--text-primary);
     border: 1.5px solid var(--border-color);
   }
 
-  .btn-secondary:hover {
+  :global(.btn-secondary:hover) {
     background: var(--bg-main);
     border-color: var(--text-secondary);
   }
 
-  .btn-accent {
+  :global(.btn-accent) {
     background: #fff;
     color: var(--primary);
     border: 1.5px solid var(--primary);
   }
 
-  .btn-accent:hover {
+  :global(.btn-accent:hover) {
     background: rgba(255, 93, 1, 0.05);
   }
 
-  .btn-small-primary {
+  :global(.btn-small-primary) {
     padding: 0.45rem 0.85rem;
     background: var(--primary);
     color: white;
@@ -798,44 +460,42 @@ const i18nData = {
     border-radius: 6px;
     font-size: 0.8rem;
     font-weight: 500;
-    cursor: pointer;
   }
 
-  .btn-small-primary:hover {
+  :global(.btn-small-primary:hover) {
     background: #e05300;
   }
 
-  .btn-small-secondary {
+  :global(.btn-small-secondary) {
     padding: 0.45rem 0.85rem;
     background: white;
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     font-size: 0.8rem;
-    cursor: pointer;
   }
 
-  .action-row {
+  :global(.action-row) {
     display: flex;
     justify-content: flex-end;
     gap: 1rem;
   }
 
-  .action-buttons-group {
+  :global(.action-buttons-group) {
     display: flex;
     gap: 1rem;
     margin-top: 1rem;
   }
 
   /* Status Badges */
-  .status-grid {
+  :global(.status-grid) {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 1rem;
     margin-bottom: 1rem;
   }
 
-  .status-tile {
+  :global(.status-tile) {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -846,7 +506,7 @@ const i18nData = {
     font-size: 0.85rem;
   }
 
-  .status-badge {
+  :global(.status-badge) {
     display: inline-flex;
     align-items: center;
     gap: 0.35rem;
@@ -856,17 +516,17 @@ const i18nData = {
     font-weight: 600;
   }
 
-  .status-badge.success {
+  :global(.status-badge.success) {
     background: #def7ec;
     color: #03543f;
   }
 
-  .status-badge.warning {
+  :global(.status-badge.warning) {
     background: #fdf2f2;
     color: #9b1c1c;
   }
 
-  .pulse-dot {
+  :global(.pulse-dot) {
     width: 6px;
     height: 6px;
     border-radius: 50%;
@@ -882,13 +542,13 @@ const i18nData = {
   }
 
   /* Language Options */
-  .language-options {
+  :global(.language-options) {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 1rem;
   }
 
-  .lang-card {
+  :global(.lang-card) {
     border: 1.5px solid var(--border-color);
     border-radius: 10px;
     padding: 1rem;
@@ -900,57 +560,57 @@ const i18nData = {
     background: var(--bg-main);
   }
 
-  .lang-card:hover {
+  :global(.lang-card:hover) {
     border-color: var(--primary);
     transform: translateY(-2px);
   }
 
-  .lang-card.active {
+  :global(.lang-card.active) {
     border-color: var(--primary);
     background: rgba(255, 93, 1, 0.02);
   }
 
-  .lang-flag {
+  :global(.lang-flag) {
     font-size: 1.5rem;
   }
 
-  .lang-info {
+  :global(.lang-info) {
     display: flex;
     flex-direction: column;
     flex: 1;
   }
 
-  .lang-name {
+  :global(.lang-name) {
     font-size: 0.9rem;
     font-weight: 600;
     color: var(--text-primary);
   }
 
-  .lang-desc {
+  :global(.lang-desc) {
     font-size: 0.75rem;
     color: var(--text-secondary);
   }
 
-  .lang-radio-check {
+  :global(.lang-radio-check) {
     width: 16px;
     height: 16px;
     border: 2px solid var(--border-color);
     border-radius: 50%;
   }
 
-  .lang-card.active .lang-radio-check {
+  :global(.lang-card.active .lang-radio-check) {
     border-color: var(--primary);
     background: var(--primary);
   }
 
   /* DB Stats Grid */
-  .db-stats-grid {
+  :global(.db-stats-grid) {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 0.75rem;
   }
 
-  .db-stat-tile {
+  :global(.db-stat-tile) {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 0.75rem;
@@ -960,68 +620,68 @@ const i18nData = {
     gap: 0.25rem;
   }
 
-  .stat-name {
+  :global(.stat-name) {
     font-size: 0.75rem;
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
   }
 
-  .stat-count {
+  :global(.stat-count) {
     font-size: 1.1rem;
     font-weight: 700;
     color: var(--text-primary);
   }
 
-  .db-total-rows {
+  :global(.db-total-rows) {
     font-size: 0.875rem;
     color: var(--text-secondary);
     margin-top: 1rem;
   }
 
   /* Data Tables */
-  .table-container {
+  :global(.table-container) {
     overflow-x: auto;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background: white;
   }
 
-  .data-table {
+  :global(.data-table) {
     width: 100%;
     border-collapse: collapse;
     font-size: 0.85rem;
     text-align: left;
   }
 
-  .data-table th, .data-table td {
+  :global(.data-table th), :global(.data-table td) {
     padding: 0.75rem 1rem;
     border-bottom: 1px solid var(--border-color);
   }
 
-  .data-table th {
+  :global(.data-table th) {
     background: #fafafa;
     font-weight: 600;
     color: var(--text-secondary);
   }
 
-  .data-table tr:last-child td {
+  :global(.data-table tr:last-child td) {
     border-bottom: none;
   }
 
-  .whitespace-nowrap {
+  :global(.whitespace-nowrap) {
     white-space: nowrap;
   }
 
-  .text-center {
+  :global(.text-center) {
     text-align: center;
   }
 
-  .text-secondary {
+  :global(.text-secondary) {
     color: var(--text-secondary);
   }
 
-  .badge-action {
+  :global(.badge-action) {
     background: #edf2f7;
     color: #4a5568;
     padding: 0.15rem 0.4rem;
@@ -1030,7 +690,7 @@ const i18nData = {
     font-weight: 600;
   }
 
-  .status-dot {
+  :global(.status-dot) {
     width: 8px;
     height: 8px;
     border-radius: 50%;
@@ -1038,21 +698,21 @@ const i18nData = {
     margin-right: 0.35rem;
   }
 
-  .status-dot.green { background: #10b981; }
-  .status-dot.red { background: #ef4444; }
+  :global(.status-dot.green) { background: #10b981; }
+  :global(.status-dot.red) { background: #ef4444; }
 
-  .max-width-300 {
+  :global(.max-width-300) {
     max-width: 300px;
   }
 
-  .overflow-ellipsis {
+  :global(.overflow-ellipsis) {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   /* Spinner */
-  .spinner {
+  :global(.spinner) {
     width: 12px;
     height: 12px;
     border: 2px solid rgba(0,0,0,0.1);
@@ -1062,7 +722,7 @@ const i18nData = {
     display: none;
   }
 
-  .btn-primary .spinner {
+  :global(.btn-primary .spinner) {
     border-color: rgba(255,255,255,0.3);
     border-top-color: white;
   }
@@ -1072,14 +732,14 @@ const i18nData = {
   }
 
   /* Tabs */
-  .tabs-header {
+  :global(.tabs-header) {
     display: flex;
     border-bottom: 2px solid var(--border-color);
     gap: 1.5rem;
     margin-bottom: 1rem;
   }
 
-  .tab-btn {
+  :global(.tab-btn) {
     padding: 0.65rem 0.5rem;
     background: none;
     border: none;
@@ -1092,30 +752,30 @@ const i18nData = {
     transition: all 0.15s;
   }
 
-  .tab-btn:hover {
+  :global(.tab-btn:hover) {
     color: var(--primary);
   }
 
-  .tab-btn.active {
+  :global(.tab-btn.active) {
     color: var(--primary);
     border-bottom-color: var(--primary);
   }
 
-  .tab-content {
+  :global(.tab-content) {
     display: none;
   }
 
-  .tab-content.active {
+  :global(.tab-content.active) {
     display: block;
   }
 
-  .log-filters {
+  :global(.log-filters) {
     display: flex;
     gap: 0.5rem;
     margin-bottom: 1rem;
   }
 
-  .pagination-row {
+  :global(.pagination-row) {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1124,20 +784,20 @@ const i18nData = {
     color: var(--text-secondary);
   }
 
-  .btn-pager {
+  :global(.btn-pager) {
     padding: 0.35rem 0.75rem;
     background: white;
     border: 1px solid var(--border-color);
     font-size: 0.75rem;
   }
 
-  .btn-pager:disabled {
+  :global(.btn-pager:disabled) {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
   /* Modal */
-  .modal {
+  :global(.modal) {
     position: fixed;
     top: 0;
     left: 0;
@@ -1151,11 +811,11 @@ const i18nData = {
     backdrop-filter: blur(4px);
   }
 
-  .modal.open {
+  :global(.modal.open) {
     display: flex;
   }
 
-  .modal-content {
+  :global(.modal-content) {
     background: white;
     border-radius: 12px;
     width: 100%;
@@ -1163,7 +823,7 @@ const i18nData = {
     box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
   }
 
-  .modal-header {
+  :global(.modal-header) {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1171,13 +831,13 @@ const i18nData = {
     border-bottom: 1px solid var(--border-color);
   }
 
-  .modal-header h3 {
+  :global(.modal-header h3) {
     font-size: 1.1rem;
     font-weight: 600;
     color: var(--text-primary);
   }
 
-  .close-btn {
+  :global(.close-btn) {
     background: none;
     border: none;
     font-size: 1.5rem;
@@ -1185,18 +845,18 @@ const i18nData = {
     color: var(--text-secondary);
   }
 
-  .modal-body {
+  :global(.modal-body) {
     padding: 1.5rem;
   }
 
-  .modal-actions {
+  :global(.modal-actions) {
     display: flex;
     justify-content: flex-end;
     gap: 0.75rem;
     margin-top: 1.5rem;
   }
 
-  .flex-header {
+  :global(.flex-header) {
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1233,74 +893,11 @@ const i18nData = {
     background: #ef4444;
   }
 
-  /* Responsive styling */
-  @media (max-width: 768px) {
-    .settings-layout {
-      grid-template-columns: 1fr;
-    }
-    
-    .settings-sidebar {
-      position: static;
-    }
-    
-    .settings-nav {
-      flex-direction: row;
-      overflow-x: auto;
-      white-space: nowrap;
-    }
-  }
+
 </style>
 
 <script>
-  function escapeHtml(unsafe: any) {
-    if (unsafe === null || unsafe === undefined) return '';
-    return String(unsafe)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
-  }
-
-  // Read attributes from DOM helper
-  const layout = document.querySelector('.settings-layout') as HTMLDivElement;
-  const isAdmin = layout?.getAttribute('data-is-admin') === 'true';
-  const lang = layout?.getAttribute('data-lang') || 'vi';
-  const i18n = JSON.parse(layout?.getAttribute('data-i18n') || '{}');
-
-  // Navigation active state highlight on scroll
-  const navItems = document.querySelectorAll('.nav-item');
-  const sections = document.querySelectorAll('section');
-
-  window.addEventListener('scroll', () => {
-    let current = '';
-    sections.forEach(section => {
-      const sectionTop = section.offsetTop;
-      if (pageYOffset >= sectionTop - 120) {
-        current = section.getAttribute('id') || '';
-      }
-    });
-
-    navItems.forEach(item => {
-      item.classList.remove('active');
-      if (item.getAttribute('href') === `#${current}`) {
-        item.classList.add('active');
-      }
-    });
-  });
-
-  // Language selection logic
-  let selectedLang = lang;
-  const langCards = document.querySelectorAll('.lang-card');
-  langCards.forEach(card => {
-    card.addEventListener('click', () => {
-      langCards.forEach(c => c.classList.remove('active'));
-      card.classList.add('active');
-      selectedLang = card.getAttribute('data-lang') || 'vi';
-    });
-  });
-
-  // Toast Notification System helper
+  // Toast Notification System
   const toast = document.getElementById('toastNotification') as HTMLDivElement;
   const toastText = document.getElementById('toastNotificationText') as HTMLSpanElement;
 
@@ -1313,474 +910,62 @@ const i18nData = {
     }, 2500);
   }
 
-  // ---------------------------------------------------------
-  // SECTION 1: GENERAL settings submit
-  // ---------------------------------------------------------
-  const saveGeneralBtn = document.getElementById('saveGeneralBtn') as HTMLButtonElement;
-  const genSpinner = document.getElementById('genSpinner') as HTMLSpanElement;
+  // Listen to custom show-toast event from sub-components
+  window.addEventListener('show-toast', (e: any) => {
+    const { message, type } = e.detail;
+    showToast(message, type);
+  });
 
-  if (saveGeneralBtn) {
-    saveGeneralBtn.addEventListener('click', async () => {
-      saveGeneralBtn.disabled = true;
-      if (genSpinner) genSpinner.style.display = 'inline-block';
+  // Tab switching logic
+  const navItems = document.querySelectorAll('.nav-item');
+  const panels = document.querySelectorAll('.tab-panel');
 
-      try {
-        // 1. Language update if changed
-        if (selectedLang !== lang) {
-          const langRes = await fetch('/api/settings/lang', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lang: selectedLang })
-          });
-          if (!langRes.ok) throw new Error('Language update failed');
-        }
+  function switchTab(hash: string) {
+    const targetHash = hash || '#general';
+    
+    // Update active nav item
+    navItems.forEach(item => {
+      if (item.getAttribute('href') === targetHash) {
+        item.classList.add('active');
+      } else {
+        item.classList.remove('active');
+      }
+    });
 
-        // 2. Org Info updates
-        const orgNameVal = (document.getElementById('orgNameInput') as HTMLInputElement).value;
-        const orgLogoVal = (document.getElementById('orgLogoInput') as HTMLInputElement).value;
-
-        const orgNameRes = await fetch('/api/crm/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: 'org_name', value: orgNameVal })
-        });
-        if (!orgNameRes.ok) throw new Error('Org Name update failed');
-
-        const orgLogoRes = await fetch('/api/crm/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: 'org_logo', value: orgLogoVal })
-        });
-        if (!orgLogoRes.ok) throw new Error('Org Logo update failed');
-
-        showToast(i18n.saveGeneralSuccess || 'General settings saved successfully!', 'success');
-        setTimeout(() => window.location.reload(), 1200);
-
-      } catch (err: any) {
-        console.error(err);
-        showToast(err.message, 'error');
-        saveGeneralBtn.disabled = false;
-        if (genSpinner) genSpinner.style.display = 'none';
+    // Update active panel
+    panels.forEach(panel => {
+      const panelId = panel.getAttribute('id');
+      if (`#${panelId}` === targetHash) {
+        panel.classList.add('active');
+      } else {
+        panel.classList.remove('active');
       }
     });
   }
 
-  // ---------------------------------------------------------
-  // SECTION 2: INTEGRATIONS submit
-  // ---------------------------------------------------------
-  const saveIntegrationsBtn = document.getElementById('saveIntegrationsBtn') as HTMLButtonElement;
-  const integSpinner = document.getElementById('integSpinner') as HTMLSpanElement;
-
-  if (saveIntegrationsBtn) {
-    saveIntegrationsBtn.addEventListener('click', async () => {
-      saveIntegrationsBtn.disabled = true;
-      if (integSpinner) integSpinner.style.display = 'inline-block';
-
-      try {
-        const bankVal = (document.getElementById('defaultBankInput') as HTMLInputElement).value;
-        const bankRes = await fetch('/api/crm/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: 'default_bank_account', value: bankVal })
-        });
-        if (!bankRes.ok) throw new Error('Bank account configuration failed');
-
-        showToast(i18n.saveBankSuccess || 'Integrations updated successfully!', 'success');
-        setTimeout(() => window.location.reload(), 1200);
-      } catch (err: any) {
-        showToast(err.message, 'error');
-        saveIntegrationsBtn.disabled = false;
-        if (integSpinner) integSpinner.style.display = 'none';
+  // Click listener for nav items
+  navItems.forEach(item => {
+    item.addEventListener('click', (e) => {
+      const href = item.getAttribute('href');
+      if (href && href.startsWith('#')) {
+        e.preventDefault(); // Prevent default browser jumping to anchor
+        history.pushState(null, '', href); // Update URL in address bar without scrolling
+        switchTab(href);
+        window.scrollTo(0, 0); // Reset page scroll to top
       }
     });
-  }
+  });
 
-  // GitHub backup triggers
-  const testGithubBtn = document.getElementById('testGithubBtn') as HTMLButtonElement;
-  const testGitSpinner = document.getElementById('testGitSpinner') as HTMLSpanElement;
-  if (testGithubBtn) {
-    testGithubBtn.addEventListener('click', async () => {
-      testGithubBtn.disabled = true;
-      if (testGitSpinner) testGitSpinner.style.display = 'inline-block';
+  // Listen to popstate/hashchange events to support browser back/forward buttons
+  window.addEventListener('popstate', () => {
+    switchTab(window.location.hash);
+  });
 
-      try {
-        const res = await fetch('/api/backup/test-connection', { method: 'POST' });
-        const data = await res.json();
-        if (res.ok && data.success) {
-          showToast(i18n.githubTestSuccess || 'GitHub connection working!', 'success');
-        } else {
-          showToast(data.error || 'Connection failed', 'error');
-        }
-      } catch (err: any) {
-        showToast('Network error: ' + err.message, 'error');
-      } finally {
-        testGithubBtn.disabled = false;
-        if (testGitSpinner) testGitSpinner.style.display = 'none';
-      }
-    });
-  }
-
-  const triggerBackupBtn = document.getElementById('triggerBackupBtn') as HTMLButtonElement;
-  const backupSpinner = document.getElementById('backupSpinner') as HTMLSpanElement;
-  if (triggerBackupBtn) {
-    triggerBackupBtn.addEventListener('click', async () => {
-      if (!confirm(i18n.githubBackupConfirm || 'Are you sure you want to trigger GitHub backup now?')) return;
-      triggerBackupBtn.disabled = true;
-      if (backupSpinner) backupSpinner.style.display = 'inline-block';
-
-      try {
-        const res = await fetch('/api/backup', { method: 'POST' });
-        const data = await res.json();
-        if (res.ok && data.success) {
-          showToast(i18n.githubBackupSuccess || 'Backup successfully completed!', 'success');
-          setTimeout(() => window.location.reload(), 1200);
-        } else {
-          showToast(data.error || 'Backup failed', 'error');
-        }
-      } catch (err: any) {
-        showToast('Network error: ' + err.message, 'error');
-      } finally {
-        triggerBackupBtn.disabled = false;
-        if (backupSpinner) backupSpinner.style.display = 'none';
-      }
-    });
-  }
-
-  // ---------------------------------------------------------
-  // SECTION 3: DATABASE actions
-  // ---------------------------------------------------------
-  const optimizeDbBtn = document.getElementById('optimizeDbBtn') as HTMLButtonElement;
-  const optSpinner = document.getElementById('optSpinner') as HTMLSpanElement;
-  if (optimizeDbBtn) {
-    optimizeDbBtn.addEventListener('click', async () => {
-      optimizeDbBtn.disabled = true;
-      if (optSpinner) optSpinner.style.display = 'inline-block';
-
-      try {
-        const res = await fetch('/api/settings/db-optimize', { method: 'POST' });
-        const data = await res.json();
-        if (res.ok && data.success) {
-          showToast(i18n.dbOptimizeSuccess || 'Database optimized successfully!', 'success');
-          setTimeout(() => window.location.reload(), 1200);
-        } else {
-          showToast(data.error || 'Optimization failed', 'error');
-        }
-      } catch (err: any) {
-        showToast('Network error: ' + err.message, 'error');
-      } finally {
-        optimizeDbBtn.disabled = false;
-        if (optSpinner) optSpinner.style.display = 'none';
-      }
-    });
-  }
-
-  // ---------------------------------------------------------
-  // SECTION 4: SECURITY actions (Password change + User CRUD)
-  // ---------------------------------------------------------
-  const changePasswordForm = document.getElementById('changePasswordForm') as HTMLFormElement;
-  const pwdSpinner = document.getElementById('pwdSpinner') as HTMLSpanElement;
-  if (changePasswordForm) {
-    changePasswordForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const currentPassword = (document.getElementById('currentPassword') as HTMLInputElement).value;
-      const newPassword = (document.getElementById('newPassword') as HTMLInputElement).value;
-      const confirmPassword = (document.getElementById('confirmPassword') as HTMLInputElement).value;
-
-      if (newPassword !== confirmPassword) {
-        showToast(i18n.pwdMismatch || 'Passwords do not match!', 'error');
-        return;
-      }
-
-      const submitBtn = document.getElementById('changePasswordBtn') as HTMLButtonElement;
-      submitBtn.disabled = true;
-      if (pwdSpinner) pwdSpinner.style.display = 'inline-block';
-
-      try {
-        const res = await fetch('/api/settings/change-password', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ currentPassword, newPassword })
-        });
-        const data = await res.json();
-
-        if (res.ok && data.success) {
-          showToast(i18n.changePwdSuccess || 'Password changed successfully!', 'success');
-          changePasswordForm.reset();
-        } else {
-          showToast(data.error || 'Failed to change password', 'error');
-        }
-      } catch (err: any) {
-        showToast('Network error: ' + err.message, 'error');
-      } finally {
-        submitBtn.disabled = false;
-        if (pwdSpinner) pwdSpinner.style.display = 'none';
-      }
-    });
-  }
-
-  // Admin User CRUD Client side trigger
-  if (isAdmin) {
-    const userTableBody = document.getElementById('userTableBody') as HTMLTableSectionElement;
-    const addUserModal = document.getElementById('addUserModal') as HTMLDivElement;
-    const openAddUserModal = document.getElementById('openAddUserModal') as HTMLButtonElement;
-    const closeAddUserModal = document.getElementById('closeAddUserModal') as HTMLButtonElement;
-    const cancelAddUser = document.getElementById('cancelAddUser') as HTMLButtonElement;
-    const addUserForm = document.getElementById('addUserForm') as HTMLFormElement;
-    const createUserSpinner = document.getElementById('createUserSpinner') as HTMLSpanElement;
-
-    // Load users
-    async function loadUsers() {
-      try {
-        const res = await fetch('/api/settings/users');
-        if (res.status === 501) {
-          userTableBody.innerHTML = `<tr><td colspan="4" class="text-center text-secondary">User Management API not implemented yet (Phase 2)</td></tr>`;
-          return;
-        }
-        if (!res.ok) throw new Error('Failed to fetch users');
-        const usersList = await res.json();
-        
-        userTableBody.innerHTML = usersList.map((usr: any) => `
-          <tr>
-            <td><strong>${escapeHtml(usr.username)}</strong></td>
-            <td><span class="badge-action">${escapeHtml(usr.role)}</span></td>
-            <td>${escapeHtml(new Date(usr.createdAt).toLocaleString())}</td>
-            <td>
-              <button class="btn-small-secondary delete-user-btn" data-id="${escapeHtml(usr.id)}">Delete</button>
-            </td>
-          </tr>
-        `).join('');
-
-        // Attach delete events
-        document.querySelectorAll('.delete-user-btn').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            const id = btn.getAttribute('data-id');
-            if (!confirm('Are you sure you want to delete this user?')) return;
-            try {
-              const delRes = await fetch(`/api/settings/users/${id}`, { method: 'DELETE' });
-              const data = await delRes.json();
-              if (delRes.ok && data.success) {
-                showToast('User deleted successfully', 'success');
-                loadUsers();
-              } else {
-                showToast(data.error || 'Failed to delete user', 'error');
-              }
-            } catch (err: any) {
-              showToast(err.message, 'error');
-            }
-          });
-        });
-      } catch (err: any) {
-        userTableBody.innerHTML = `<tr><td colspan="4" class="text-center text-secondary">Error: ${escapeHtml(err.message)}</td></tr>`;
-      }
-    }
-
-    loadUsers();
-
-    // Modal control
-    if (openAddUserModal) {
-      openAddUserModal.addEventListener('click', () => addUserModal.classList.add('open'));
-    }
-    const closeModal = () => addUserModal.classList.remove('open');
-    if (closeAddUserModal) closeAddUserModal.addEventListener('click', closeModal);
-    if (cancelAddUser) cancelAddUser.addEventListener('click', closeModal);
-
-    // Create user submit
-    if (addUserForm) {
-      addUserForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const username = (document.getElementById('newUsername') as HTMLInputElement).value;
-        const password = (document.getElementById('newUserPassword') as HTMLInputElement).value;
-        const role = (document.getElementById('newUserRole') as HTMLSelectElement).value;
-
-        const submitBtn = addUserForm.querySelector('button[type="submit"]') as HTMLButtonElement;
-        submitBtn.disabled = true;
-        if (createUserSpinner) createUserSpinner.style.display = 'inline-block';
-
-        try {
-          const res = await fetch('/api/settings/users', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password, role })
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            showToast('User created successfully', 'success');
-            addUserForm.reset();
-            closeModal();
-            loadUsers();
-          } else {
-            showToast(data.error || 'Failed to create user', 'error');
-          }
-        } catch (err: any) {
-          showToast(err.message, 'error');
-        } finally {
-          submitBtn.disabled = false;
-          if (createUserSpinner) createUserSpinner.style.display = 'none';
-        }
-      });
-    }
-  }
-
-  // ---------------------------------------------------------
-  // SECTION 5: AUDIT & DEBUG LOGS viewer actions (Admin Only)
-  // ---------------------------------------------------------
-  if (isAdmin) {
-    const tabBtns = document.querySelectorAll('.tab-btn');
-    const tabContents = document.querySelectorAll('.tab-content');
-
-    tabBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        tabBtns.forEach(b => b.classList.remove('active'));
-        tabContents.forEach(c => c.classList.remove('active'));
-
-        btn.classList.add('active');
-        const tabId = btn.getAttribute('data-tab');
-        document.getElementById(`${tabId}Tab`)?.classList.add('active');
-
-        // Automatically fetch initial page when tab is activated
-        if (tabId === 'audit' && auditPage === 1) loadAuditLogs();
-        if (tabId === 'debug' && debugPage === 1) loadDebugLogs();
-      });
-    });
-
-    // Pagination variables
-    let auditPage = 1;
-    let debugPage = 1;
-    const limit = 10;
-
-    // Elements
-    const auditLogsBody = document.getElementById('auditLogsBody') as HTMLTableSectionElement;
-    const debugLogsBody = document.getElementById('debugLogsBody') as HTMLTableSectionElement;
-
-    async function loadAuditLogs() {
-      const action = (document.getElementById('auditActionFilter') as HTMLInputElement).value;
-      try {
-        auditLogsBody.innerHTML = `<tr><td colspan="5" class="text-center">Loading audit logs...</td></tr>`;
-        const res = await fetch(`/api/settings/audit-logs?page=${auditPage}&limit=${limit}&action=${encodeURIComponent(action)}`);
-        
-        if (res.status === 501) {
-          auditLogsBody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary">Audit Logs API not implemented yet (Phase 3)</td></tr>`;
-          return;
-        }
-        if (!res.ok) throw new Error('Failed to fetch audit logs');
-        const data = await res.json();
-
-        if (data.logs.length === 0) {
-          auditLogsBody.innerHTML = `<tr><td colspan="5" class="text-center">No logs matching filter</td></tr>`;
-        } else {
-          auditLogsBody.innerHTML = data.logs.map((log: any) => `
-            <tr>
-              <td class="whitespace-nowrap">${escapeHtml(new Date(log.createdAt).toLocaleString())}</td>
-              <td>${escapeHtml(log.username) || 'System'}</td>
-              <td><span class="badge-action">${escapeHtml(log.action)}</span></td>
-              <td>${escapeHtml(log.target) || '-'}</td>
-              <td class="text-secondary overflow-ellipsis max-width-300" title="${escapeHtml(log.detail)}">
-                ${escapeHtml(log.detail) || '-'}
-              </td>
-            </tr>
-          `).join('');
-        }
-
-        // Pager buttons state
-        const totalPages = Math.ceil(data.total / limit) || 1;
-        (document.getElementById('auditPageInfo') as HTMLSpanElement).textContent = `Page ${auditPage} of ${totalPages}`;
-        (document.getElementById('prevAuditPage') as HTMLButtonElement).disabled = auditPage <= 1;
-        (document.getElementById('nextAuditPage') as HTMLButtonElement).disabled = auditPage >= totalPages;
-
-      } catch (err: any) {
-        auditLogsBody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary">Error: ${escapeHtml(err.message)}</td></tr>`;
-      }
-    }
-
-    async function loadDebugLogs() {
-      const level = (document.getElementById('debugLevelFilter') as HTMLSelectElement).value;
-      try {
-        debugLogsBody.innerHTML = `<tr><td colspan="5" class="text-center">Loading debug logs...</td></tr>`;
-        const res = await fetch(`/api/settings/debug-logs?page=${debugPage}&limit=${limit}&level=${level}`);
-
-        if (res.status === 501) {
-          debugLogsBody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary">Debug Logs API not implemented yet (Phase 3)</td></tr>`;
-          return;
-        }
-        if (!res.ok) throw new Error('Failed to fetch debug logs');
-        const data = await res.json();
-
-        if (data.logs.length === 0) {
-          debugLogsBody.innerHTML = `<tr><td colspan="5" class="text-center">No logs matching filter</td></tr>`;
-        } else {
-          debugLogsBody.innerHTML = data.logs.map((log: any) => `
-            <tr class="debug-row-main" style="cursor: pointer;">
-              <td class="whitespace-nowrap">${escapeHtml(new Date(log.createdAt).toLocaleString())}</td>
-              <td><span class="badge-action ${escapeHtml(log.level)}">${escapeHtml(log.level)}</span></td>
-              <td>${escapeHtml(log.endpoint) || '-'}</td>
-              <td>${escapeHtml(log.statusCode) || '-'}</td>
-              <td class="text-secondary">${escapeHtml(log.message)}</td>
-            </tr>
-            <tr class="debug-row-detail" style="display: none; background: #fafafa;">
-              <td colspan="5">
-                <div style="padding: 0.5rem; font-family: monospace; font-size: 0.8rem; overflow-x: auto; white-space: pre-wrap;">
-                  <strong>Request Body:</strong> ${escapeHtml(log.requestBody) || 'None'}<br/><br/>
-                  <strong>Stack Trace:</strong><br/>${escapeHtml(log.stack) || 'No stack trace available'}
-                </div>
-              </td>
-            </tr>
-          `).join('');
-
-          // Click handler to toggle detail
-          const mainRows = document.querySelectorAll('.debug-row-main');
-          mainRows.forEach((row) => {
-            row.addEventListener('click', () => {
-              const detailRow = row.nextElementSibling as HTMLTableRowElement;
-              if (detailRow) {
-                detailRow.style.display = detailRow.style.display === 'none' ? 'table-row' : 'none';
-              }
-            });
-          });
-        }
-
-        const totalPages = Math.ceil(data.total / limit) || 1;
-        (document.getElementById('debugPageInfo') as HTMLSpanElement).textContent = `Page ${debugPage} of ${totalPages}`;
-        (document.getElementById('prevDebugPage') as HTMLButtonElement).disabled = debugPage <= 1;
-        (document.getElementById('nextDebugPage') as HTMLButtonElement).disabled = debugPage >= totalPages;
-
-      } catch (err: any) {
-        debugLogsBody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary">Error: ${escapeHtml(err.message)}</td></tr>`;
-      }
-    }
-
-    // Attach filters
-    document.getElementById('applyAuditFilter')?.addEventListener('click', () => {
-      auditPage = 1;
-      loadAuditLogs();
-    });
-    document.getElementById('applyDebugFilter')?.addEventListener('click', () => {
-      debugPage = 1;
-      loadDebugLogs();
-    });
-
-    // Attach Pager
-    document.getElementById('prevAuditPage')?.addEventListener('click', () => {
-      if (auditPage > 1) {
-        auditPage--;
-        loadAuditLogs();
-      }
-    });
-    document.getElementById('nextAuditPage')?.addEventListener('click', () => {
-      auditPage++;
-      loadAuditLogs();
-    });
-    document.getElementById('prevDebugPage')?.addEventListener('click', () => {
-      if (debugPage > 1) {
-        debugPage--;
-        loadDebugLogs();
-      }
-    });
-    document.getElementById('nextDebugPage')?.addEventListener('click', () => {
-      debugPage++;
-      loadDebugLogs();
-    });
-
-    // Initial load
-    loadAuditLogs();
+  // Initialize active tab from URL hash on load
+  const initialHash = window.location.hash;
+  if (initialHash && document.querySelector(initialHash)) {
+    switchTab(initialHash);
+  } else {
+    switchTab('#general');
   }
 </script>

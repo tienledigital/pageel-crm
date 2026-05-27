@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { getDb } from '../src/lib/db';
-import { users, config, auditLogs, debugLogs } from '../src/lib/db/schema';
+import { users, config, auditLogs, debugLogs, syncLogs } from '../src/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import path from 'path';
 import { createSessionCookie, hashPassword } from '../src/lib/auth';
@@ -9,6 +9,8 @@ import { createSessionCookie, hashPassword } from '../src/lib/auth';
 import { GET as getStatusHandler } from '../src/pages/api/settings/status';
 import { GET as getDbStatsHandler } from '../src/pages/api/settings/db-stats';
 import { POST as postDbOptimizeHandler } from '../src/pages/api/settings/db-optimize';
+import { POST as postDbClearTableHandler } from '../src/pages/api/settings/db-clear-table';
+import { GET as getDbDownloadTableHandler } from '../src/pages/api/settings/db-download-table';
 
 // Import handlers from Phase 2
 import { POST as changePasswordHandler } from '../src/pages/api/settings/change-password';
@@ -18,6 +20,7 @@ import { DELETE as deleteUserHandler } from '../src/pages/api/settings/users/[id
 // Import handlers from Phase 3 (Currently stubs, will fail tests)
 import { GET as getAuditLogsHandler } from '../src/pages/api/settings/audit-logs';
 import { GET as getDebugLogsHandler } from '../src/pages/api/settings/debug-logs';
+import { GET as getSyncLogsHandler } from '../src/pages/api/settings/sync-logs';
 
 const SESSION_SECRET = 'fallback-secret-key-must-be-at-least-32-chars-long';
 process.env.SESSION_SECRET = SESSION_SECRET;
@@ -351,4 +354,158 @@ describe('Settings v2 API Integration Tests (Phase 1 & Phase 2)', () => {
       expect(data.logs[0].message).toBe('critical error');
     });
   });
+
+  describe('Phase 3: GET /api/settings/sync-logs', () => {
+    it('should return 401 if unauthorized', async () => {
+      const context: any = createMockContext('GET');
+      const response = await getSyncLogsHandler(context);
+      expect(response.status).toBe(401);
+    });
+
+    it('should return paginated sync logs filtered by action', async () => {
+      await db.insert(syncLogs).values({
+        id: 'sync-1',
+        action: 'github_backup',
+        status: 'success',
+        message: 'backup success',
+        runAt: Date.now()
+      });
+      await db.insert(syncLogs).values({
+        id: 'sync-2',
+        action: 'sepay_sync',
+        status: 'failed',
+        message: 'sync failed',
+        runAt: Date.now() - 1000
+      });
+
+      const context: any = createMockContext('GET', null, adminToken);
+      context.url.searchParams.set('action', 'github_backup');
+
+      const response = await getSyncLogsHandler(context);
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data).toHaveProperty('logs');
+      expect(data.logs.length).toBe(1);
+      expect(data.logs[0].action).toBe('github_backup');
+      expect(data.logs[0].message).toBe('backup success');
+    });
+  });
+
+  describe('Phase 2 Add-on: POST /api/settings/db-clear-table (Clean Keep 100 Latest Logs)', () => {
+    it('should return 401 if unauthorized', async () => {
+      const context: any = createMockContext('POST', { tableName: 'debug_logs' });
+      const response = await postDbClearTableHandler(context);
+      expect(response.status).toBe(401);
+    });
+
+    it('should return 403 if user is not admin', async () => {
+      const context: any = createMockContext('POST', { tableName: 'debug_logs' }, userToken);
+      const response = await postDbClearTableHandler(context);
+      expect(response.status).toBe(403);
+    });
+
+    it('should prevent clearing non-log tables', async () => {
+      const context: any = createMockContext('POST', { tableName: 'users' }, adminToken);
+      const response = await postDbClearTableHandler(context);
+      expect(response.status).toBe(400);
+      const data = await response.json();
+      expect(data.error).toContain('Forbidden');
+    });
+
+    it('should clean log tables keeping 100 latest rows and record audit log', async () => {
+      // Seed 105 debug logs
+      const insertPromises = [];
+      for (let i = 1; i <= 105; i++) {
+        insertPromises.push(
+          db.insert(debugLogs).values({
+            id: `dbg-clear-${i}`,
+            level: 'error',
+            message: `log message ${i}`,
+            createdAt: Date.now() + i * 10 // ensure different timestamps
+          })
+        );
+      }
+      await Promise.all(insertPromises);
+
+      const context: any = createMockContext('POST', { tableName: 'debug_logs' }, adminToken);
+      const response = await postDbClearTableHandler(context);
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data.success).toBe(true);
+      expect(data.message).toContain('keeping the 100 latest records');
+
+      // Verify debug_logs size is exactly 100
+      const debugs = await db.select().from(debugLogs);
+      expect(debugs.length).toBe(100);
+
+      // Verify the remaining ones are the latest (ids dbg-clear-6 to dbg-clear-105)
+      // Since dbg-clear-1 to dbg-clear-5 have older timestamps, they should have been deleted.
+      const remainingIds = debugs.map((d: any) => d.id);
+      expect(remainingIds).not.toContain('dbg-clear-1');
+      expect(remainingIds).not.toContain('dbg-clear-5');
+      expect(remainingIds).toContain('dbg-clear-6');
+      expect(remainingIds).toContain('dbg-clear-105');
+
+      // Verify audit log
+      const logs = await db.select().from(auditLogs);
+      const clearLog = logs.find((l: any) => l.action === 'db.clear_table');
+      expect(clearLog).toBeDefined();
+      expect(clearLog.target).toBe('debug_logs');
+    });
+  });
+
+  describe('Phase 2 Add-on: GET /api/settings/db-download-table', () => {
+    it('should return 401 if unauthorized', async () => {
+      const context: any = createMockContext('GET');
+      context.url.searchParams.set('tableName', 'debug_logs');
+      const response = await getDbDownloadTableHandler(context);
+      expect(response.status).toBe(401);
+    });
+
+    it('should return 403 if user is not admin', async () => {
+      const context: any = createMockContext('GET', null, userToken);
+      context.url.searchParams.set('tableName', 'debug_logs');
+      const response = await getDbDownloadTableHandler(context);
+      expect(response.status).toBe(403);
+    });
+
+    it('should return 400 for forbidden or non-existent tables', async () => {
+      const context: any = createMockContext('GET', null, adminToken);
+      context.url.searchParams.set('tableName', 'users'); // Not allowed to download users directly via this API
+      const response = await getDbDownloadTableHandler(context);
+      expect(response.status).toBe(400);
+    });
+
+    it('should download log tables as JSON attachment', async () => {
+      // Seed some debug logs
+      await db.insert(debugLogs).values({
+        id: 'dbg-dl-1',
+        level: 'info',
+        message: 'log to download',
+        createdAt: Date.now()
+      });
+
+      const context: any = createMockContext('GET', null, adminToken);
+      context.url.searchParams.set('tableName', 'debug_logs');
+      
+      const response = await getDbDownloadTableHandler(context);
+      expect(response.status).toBe(200);
+      
+      // Verify headers
+      expect(response.headers.get('Content-Type')).toContain('application/json');
+      expect(response.headers.get('Content-Disposition')).toContain('attachment; filename="debug_logs_export_');
+
+      const data = await response.json();
+      expect(Array.isArray(data)).toBe(true);
+      expect(data.length).toBeGreaterThanOrEqual(1);
+      expect(data[0].id).toBe('dbg-dl-1');
+
+      // Verify audit log
+      const logs = await db.select().from(auditLogs);
+      const dlLog = logs.find((l: any) => l.action === 'db.download_table');
+      expect(dlLog).toBeDefined();
+      expect(dlLog.target).toBe('debug_logs');
+    });
+  });
 });
+

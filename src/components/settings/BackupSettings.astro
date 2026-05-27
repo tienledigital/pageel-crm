@@ -1,0 +1,366 @@
+---
+import { t } from '@/lib/i18n';
+
+interface Props {
+  lang: 'vi' | 'en';
+  isAdmin: boolean;
+  envStatus: {
+    github: {
+      token: boolean;
+      owner: boolean;
+      repo: boolean;
+      branch: boolean;
+    };
+  };
+}
+
+const { lang, isAdmin, envStatus } = Astro.props;
+
+const dirTree = `backup-repository/
+└── backups/
+    ├── backup-2026-05-27T09-30-00Z.json
+    └── backup-2026-05-27T09-40-00Z.json`;
+
+const jsonStructure = `{
+  "users": [...],
+  "staff": [...],
+  "customers": [...],
+  "invoices": [...],
+  "payments": [...],
+  "config": [...]
+}`;
+---
+
+<section id="backup" class="settings-card tab-panel">
+  <h2>{t('settings.github_backup', lang)}</h2>
+  <div class="card-body">
+    <!-- Status Grid -->
+    <div class="status-grid">
+      <div class="status-tile">
+        <span>Token</span>
+        <span class={`status-badge ${envStatus.github.token ? 'success' : 'warning'}`}>
+          <span class="pulse-dot"></span>
+          {envStatus.github.token ? 'Configured' : 'Missing'}
+        </span>
+      </div>
+      <div class="status-tile">
+        <span>Repo Owner</span>
+        <span class={`status-badge ${envStatus.github.owner ? 'success' : 'warning'}`}>
+          <span class="pulse-dot"></span>
+          {envStatus.github.owner ? 'Configured' : 'Missing'}
+        </span>
+      </div>
+      <div class="status-tile">
+        <span>Repository</span>
+        <span class={`status-badge ${envStatus.github.repo ? 'success' : 'warning'}`}>
+          <span class="pulse-dot"></span>
+          {envStatus.github.repo ? 'Configured' : 'Missing'}
+        </span>
+      </div>
+      <div class="status-tile">
+        <span>Branch</span>
+        <span class={`status-badge ${envStatus.github.branch ? 'success' : 'warning'}`}>
+          <span class="pulse-dot"></span>
+          {envStatus.github.branch ? 'Configured' : 'Missing'}
+        </span>
+      </div>
+    </div>
+
+    <!-- Info Block about backed up tables -->
+    <div class="sub-section border-top">
+      <h3>{lang === 'vi' ? 'Phạm vi sao lưu dữ liệu' : 'Data Backup Scope'}</h3>
+      <p class="text-secondary" style="font-size: 0.875rem; line-height: 1.5; margin-bottom: 0.75rem;">
+        {lang === 'vi' 
+          ? 'Hệ thống tự động đồng bộ và sao lưu toàn diện tất cả dữ liệu cốt lõi lên GitHub repository đã cấu hình. Các loại dữ liệu được sao lưu bao gồm:' 
+          : 'The system automatically synchronizes and backs up all core database tables to the configured GitHub repository. The backed up tables include:'}
+      </p>
+      <ul style="margin-left: 1.5rem; font-size: 0.85rem; line-height: 1.6; color: var(--text-primary); margin-bottom: 0.75rem;">
+        <li><strong>{lang === 'vi' ? 'Dữ liệu Nghiệp vụ:' : 'Business Data:'}</strong> {lang === 'vi' ? 'Khách hàng' : 'Customers'} (<code>customers</code>), {lang === 'vi' ? 'Đơn hàng' : 'Orders'} (<code>invoices</code>), {lang === 'vi' ? 'Lịch sử thanh toán' : 'Payments'} (<code>payments</code>).</li>
+        <li><strong>{lang === 'vi' ? 'Cấu hình Hệ thống:' : 'System Configurations:'}</strong> {lang === 'vi' ? 'Cài đặt cửa hàng, tài khoản ngân hàng mặc định và luật phân loại đối soát thanh toán tự động (trigger classification rules)' : 'Shop settings, default bank account, and payment trigger classification rules'} (<code>config</code>).</li>
+        <li><strong>{lang === 'vi' ? 'Tài khoản & Nhân sự:' : 'Accounts & Staff:'}</strong> {lang === 'vi' ? 'Tài khoản người dùng' : 'User accounts'} (<code>users</code>) & {lang === 'vi' ? 'Thông tin nhân viên' : 'Staff profiles'} (<code>staff</code>).</li>
+      </ul>
+      <p style="font-size: 0.85rem; line-height: 1.5; color: #ef4444; font-weight: 500;">
+        ⚠️ <strong>{lang === 'vi' ? 'Lưu ý về các bảng Logs:' : 'Note about Logs tables:'}</strong> 
+        {lang === 'vi' 
+          ? 'Các nhật ký hoạt động (sync_logs, audit_logs, debug_logs) KHÔNG nằm trong phạm vi sao lưu lên GitHub để tối ưu hóa kích thước lưu trữ và tốc độ xử lý. Các bảng logs này được lưu trữ bền vững tại cơ sở dữ liệu SQLite/D1 cục bộ.'
+          : 'Activity logs (sync_logs, audit_logs, debug_logs) are NOT backed up to GitHub to optimize storage size and processing speed. They are safely stored in the local SQLite/D1 database.'}
+      </p>
+    </div>
+
+    <!-- Backup Structure and Format -->
+    <div class="sub-section border-top">
+      <h3>{lang === 'vi' ? 'Cấu trúc lưu trữ trên GitHub' : 'GitHub Storage Structure'}</h3>
+      <div style="display: grid; grid-template-columns: 1fr 1.2fr; gap: 1.5rem; margin-top: 0.75rem;">
+        <div>
+          <span class="form-label" style="font-weight: 600; font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase;">{lang === 'vi' ? 'Sơ đồ thư mục Repo' : 'Repo Directory Tree'}</span>
+          <pre style="background: #f8fafc; border: 1px solid var(--border-color); padding: 0.75rem; border-radius: 8px; font-family: monospace; font-size: 0.75rem; color: var(--text-primary); line-height: 1.4; margin-top: 0.35rem;">{dirTree}</pre>
+        </div>
+        <div>
+          <span class="form-label" style="font-weight: 600; font-size: 0.8rem; color: var(--text-secondary); text-transform: uppercase;">{lang === 'vi' ? 'Cấu trúc File JSON' : 'JSON File Structure'}</span>
+          <pre style="background: #f8fafc; border: 1px solid var(--border-color); padding: 0.75rem; border-radius: 8px; font-family: monospace; font-size: 0.75rem; color: var(--text-primary); line-height: 1.4; margin-top: 0.35rem;">{jsonStructure}</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="action-buttons-group border-top">
+      <button id="testGithubBtn" class="btn-secondary">
+        <span class="spinner" id="testGitSpinner"></span>
+        {t('settings.test_connection', lang)}
+      </button>
+      <button id="triggerBackupBtn" class="btn-accent">
+        <span class="spinner" id="backupSpinner"></span>
+        {t('settings.trigger_backup', lang)}
+      </button>
+    </div>
+
+    <!-- Backup List Section -->
+    <div class="sub-section border-top" id="backupListSection" style="display: none; margin-top: 1.5rem;">
+      <h3>{lang === 'vi' ? 'Lịch sử sao lưu trên GitHub' : 'GitHub Backup History'}</h3>
+      <div class="table-container" style="margin-top: 0.75rem;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>{lang === 'vi' ? 'Thời gian sao lưu / Tên File' : 'Backup Time / Filename'}</th>
+              <th>{lang === 'vi' ? 'Kích thước' : 'Size'}</th>
+              <th class="whitespace-nowrap" style="text-align: right; padding-right: 1.5rem;">{lang === 'vi' ? 'Hành động' : 'Actions'}</th>
+            </tr>
+          </thead>
+          <tbody id="backupListBody">
+            <tr>
+              <td colspan="3" class="text-center text-secondary" style="padding: 1.5rem;">{lang === 'vi' ? 'Đang tải danh sách...' : 'Loading list...'}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Restore Confirmation Modal -->
+<div class="modal" id="restoreConfirmModal">
+  <div class="modal-content">
+    <div class="modal-header" style="border-bottom-color: #fdf2f2;">
+      <h3 style="color: #ef4444;">⚠️ {lang === 'vi' ? 'Xác nhận khôi phục dữ liệu' : 'Confirm Data Restore'}</h3>
+      <button class="close-btn" id="closeRestoreModalBtn">&times;</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size: 0.9rem; line-height: 1.6; color: var(--text-primary); margin-bottom: 1.25rem;">
+        {lang === 'vi'
+          ? 'CẢNH BÁO: Việc khôi phục dữ liệu sẽ XÓA TOÀN BỘ dữ liệu Khách hàng, Đơn hàng, Lịch sử thanh toán, các Tài khoản người dùng, Nhân sự và toàn bộ Cài đặt cấu hình (bao gồm cả luật phân loại đối soát) hiện tại trên hệ thống để thay thế bằng dữ liệu từ file sao lưu.'
+          : 'WARNING: Restoring data will DELETE ALL current Customers, Orders, Payments, User accounts, Staff, and all Configuration settings (including classification rules) on the system and replace them with data from the backup file.'}
+      </p>
+      <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.5rem; font-weight: 500;">
+        {lang === 'vi' ? 'File sao lưu:' : 'Backup file:'} <span id="restoreFilenameDisplay" style="font-family: monospace; color: var(--text-primary);"></span>
+      </p>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="cancelRestoreBtn">{lang === 'vi' ? 'Hủy' : 'Cancel'}</button>
+        <button class="btn-primary" id="confirmRestoreBtn" style="background: #ef4444; border-color: #ef4444;">
+          <span class="spinner" id="restoreSpinner"></span>
+          {lang === 'vi' ? 'Khôi phục ngay' : 'Restore Now'}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const layout = document.querySelector('.settings-layout') as HTMLDivElement;
+  const i18n = JSON.parse(layout?.getAttribute('data-i18n') || '{}');
+  const lang = (layout?.getAttribute('data-lang') || 'vi') as 'vi' | 'en';
+
+  function showToast(message: string, type: 'success' | 'error' = 'success') {
+    const event = new CustomEvent('show-toast', { detail: { message, type } });
+    window.dispatchEvent(event);
+  }
+
+  // Load backups list
+  const backupListSection = document.getElementById('backupListSection');
+  const backupListBody = document.getElementById('backupListBody');
+
+  async function loadBackupList() {
+    if (!backupListBody) return;
+    try {
+      const res = await fetch('/api/backup');
+      const data = await res.json();
+      if (res.ok && data.success) {
+        const backups = data.backups || [];
+        if (backups.length === 0) {
+          backupListBody.innerHTML = `
+            <tr>
+              <td colspan="3" class="text-center text-secondary" style="padding: 1.5rem;">${lang === 'vi' ? 'Không tìm thấy bản sao lưu nào' : 'No backups found'}</td>
+            </tr>
+          `;
+        } else {
+          backupListBody.innerHTML = backups.map((b: any) => {
+            const sizeKb = (b.size / 1024).toFixed(1);
+            
+            // Parse date from file name: backup-YYYY-MM-DDTHH-mm-ss-SSSZ.json
+            let displayDate = b.name;
+            const dateMatch = b.name.match(/backup-(.+)\.json/);
+            if (dateMatch && dateMatch[1]) {
+              const rawIso = dateMatch[1];
+              const parts = rawIso.split('T');
+              if (parts.length === 2) {
+                const datePart = parts[0];
+                // Replace - with : for hours:minutes:seconds
+                const timePart = parts[1].replace(/-/g, ':').replace(/:([^:]*)$/, '.$1');
+                const cleanIso = `${datePart}T${timePart}`;
+                const parsedDate = new Date(cleanIso);
+                if (!isNaN(parsedDate.getTime())) {
+                  displayDate = parsedDate.toLocaleString(lang === 'vi' ? 'vi-VN' : 'en-US');
+                }
+              }
+            }
+
+            return `
+              <tr>
+                <td style="padding: 0.75rem 1rem;">
+                  <div style="font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 0.5rem;">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px; color: var(--primary);"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    ${displayDate}
+                  </div>
+                  <div style="font-family: monospace; font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem;">
+                    backups/${b.name}
+                  </div>
+                </td>
+                <td class="whitespace-nowrap text-secondary" style="font-weight: 500;">${sizeKb} KB</td>
+                <td class="whitespace-nowrap" style="text-align: right; padding-right: 1.5rem;">
+                  <button class="btn-small-secondary btn-restore" data-url="${b.downloadUrl}" data-name="${b.name}" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 12px; height: 12px;"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" /></svg>
+                    ${lang === 'vi' ? 'Khôi phục' : 'Restore'}
+                  </button>
+                </td>
+              </tr>
+            `;
+          }).join('');
+
+          // Bind restore actions
+          const restoreBtns = document.querySelectorAll('.btn-restore');
+          restoreBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+              const url = btn.getAttribute('data-url');
+              const name = btn.getAttribute('data-name');
+              openRestoreModal(url || '', name || '');
+            });
+          });
+        }
+        if (backupListSection) backupListSection.style.display = 'block';
+      }
+    } catch (err) {
+      console.error('Failed to load backup list', err);
+    }
+  }
+
+  // GitHub connection test
+  const testGithubBtn = document.getElementById('testGithubBtn') as HTMLButtonElement;
+  const testGitSpinner = document.getElementById('testGitSpinner') as HTMLSpanElement;
+  if (testGithubBtn) {
+    testGithubBtn.addEventListener('click', async () => {
+      testGithubBtn.disabled = true;
+      if (testGitSpinner) testGitSpinner.style.display = 'inline-block';
+
+      try {
+        const res = await fetch('/api/backup/test-connection', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(i18n.githubTestSuccess || 'GitHub connection working!', 'success');
+          loadBackupList(); // Reload backup list on successful connection
+        } else {
+          showToast(data.error || 'Connection failed', 'error');
+        }
+      } catch (err: any) {
+        showToast('Network error: ' + err.message, 'error');
+      } finally {
+        testGithubBtn.disabled = false;
+        if (testGitSpinner) testGitSpinner.style.display = 'none';
+      }
+    });
+  }
+
+  // GitHub backup trigger
+  const triggerBackupBtn = document.getElementById('triggerBackupBtn') as HTMLButtonElement;
+  const backupSpinner = document.getElementById('backupSpinner') as HTMLSpanElement;
+  if (triggerBackupBtn) {
+    triggerBackupBtn.addEventListener('click', async () => {
+      if (!confirm(i18n.githubBackupConfirm || 'Are you sure you want to trigger GitHub backup now?')) return;
+      triggerBackupBtn.disabled = true;
+      if (backupSpinner) backupSpinner.style.display = 'inline-block';
+
+      try {
+        const res = await fetch('/api/backup', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(i18n.githubBackupSuccess || 'Backup successfully completed!', 'success');
+          loadBackupList(); // Reload backup list
+        } else {
+          showToast(data.error || 'Backup failed', 'error');
+        }
+      } catch (err: any) {
+        showToast('Network error: ' + err.message, 'error');
+      } finally {
+        triggerBackupBtn.disabled = false;
+        if (backupSpinner) backupSpinner.style.display = 'none';
+      }
+    });
+  }
+
+  // Restore Modal Logic
+  const restoreModal = document.getElementById('restoreConfirmModal');
+  const closeRestoreModalBtn = document.getElementById('closeRestoreModalBtn');
+  const cancelRestoreBtn = document.getElementById('cancelRestoreBtn');
+  const confirmRestoreBtn = document.getElementById('confirmRestoreBtn') as HTMLButtonElement;
+  const restoreSpinner = document.getElementById('restoreSpinner') as HTMLSpanElement;
+  const filenameDisplay = document.getElementById('restoreFilenameDisplay');
+
+  let currentRestoreUrl = '';
+  let currentRestoreFilename = '';
+
+  function openRestoreModal(url: string, filename: string) {
+    currentRestoreUrl = url;
+    currentRestoreFilename = filename;
+    if (filenameDisplay) filenameDisplay.textContent = filename;
+    if (restoreModal) restoreModal.classList.add('open');
+  }
+
+  function closeRestoreModal() {
+    if (restoreModal) restoreModal.classList.remove('open');
+    currentRestoreUrl = '';
+    currentRestoreFilename = '';
+  }
+
+  if (closeRestoreModalBtn) closeRestoreModalBtn.addEventListener('click', closeRestoreModal);
+  if (cancelRestoreBtn) cancelRestoreBtn.addEventListener('click', closeRestoreModal);
+
+  if (confirmRestoreBtn) {
+    confirmRestoreBtn.addEventListener('click', async () => {
+      confirmRestoreBtn.disabled = true;
+      if (restoreSpinner) restoreSpinner.style.display = 'inline-block';
+
+      try {
+        const res = await fetch('/api/backup/restore', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ downloadUrl: currentRestoreUrl, filename: currentRestoreFilename })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(lang === 'vi' ? 'Khôi phục dữ liệu thành công!' : 'Database successfully restored!', 'success');
+          closeRestoreModal();
+          setTimeout(() => window.location.reload(), 1500);
+        } else {
+          showToast(data.error || 'Restore failed', 'error');
+          confirmRestoreBtn.disabled = false;
+          if (restoreSpinner) restoreSpinner.style.display = 'none';
+        }
+      } catch (err: any) {
+        showToast('Network error: ' + err.message, 'error');
+        confirmRestoreBtn.disabled = false;
+        if (restoreSpinner) restoreSpinner.style.display = 'none';
+      }
+    });
+  }
+
+  // Initial load
+  loadBackupList();
+</script>

@@ -4,6 +4,7 @@ import { customers } from '../src/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import path from 'path';
 import { pushBackupToGit, exportDatabaseToJson } from '../src/lib/backup/githubClient';
+import { desc } from 'drizzle-orm';
 
 describe('GitHub Backup Client', () => {
   let db: any;
@@ -448,6 +449,159 @@ describe('Astro API Endpoint - POST /api/backup/test-connection', () => {
     const data = await response.json();
     expect(data.success).toBe(true);
     expect(data.repo).toBe('mock-owner/mock-repo');
+  });
+});
+
+import { GET as backupListApiHandler } from '../src/pages/api/backup/index';
+import { POST as restoreApiHandler } from '../src/pages/api/backup/restore';
+import { listBackupsFromGit, fetchBackupContent } from '../src/lib/backup/githubClient';
+
+describe('GitHub Backup Client - List & Download', () => {
+  it('should list backups correctly from GitHub API', async () => {
+    const mockFetch = vi.fn();
+    globalThis.fetch = mockFetch;
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => [
+        { name: 'backup-2026-05-27.json', type: 'file', size: 1024, download_url: 'http://download/1' },
+        { name: 'random-file.txt', type: 'file', size: 500, download_url: 'http://download/2' }
+      ]
+    });
+
+    const list = await listBackupsFromGit({
+      token: 'mock-token',
+      owner: 'mock-owner',
+      repo: 'mock-repo'
+    });
+
+    expect(list.length).toBe(1);
+    expect(list[0].name).toBe('backup-2026-05-27.json');
+    expect(list[0].downloadUrl).toBe('http://download/1');
+  });
+
+  it('should download backup content correctly', async () => {
+    const mockFetch = vi.fn();
+    globalThis.fetch = mockFetch;
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      text: async () => '{"customers":[]}'
+    });
+
+    const content = await fetchBackupContent({
+      token: 'mock-token',
+      downloadUrl: 'http://download/1'
+    });
+
+    expect(content).toBe('{"customers":[]}');
+  });
+});
+
+describe('Astro API Endpoint - GET /api/backup', () => {
+  it('should return list of backups on success', async () => {
+    const mockFetch = vi.fn();
+    globalThis.fetch = mockFetch;
+
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => [
+        { name: 'backup-1.json', type: 'file', size: 1024, download_url: 'http://download/1' }
+      ]
+    });
+
+    const request = new Request('http://localhost/api/backup', { method: 'GET' });
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' },
+      },
+    };
+
+    const response = await backupListApiHandler(context);
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.backups.length).toBe(1);
+    expect(data.backups[0].name).toBe('backup-1.json');
+  });
+});
+
+describe('Astro API Endpoint - POST /api/backup/restore', () => {
+  let testDb: any;
+
+  beforeAll(() => {
+    testDb = getDb();
+  });
+
+  it('should return 401 if unauthorized', async () => {
+    const request = new Request('http://localhost/api/backup/restore', {
+      method: 'POST',
+      body: JSON.stringify({ downloadUrl: 'http://download' })
+    });
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {},
+    };
+
+    const response = await restoreApiHandler(context);
+    expect(response.status).toBe(401);
+  });
+
+  it('should successfully clear and restore tables from backup data', async () => {
+    const mockFetch = vi.fn();
+    globalThis.fetch = mockFetch;
+
+    // Seed mock database before restore
+    await testDb.insert(customers).values({
+      id: 'OLD-CUST',
+      fullName: 'Old Customer',
+      phone: '111111'
+    });
+
+    // Mock download backup file content
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      text: async () => JSON.stringify({
+        users: [],
+        staff: [],
+        customers: [{ id: 'RESTORED-CUST-1', fullName: 'Restored Cust 1', phone: '222222', email: null, idCard: null, taxCode: null, address: null, expiredAt: null, assignedStaffId: null, notes: null }],
+        invoices: [],
+        payments: [],
+        config: []
+      })
+    });
+
+    const request = new Request('http://localhost/api/backup/restore', {
+      method: 'POST',
+      body: JSON.stringify({ downloadUrl: 'http://download-backup-url', filename: 'backup-test.json' })
+    });
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' },
+      },
+    };
+
+    const response = await restoreApiHandler(context);
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.success).toBe(true);
+
+    // Verify database tables cleared and restored
+    const currentCustomers = await testDb.select().from(customers);
+    expect(currentCustomers.length).toBe(1);
+    expect(currentCustomers[0].id).toBe('RESTORED-CUST-1');
+    expect(currentCustomers[0].fullName).toBe('Restored Cust 1');
+
+    // Verify restore log inserted
+    const logs = await testDb.select().from(syncLogs).orderBy(desc(syncLogs.runAt)).limit(1);
+    expect(logs.length).toBe(1);
+    expect(logs[0].action).toBe('github_restore');
+    expect(logs[0].status).toBe('success');
   });
 });
 
