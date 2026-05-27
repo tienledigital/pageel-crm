@@ -1,0 +1,19 @@
+{
+  "sidebar": {
+    "dashboard": "Overview",
+    "customers": "Customers",
+    "invoices": "Invoices",
+    "payments": "Payments",
+    "qr_tool": "QR Tool",
+    "sync_logs": "Sync Logs",
+    "settings": "Settings"
+  },
+  "settings": {
+    "title": "System Settings",
+    "language": "Language",
+    "vietnamese": "Vietnamese",
+    "english": "English",
+    "save": "Save Settings",
+    "success": "Settings updated successfully!"
+  }
+}

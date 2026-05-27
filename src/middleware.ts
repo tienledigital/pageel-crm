@@ -13,6 +13,13 @@ const PUBLIC_ROUTES = [
 export const onRequest = async (context: APIContext, next: MiddlewareNext) => {
   const { pathname } = context.url;
 
+  // 0. Detect and set language in locals (session cookie or Accept-Language fallback)
+  let lang = context.cookies.get('lang')?.value || 'vi';
+  if (lang !== 'vi' && lang !== 'en') {
+    lang = 'vi';
+  }
+  context.locals.lang = lang as 'vi' | 'en';
+
   // 1. Check whitelist public routes and static files (containing dot like .css, .js, .png...)
   const isPublic = PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'));
   const isStatic = pathname.includes('.') && !pathname.startsWith('/api/');
