@@ -1,0 +1,339 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import { t } from '@/lib/i18n';
+
+const lang = Astro.locals.lang;
+
+// Title of page
+const title = t('sidebar.settings', lang);
+---
+
+<DashboardLayout title={title}>
+  <div class="settings-container">
+    <div class="settings-card">
+      <div class="settings-header">
+        <h2>{t('settings.title', lang)}</h2>
+        <p class="settings-subtitle">Manage your local preferences and system configurations</p>
+      </div>
+
+      <div class="settings-section">
+        <label class="section-label">{t('settings.language', lang)}</label>
+        
+        <div class="language-options">
+          <!-- Vietnamese Card -->
+          <div class={`lang-card ${lang === 'vi' ? 'active' : ''}`} data-lang="vi">
+            <div class="lang-flag">🇻🇳</div>
+            <div class="lang-info">
+              <span class="lang-name">{t('settings.vietnamese', lang)}</span>
+              <span class="lang-desc">Tiếng Việt</span>
+            </div>
+            <div class="lang-radio-check"></div>
+          </div>
+
+          <!-- English Card -->
+          <div class={`lang-card ${lang === 'en' ? 'active' : ''}`} data-lang="en">
+            <div class="lang-flag">🇺🇸</div>
+            <div class="lang-info">
+              <span class="lang-name">{t('settings.english', lang)}</span>
+              <span class="lang-desc">English</span>
+            </div>
+            <div class="lang-radio-check"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Action Area -->
+      <div class="settings-actions">
+        <button id="saveSettingsBtn" class="save-btn">
+          <span class="spinner" id="btnSpinner"></span>
+          <span id="btnText">{t('settings.save', lang)}</span>
+        </button>
+      </div>
+
+      <div id="toastMessage" class="toast-message">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="toast-icon">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span id="toastText">{t('settings.success', lang)}</span>
+      </div>
+    </div>
+  </div>
+</DashboardLayout>
+
+<style>
+  .settings-container {
+    max-width: 600px;
+    margin: 1.5rem auto;
+  }
+
+  .settings-card {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+
+  .settings-header {
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  .settings-header h2 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.35rem;
+  }
+
+  .settings-subtitle {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+  }
+
+  .settings-section {
+    margin-bottom: 2.5rem;
+  }
+
+  .section-label {
+    display: block;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 1rem;
+  }
+
+  .language-options {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+
+  .lang-card {
+    border: 1.5px solid var(--border-color);
+    border-radius: 10px;
+    padding: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    user-select: none;
+    background: var(--bg-main);
+  }
+
+  .lang-card:hover {
+    border-color: #ff914d;
+    background: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 93, 1, 0.05);
+  }
+
+  .lang-card.active {
+    border-color: var(--primary);
+    background: rgba(255, 93, 1, 0.02);
+    box-shadow: 0 2px 8px rgba(255, 93, 1, 0.08);
+  }
+
+  .lang-flag {
+    font-size: 1.75rem;
+    line-height: 1;
+  }
+
+  .lang-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+
+  .lang-name {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .lang-desc {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.1rem;
+  }
+
+  .lang-radio-check {
+    width: 18px;
+    height: 18px;
+    border: 2px solid var(--border-color);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+
+  .lang-card.active .lang-radio-check {
+    border-color: var(--primary);
+    background: var(--primary);
+  }
+
+  .lang-card.active .lang-radio-check::after {
+    content: '';
+    width: 6px;
+    height: 6px;
+    background: white;
+    border-radius: 50%;
+    display: block;
+  }
+
+  .settings-actions {
+    display: flex;
+    justify-content: flex-end;
+    border-top: 1px solid var(--border-color);
+    padding-top: 1.5rem;
+  }
+
+  .save-btn {
+    padding: 0.65rem 1.75rem;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s, box-shadow 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 2px 4px rgba(255, 93, 1, 0.2);
+  }
+
+  .save-btn:hover {
+    background: #e05300;
+    box-shadow: 0 4px 8px rgba(255, 93, 1, 0.3);
+  }
+
+  .save-btn:active {
+    transform: scale(0.98);
+  }
+
+  .save-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    animation: spin 0.8s linear infinite;
+    display: none;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Toast Message */
+  .toast-message {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    background: #10b981;
+    color: white;
+    padding: 0.75rem 1.25rem;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);
+    font-size: 0.875rem;
+    font-weight: 500;
+    transform: translateY(100px);
+    opacity: 0;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s;
+    z-index: 100;
+  }
+
+  .toast-message.show {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  .toast-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  @media (max-width: 480px) {
+    .language-options {
+      grid-template-columns: 1fr;
+    }
+    
+    .settings-card {
+      padding: 1.5rem;
+    }
+  }
+</style>
+
+<script>
+  let selectedLang = document.querySelector('.lang-card.active')?.getAttribute('data-lang') || 'vi';
+  const langCards = document.querySelectorAll('.lang-card');
+  const saveBtn = document.getElementById('saveSettingsBtn') as HTMLButtonElement;
+  const btnText = document.getElementById('btnText') as HTMLSpanElement;
+  const btnSpinner = document.getElementById('btnSpinner') as HTMLSpanElement;
+  const toast = document.getElementById('toastMessage') as HTMLDivElement;
+
+  langCards.forEach(card => {
+    card.addEventListener('click', () => {
+      langCards.forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      selectedLang = card.getAttribute('data-lang') || 'vi';
+    });
+  });
+
+  if (saveBtn) {
+    saveBtn.addEventListener('click', async () => {
+      saveBtn.disabled = true;
+      if (btnSpinner) btnSpinner.style.display = 'block';
+      if (btnText) btnText.textContent = selectedLang === 'vi' ? 'Đang lưu...' : 'Saving...';
+
+      try {
+        const res = await fetch('/api/settings/lang', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ lang: selectedLang })
+        });
+
+        if (res.ok) {
+          // Show success toast
+          if (toast) toast.classList.add('show');
+          
+          setTimeout(() => {
+            if (toast) toast.classList.remove('show');
+            // Reload page to apply changes
+            window.location.reload();
+          }, 1500);
+        } else {
+          alert('Failed to update language setting.');
+          saveBtn.disabled = false;
+          if (btnSpinner) btnSpinner.style.display = 'none';
+          if (btnText) btnText.textContent = selectedLang === 'vi' ? 'Lưu cài đặt' : 'Save Settings';
+        }
+      } catch (e) {
+        console.error('Error saving settings:', e);
+        alert('Network error. Please try again.');
+        saveBtn.disabled = false;
+        if (btnSpinner) btnSpinner.style.display = 'none';
+        if (btnText) btnText.textContent = selectedLang === 'vi' ? 'Lưu cài đặt' : 'Save Settings';
+      }
+    });
+  }
+</script>
