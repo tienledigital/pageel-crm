@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { users, customers } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { verifyPassword, createSessionCookie, hashPassword } from '@/lib/auth';
+import { verifyPassword, createSessionCookie, hashPassword, getSessionSecret } from '@/lib/auth';
 
 export const POST: APIRoute = async (context) => {
   try {

@@ -1,3 +1,15 @@
+import { env } from 'cloudflare:workers';
+
+export function getSessionSecret(): string {
+  const secret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || (typeof process !== 'undefined' ? process.env.SESSION_SECRET : undefined);
+  if (!secret) {
+    throw new Error(
+      'SESSION_SECRET is not configured. Set it in .dev.vars (local) or Cloudflare secrets (production).'
+    );
+  }
+  return secret;
+}
+
 export interface SessionPayload {
   id: string;
   username: string;

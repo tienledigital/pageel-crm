@@ -1,11 +1,11 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
-import { verifySessionCookie } from '@/lib/auth';
+import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 
 export const GET: APIRoute = async (context) => {
   try {
     const sessionCookie = context.cookies.get('session')?.value;
-    const sessionSecret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
+    const sessionSecret = getSessionSecret();
 
     if (!sessionCookie) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -41,7 +41,7 @@ export const GET: APIRoute = async (context) => {
         branch: !!(githubBackupBranch && githubBackupBranch.trim() !== '')
       },
       session: {
-        secret: !!(sessionSecret && sessionSecret.trim() !== '' && sessionSecret !== 'fallback-secret-key-must-be-at-least-32-chars-long')
+        secret: (() => { try { const s = getSessionSecret(); return !!(s && s.trim() !== ''); } catch { return false; } })()
       }
     }), {
       status: 200,

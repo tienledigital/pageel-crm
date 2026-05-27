@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { config } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { verifySessionCookie } from '@/lib/auth';
+import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { logDebug } from '@/lib/debug-logger';
 

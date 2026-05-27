@@ -3,7 +3,7 @@ import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { t } from '@/lib/i18n';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { verifySessionCookie } from '@/lib/auth';
+import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { desc, count } from 'drizzle-orm';
 import {
   users as usersTable,
