@@ -18,7 +18,7 @@ const logTableNames = ['sync_logs', 'audit_logs', 'debug_logs'];
 const getFriendlyName = (tableName: string) => {
   const meta: Record<string, { vi: string; en: string }> = {
     customers: { vi: 'Khách hàng', en: 'Customers' },
-    invoices: { vi: 'Hóa đơn', en: 'Invoices' },
+    invoices: { vi: 'Đơn hàng', en: 'Orders' },
     payments: { vi: 'Giao dịch', en: 'Payments' },
     users: { vi: 'Tài khoản admin', en: 'Admin Accounts' },
     staff: { vi: 'Nhân viên', en: 'Staff Profiles' },
@@ -217,8 +217,8 @@ const getTableIcon = (tableName: string) => {
           <!-- Node 4: Invoices -->
           <g transform="translate(270, 150)">
             <rect width="130" height="60" rx="8" class="node-rect node-core-style-active" />
-            <text x="65" y="26" class="node-title">Invoices</text>
-            <text x="65" y="44" class="node-subtitle">Hóa đơn bán hàng</text>
+            <text x="65" y="26" class="node-title">Orders</text>
+            <text x="65" y="44" class="node-subtitle">Đơn hàng</text>
           </g>
 
           <!-- Node 5: Payments -->

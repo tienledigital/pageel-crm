@@ -75,7 +75,7 @@ const jsonStructure = `{
           : 'The system automatically synchronizes and backs up all core database tables to the configured GitHub repository. The backed up tables include:'}
       </p>
       <ul style="margin-left: 1.5rem; font-size: 0.85rem; line-height: 1.6; color: var(--text-primary); margin-bottom: 0.75rem;">
-        <li><strong>{lang === 'vi' ? 'Dữ liệu Nghiệp vụ:' : 'Business Data:'}</strong> {lang === 'vi' ? 'Khách hàng' : 'Customers'} (<code>customers</code>), {lang === 'vi' ? 'Hóa đơn' : 'Invoices'} (<code>invoices</code>), {lang === 'vi' ? 'Lịch sử thanh toán' : 'Payments'} (<code>payments</code>).</li>
+        <li><strong>{lang === 'vi' ? 'Dữ liệu Nghiệp vụ:' : 'Business Data:'}</strong> {lang === 'vi' ? 'Khách hàng' : 'Customers'} (<code>customers</code>), {lang === 'vi' ? 'Đơn hàng' : 'Orders'} (<code>invoices</code>), {lang === 'vi' ? 'Lịch sử thanh toán' : 'Payments'} (<code>payments</code>).</li>
         <li><strong>{lang === 'vi' ? 'Cấu hình Hệ thống:' : 'System Configurations:'}</strong> {lang === 'vi' ? 'Cài đặt cửa hàng, tài khoản ngân hàng mặc định và luật phân loại đối soát thanh toán tự động (trigger classification rules)' : 'Shop settings, default bank account, and payment trigger classification rules'} (<code>config</code>).</li>
         <li><strong>{lang === 'vi' ? 'Tài khoản & Nhân sự:' : 'Accounts & Staff:'}</strong> {lang === 'vi' ? 'Tài khoản người dùng' : 'User accounts'} (<code>users</code>) & {lang === 'vi' ? 'Thông tin nhân viên' : 'Staff profiles'} (<code>staff</code>).</li>
       </ul>
@@ -147,8 +147,8 @@ const jsonStructure = `{
     <div class="modal-body">
       <p style="font-size: 0.9rem; line-height: 1.6; color: var(--text-primary); margin-bottom: 1.25rem;">
         {lang === 'vi'
-          ? 'CẢNH BÁO: Việc khôi phục dữ liệu sẽ XÓA TOÀN BỘ dữ liệu Khách hàng, Hóa đơn, Lịch sử thanh toán, các Tài khoản người dùng, Nhân sự và toàn bộ Cài đặt cấu hình (bao gồm cả luật phân loại đối soát) hiện tại trên hệ thống để thay thế bằng dữ liệu từ file sao lưu.'
-          : 'WARNING: Restoring data will DELETE ALL current Customers, Invoices, Payments, User accounts, Staff, and all Configuration settings (including classification rules) on the system and replace them with data from the backup file.'}
+          ? 'CẢNH BÁO: Việc khôi phục dữ liệu sẽ XÓA TOÀN BỘ dữ liệu Khách hàng, Đơn hàng, Lịch sử thanh toán, các Tài khoản người dùng, Nhân sự và toàn bộ Cài đặt cấu hình (bao gồm cả luật phân loại đối soát) hiện tại trên hệ thống để thay thế bằng dữ liệu từ file sao lưu.'
+          : 'WARNING: Restoring data will DELETE ALL current Customers, Orders, Payments, User accounts, Staff, and all Configuration settings (including classification rules) on the system and replace them with data from the backup file.'}
       </p>
       <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1.5rem; font-weight: 500;">
         {lang === 'vi' ? 'File sao lưu:' : 'Backup file:'} <span id="restoreFilenameDisplay" style="font-family: monospace; color: var(--text-primary);"></span>
