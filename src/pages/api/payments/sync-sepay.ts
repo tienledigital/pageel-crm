@@ -3,6 +3,7 @@ import { getDb } from '@/lib/db';
 import { reconcilePayment } from '@/lib/reconciliation';
 import { config } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import { logDebug } from '@/lib/debug-logger';
 
 export async function POST(context: any) {
   // 1. Verify authentication & authorization
@@ -155,6 +156,15 @@ export async function POST(context: any) {
     );
   } catch (error: any) {
     console.error('[SePay Sync Error]:', error.message);
+    const db = getDb(env);
+    await logDebug(db, {
+      level: 'error',
+      endpoint: '/api/payments/sync-sepay',
+      method: 'POST',
+      statusCode: 500,
+      message: error.message,
+      stack: error.stack
+    });
     return new Response(
       JSON.stringify({
         success: false,

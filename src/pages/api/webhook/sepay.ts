@@ -2,10 +2,13 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { reconcilePayment } from '@/lib/reconciliation';
-import { config } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
+import { logDebug } from '@/lib/debug-logger';
+import { config } from '@/lib/db/schema';
 
 export const POST: APIRoute = async (context) => {
+  let db: any = null;
+  let requestBody: any = null;
   try {
     const authHeader = context.request.headers.get('Authorization');
     const secret = env?.SEPAY_WEBHOOK_SECRET || import.meta.env.SEPAY_WEBHOOK_SECRET || 'sepay-fallback-secret';
@@ -20,7 +23,8 @@ export const POST: APIRoute = async (context) => {
     }
 
     const body = await context.request.json();
-    const db = getDb(env);
+    requestBody = body;
+    db = getDb(env);
 
     // Verify that the transaction is for our configured bank account
     const defaultAccountConfig = await db.select().from(config).where(eq(config.key, 'defaultAccount')).limit(1);
@@ -82,6 +86,22 @@ export const POST: APIRoute = async (context) => {
     }
   } catch (error: any) {
     console.error('Webhook error:', error.message);
+    if (!db) {
+      try {
+        db = getDb(env);
+      } catch {}
+    }
+    if (db) {
+      await logDebug(db, {
+        level: 'error',
+        endpoint: '/api/webhook/sepay',
+        method: 'POST',
+        statusCode: 500,
+        message: error.message,
+        stack: error.stack,
+        requestBody
+      });
+    }
     return new Response(
       JSON.stringify({ error: 'Internal Server Error', details: error.message }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
