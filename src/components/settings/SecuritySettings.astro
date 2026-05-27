@@ -1,0 +1,276 @@
+---
+import { t } from '@/lib/i18n';
+
+interface Props {
+  lang: 'vi' | 'en';
+  isAdmin: boolean;
+}
+
+const { lang, isAdmin } = Astro.props;
+---
+
+<section id="security" class="settings-card tab-panel">
+  <h2>{t('settings.security', lang)}</h2>
+  <div class="card-body">
+    <!-- Password Change -->
+    <div class="sub-section">
+      <h3>{t('settings.change_password', lang)}</h3>
+      <form id="changePasswordForm" class="form-grid">
+        <div class="form-group">
+          <label for="currentPassword" class="form-label">{t('settings.current_password', lang)}</label>
+          <input type="password" id="currentPassword" class="form-input" required />
+        </div>
+        <div class="form-group grid-2">
+          <div>
+            <label for="newPassword" class="form-label">{t('settings.new_password', lang)}</label>
+            <input type="password" id="newPassword" class="form-input" required />
+          </div>
+          <div>
+            <label for="confirmPassword" class="form-label">{t('settings.confirm_password', lang)}</label>
+            <input type="password" id="confirmPassword" class="form-input" required />
+          </div>
+        </div>
+        <div class="action-row">
+          <button type="submit" id="changePasswordBtn" class="btn-primary">
+            <span class="spinner" id="pwdSpinner"></span>
+            {t('settings.change_password', lang)}
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- User Management (Admin Only) -->
+    {isAdmin && (
+      <div class="sub-section border-top">
+        <div class="flex-header">
+          <h3>{t('settings.user_mgmt', lang)}</h3>
+          <button id="openAddUserModal" class="btn-small-primary">
+            + {t('settings.add_user', lang)}
+          </button>
+        </div>
+
+        <div class="table-container mt-1">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>{t('settings.username', lang)}</th>
+                <th>{t('settings.role', lang)}</th>
+                <th>{t('settings.created_at', lang)}</th>
+                <th>{t('settings.action', lang)}</th>
+              </tr>
+            </thead>
+            <tbody id="userTableBody">
+              <tr>
+                <td colspan="4" class="text-center">Loading users...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )}
+  </div>
+</section>
+
+<!-- Add User Modal (Admin Only) -->
+{isAdmin && (
+  <div class="modal" id="addUserModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>{t('settings.add_user', lang)}</h3>
+        <button class="close-btn" id="closeAddUserModal">&times;</button>
+      </div>
+      <form id="addUserForm" class="form-grid modal-body">
+        <div class="form-group">
+          <label for="newUsername" class="form-label">{t('settings.username', lang)}</label>
+          <input type="text" id="newUsername" class="form-input" required />
+        </div>
+        <div class="form-group">
+          <label for="newUserPassword" class="form-label">{t('settings.new_password', lang)}</label>
+          <input type="password" id="newUserPassword" class="form-input" required />
+        </div>
+        <div class="form-group">
+          <label for="newUserRole" class="form-label">{t('settings.role', lang)}</label>
+          <select id="newUserRole" class="form-input" required>
+            <option value="staff">Staff</option>
+            <option value="accountant">Accountant</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-secondary" id="cancelAddUser">Cancel</button>
+          <button type="submit" class="btn-primary">
+            <span class="spinner" id="createUserSpinner"></span>
+            Create
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+)}
+
+<script>
+  const layout = document.querySelector('.settings-layout') as HTMLDivElement;
+  const isAdmin = layout?.getAttribute('data-is-admin') === 'true';
+  const i18n = JSON.parse(layout?.getAttribute('data-i18n') || '{}');
+
+  function showToast(message: string, type: 'success' | 'error' = 'success') {
+    const event = new CustomEvent('show-toast', { detail: { message, type } });
+    window.dispatchEvent(event);
+  }
+
+  function escapeHtml(unsafe: any) {
+    if (unsafe === null || unsafe === undefined) return '';
+    return String(unsafe)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
+  // Password change submit
+  const changePasswordForm = document.getElementById('changePasswordForm') as HTMLFormElement;
+  const pwdSpinner = document.getElementById('pwdSpinner') as HTMLSpanElement;
+
+  if (changePasswordForm) {
+    changePasswordForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const currentPassword = (document.getElementById('currentPassword') as HTMLInputElement).value;
+      const newPassword = (document.getElementById('newPassword') as HTMLInputElement).value;
+      const confirmPassword = (document.getElementById('confirmPassword') as HTMLInputElement).value;
+
+      if (newPassword !== confirmPassword) {
+        showToast(i18n.pwdMismatch || 'Passwords do not match!', 'error');
+        return;
+      }
+
+      const submitBtn = document.getElementById('changePasswordBtn') as HTMLButtonElement;
+      submitBtn.disabled = true;
+      if (pwdSpinner) pwdSpinner.style.display = 'inline-block';
+
+      try {
+        const res = await fetch('/api/settings/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currentPassword, newPassword })
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          showToast(i18n.changePwdSuccess || 'Password changed successfully!', 'success');
+          changePasswordForm.reset();
+        } else {
+          showToast(data.error || 'Failed to change password', 'error');
+        }
+      } catch (err: any) {
+        showToast('Network error: ' + err.message, 'error');
+      } finally {
+        submitBtn.disabled = false;
+        if (pwdSpinner) pwdSpinner.style.display = 'none';
+      }
+    });
+  }
+
+  // Admin User CRUD logic
+  if (isAdmin) {
+    const userTableBody = document.getElementById('userTableBody') as HTMLTableSectionElement;
+    const addUserModal = document.getElementById('addUserModal') as HTMLDivElement;
+    const openAddUserModal = document.getElementById('openAddUserModal') as HTMLButtonElement;
+    const closeAddUserModal = document.getElementById('closeAddUserModal') as HTMLButtonElement;
+    const cancelAddUser = document.getElementById('cancelAddUser') as HTMLButtonElement;
+    const addUserForm = document.getElementById('addUserForm') as HTMLFormElement;
+    const createUserSpinner = document.getElementById('createUserSpinner') as HTMLSpanElement;
+
+    // Load users
+    async function loadUsers() {
+      try {
+        const res = await fetch('/api/settings/users');
+        if (res.status === 501) {
+          userTableBody.innerHTML = `<tr><td colspan="4" class="text-center text-secondary">User Management API not implemented yet</td></tr>`;
+          return;
+        }
+        if (!res.ok) throw new Error('Failed to fetch users');
+        const usersList = await res.json();
+        
+        userTableBody.innerHTML = usersList.map((usr: any) => `
+          <tr>
+            <td><strong>${escapeHtml(usr.username)}</strong></td>
+            <td><span class="badge-action">${escapeHtml(usr.role)}</span></td>
+            <td>${escapeHtml(new Date(usr.createdAt).toLocaleString())}</td>
+            <td>
+              <button class="btn-small-secondary delete-user-btn" data-id="${escapeHtml(usr.id)}">Delete</button>
+            </td>
+          </tr>
+        `).join('');
+
+        // Attach delete events
+        document.querySelectorAll('.delete-user-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            const id = btn.getAttribute('data-id');
+            if (!confirm('Are you sure you want to delete this user?')) return;
+            try {
+              const delRes = await fetch(`/api/settings/users/${id}`, { method: 'DELETE' });
+              const data = await delRes.json();
+              if (delRes.ok && data.success) {
+                showToast('User deleted successfully', 'success');
+                loadUsers();
+              } else {
+                showToast(data.error || 'Failed to delete user', 'error');
+              }
+            } catch (err: any) {
+              showToast(err.message, 'error');
+            }
+          });
+        });
+      } catch (err: any) {
+        userTableBody.innerHTML = `<tr><td colspan="4" class="text-center text-secondary">Error: ${escapeHtml(err.message)}</td></tr>`;
+      }
+    }
+
+    loadUsers();
+
+    // Modal control
+    if (openAddUserModal) {
+      openAddUserModal.addEventListener('click', () => addUserModal.classList.add('open'));
+    }
+    const closeModal = () => addUserModal.classList.remove('open');
+    if (closeAddUserModal) closeAddUserModal.addEventListener('click', closeModal);
+    if (cancelAddUser) cancelAddUser.addEventListener('click', closeModal);
+
+    // Create user submit
+    if (addUserForm) {
+      addUserForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = (document.getElementById('newUsername') as HTMLInputElement).value;
+        const password = (document.getElementById('newUserPassword') as HTMLInputElement).value;
+        const role = (document.getElementById('newUserRole') as HTMLSelectElement).value;
+
+        const submitBtn = addUserForm.querySelector('button[type="submit"]') as HTMLButtonElement;
+        submitBtn.disabled = true;
+        if (createUserSpinner) createUserSpinner.style.display = 'inline-block';
+
+        try {
+          const res = await fetch('/api/settings/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password, role })
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            showToast('User created successfully', 'success');
+            addUserForm.reset();
+            closeModal();
+            loadUsers();
+          } else {
+            showToast(data.error || 'Failed to create user', 'error');
+          }
+        } catch (err: any) {
+          showToast(err.message, 'error');
+        } finally {
+          submitBtn.disabled = false;
+          if (createUserSpinner) createUserSpinner.style.display = 'none';
+        }
+      });
+    }
+  }
+</script>

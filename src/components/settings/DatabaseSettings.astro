@@ -1,0 +1,114 @@
+---
+import { t } from '@/lib/i18n';
+
+interface Props {
+  lang: 'vi' | 'en';
+  isAdmin: boolean;
+  dbStats: Array<{ name: string; count: number }>;
+  totalRows: number;
+  recentSyncLogs: any[];
+}
+
+const { lang, isAdmin, dbStats, totalRows, recentSyncLogs } = Astro.props;
+---
+
+<section id="database" class="settings-card tab-panel">
+  <h2>{t('settings.database', lang)}</h2>
+  <div class="card-body">
+    <!-- DB Stats -->
+    <div class="sub-section">
+      <h3>{t('settings.db_stats', lang)}</h3>
+      <div class="db-stats-grid">
+        {dbStats.map(stat => (
+          <div class="db-stat-tile">
+            <span class="stat-name">{stat.name}</span>
+            <span class="stat-count">{stat.count} rows</span>
+          </div>
+        ))}
+      </div>
+      <div class="db-total-rows">
+        Total Rows: <strong>{totalRows}</strong>
+      </div>
+
+      <div class="action-buttons-group">
+        <button id="optimizeDbBtn" class="btn-accent">
+          <span class="spinner" id="optSpinner"></span>
+          {t('settings.optimize_db', lang)}
+        </button>
+      </div>
+    </div>
+
+    <!-- Sync Logs -->
+    <div class="sub-section border-top">
+      <h3>{t('settings.sync_history', lang)}</h3>
+      <div class="table-container">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Action</th>
+              <th>Status</th>
+              <th>Message</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recentSyncLogs.length === 0 ? (
+              <tr>
+                <td colspan="4" class="text-center">No logs found</td>
+              </tr>
+            ) : (
+              recentSyncLogs.map((log: any) => (
+                <tr>
+                  <td class="whitespace-nowrap">{new Date(log.runAt || 0).toLocaleString()}</td>
+                  <td><span class="badge-action">{log.action}</span></td>
+                  <td>
+                    <span class={`status-dot ${log.status === 'success' ? 'green' : 'red'}`}></span>
+                    {log.status}
+                  </td>
+                  <td class="text-secondary max-width-300 overflow-ellipsis" title={log.message}>{log.message}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  const layout = document.querySelector('.settings-layout') as HTMLDivElement;
+  const i18n = JSON.parse(layout?.getAttribute('data-i18n') || '{}');
+
+  function showToast(message: string, type: 'success' | 'error' = 'success') {
+    const event = new CustomEvent('show-toast', { detail: { message, type } });
+    window.dispatchEvent(event);
+  }
+
+  // Database optimize submit
+  const optimizeDbBtn = document.getElementById('optimizeDbBtn') as HTMLButtonElement;
+  const optSpinner = document.getElementById('optSpinner') as HTMLSpanElement;
+
+  if (optimizeDbBtn) {
+    optimizeDbBtn.addEventListener('click', async () => {
+      optimizeDbBtn.disabled = true;
+      if (optSpinner) optSpinner.style.display = 'inline-block';
+
+      try {
+        const res = await fetch('/api/settings/db-optimize', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast(i18n.dbOptimizeSuccess || 'Database optimized successfully!', 'success');
+          setTimeout(() => window.location.reload(), 1200);
+        } else {
+          showToast(data.error || 'Optimization failed', 'error');
+        }
+      } catch (err: any) {
+        showToast('Network error: ' + err.message, 'error');
+      } finally {
+        optimizeDbBtn.disabled = false;
+        if (optSpinner) optSpinner.style.display = 'none';
+      }
+    });
+  }
+</script>

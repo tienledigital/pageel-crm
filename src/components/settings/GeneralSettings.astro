@@ -1,0 +1,131 @@
+---
+import { t } from '@/lib/i18n';
+
+interface Props {
+  lang: 'vi' | 'en';
+  orgName: string;
+  orgLogo: string;
+}
+
+const { lang, orgName, orgLogo } = Astro.props;
+---
+
+<section id="general" class="settings-card tab-panel active">
+  <h2>{t('settings.general', lang)}</h2>
+  <div class="card-body">
+    <!-- Language Selector -->
+    <div class="form-group">
+      <label class="form-label">{t('settings.language', lang)}</label>
+      <div class="language-options">
+        <div class={`lang-card ${lang === 'vi' ? 'active' : ''}`} data-lang="vi">
+          <span class="lang-flag">🇻🇳</span>
+          <div class="lang-info">
+            <span class="lang-name">{t('settings.vietnamese', lang)}</span>
+            <span class="lang-desc">Tiếng Việt</span>
+          </div>
+          <div class="lang-radio-check"></div>
+        </div>
+        <div class={`lang-card ${lang === 'en' ? 'active' : ''}`} data-lang="en">
+          <span class="lang-flag">🇺🇸</span>
+          <div class="lang-info">
+            <span class="lang-name">{t('settings.english', lang)}</span>
+            <span class="lang-desc">English</span>
+          </div>
+          <div class="lang-radio-check"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Org Info -->
+    <div class="form-group grid-2">
+      <div>
+        <label for="orgNameInput" class="form-label">{t('settings.org_name', lang)}</label>
+        <input type="text" id="orgNameInput" class="form-input" value={orgName} placeholder="My CRM shop" />
+      </div>
+      <div>
+        <label for="orgLogoInput" class="form-label">{t('settings.org_logo', lang)}</label>
+        <input type="url" id="orgLogoInput" class="form-input" value={orgLogo} placeholder="https://example.com/logo.png" />
+      </div>
+    </div>
+
+    <div class="action-row">
+      <button id="saveGeneralBtn" class="btn-primary">
+        <span class="spinner" id="genSpinner"></span>
+        {t('settings.save', lang)}
+      </button>
+    </div>
+  </div>
+</section>
+
+<script>
+  // Language selection logic
+  const layout = document.querySelector('.settings-layout') as HTMLDivElement;
+  const lang = layout?.getAttribute('data-lang') || 'vi';
+  const i18n = JSON.parse(layout?.getAttribute('data-i18n') || '{}');
+
+  let selectedLang = lang;
+  const langCards = document.querySelectorAll('.lang-card');
+  langCards.forEach(card => {
+    card.addEventListener('click', () => {
+      langCards.forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      selectedLang = card.getAttribute('data-lang') || 'vi';
+    });
+  });
+
+  // Save General settings submit
+  const saveGeneralBtn = document.getElementById('saveGeneralBtn') as HTMLButtonElement;
+  const genSpinner = document.getElementById('genSpinner') as HTMLSpanElement;
+
+  // Helper to show toast (communicates with window event or parent toast system)
+  function showToast(message: string, type: 'success' | 'error' = 'success') {
+    const event = new CustomEvent('show-toast', { detail: { message, type } });
+    window.dispatchEvent(event);
+  }
+
+  if (saveGeneralBtn) {
+    saveGeneralBtn.addEventListener('click', async () => {
+      saveGeneralBtn.disabled = true;
+      if (genSpinner) genSpinner.style.display = 'inline-block';
+
+      try {
+        // 1. Language update if changed
+        if (selectedLang !== lang) {
+          const langRes = await fetch('/api/settings/lang', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lang: selectedLang })
+          });
+          if (!langRes.ok) throw new Error('Language update failed');
+        }
+
+        // 2. Org Info updates
+        const orgNameVal = (document.getElementById('orgNameInput') as HTMLInputElement).value;
+        const orgLogoVal = (document.getElementById('orgLogoInput') as HTMLInputElement).value;
+
+        const orgNameRes = await fetch('/api/crm/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'org_name', value: orgNameVal })
+        });
+        if (!orgNameRes.ok) throw new Error('Org Name update failed');
+
+        const orgLogoRes = await fetch('/api/crm/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'org_logo', value: orgLogoVal })
+        });
+        if (!orgLogoRes.ok) throw new Error('Org Logo update failed');
+
+        showToast(i18n.saveGeneralSuccess || 'General settings saved successfully!', 'success');
+        setTimeout(() => window.location.reload(), 1200);
+
+      } catch (err: any) {
+        console.error(err);
+        showToast(err.message, 'error');
+        saveGeneralBtn.disabled = false;
+        if (genSpinner) genSpinner.style.display = 'none';
+      }
+    });
+  }
+</script>
