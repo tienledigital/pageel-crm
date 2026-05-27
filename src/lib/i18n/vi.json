@@ -6,7 +6,8 @@
     "payments": "Giao dịch",
     "qr_tool": "QR Tool",
     "sync_logs": "Nhật ký đồng bộ",
-    "settings": "Cài đặt"
+    "settings": "Cài đặt",
+    "logout": "Đăng xuất"
   },
   "settings": {
     "title": "Cài đặt hệ thống",

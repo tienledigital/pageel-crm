@@ -6,7 +6,8 @@
     "payments": "Payments",
     "qr_tool": "QR Tool",
     "sync_logs": "Sync Logs",
-    "settings": "Settings"
+    "settings": "Settings",
+    "logout": "Sign Out"
   },
   "settings": {
     "title": "System Settings",
