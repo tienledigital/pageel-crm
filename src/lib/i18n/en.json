@@ -53,6 +53,14 @@
     "pwd_mismatch": "Passwords do not match!",
     "github_test_success": "GitHub connection working!",
     "github_backup_success": "Backup successfully completed!",
-    "github_backup_confirm": "Are you sure you want to trigger GitHub backup now?"
+    "github_backup_confirm": "Are you sure you want to trigger GitHub backup now?",
+    "db_segment_core": "CRM Core Business Data",
+    "db_segment_admin": "Admin & Configuration",
+    "db_segment_logs": "System Operational Logs",
+    "db_clear_btn": "Clean",
+    "db_clear_confirm_title": "Confirm Table Clearing",
+    "db_clear_confirm_desc": "This action will permanently delete all records in the table {table}. Are you sure you want to continue?",
+    "db_clear_success": "Table {table} cleared successfully!",
+    "db_protected": "Protected"
   }
 }

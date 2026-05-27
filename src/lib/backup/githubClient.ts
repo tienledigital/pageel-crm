@@ -1,4 +1,4 @@
-import { customers, invoices, payments } from '../db/schema';
+import { users, staff, customers, invoices, payments, config } from '../db/schema';
 
 export interface BackupParams {
   token: string;
@@ -14,14 +14,20 @@ export interface BackupParams {
  * Export all relevant tables to a minified JSON string.
  */
 export async function exportDatabaseToJson(db: any): Promise<string> {
+  const allUsers = await db.select().from(users);
+  const allStaff = await db.select().from(staff);
   const allCustomers = await db.select().from(customers);
   const allInvoices = await db.select().from(invoices);
   const allPayments = await db.select().from(payments);
+  const allConfig = await db.select().from(config);
 
   return JSON.stringify({
+    users: allUsers,
+    staff: allStaff,
     customers: allCustomers,
     invoices: allInvoices,
     payments: allPayments,
+    config: allConfig,
   });
 }
 
@@ -176,4 +182,67 @@ export async function pushBackupToGit(params: BackupParams): Promise<string> {
   const updateRefData = await updateRefRes.json() as any;
   
   return updateRefData.object.sha;
+}
+
+/**
+ * Fetch backup files list from GitHub repository.
+ * Returns array of files in the backups/ folder.
+ */
+export async function listBackupsFromGit(params: {
+  token: string;
+  owner: string;
+  repo: string;
+}): Promise<any[]> {
+  const { token, owner, repo } = params;
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/backups`;
+  const headers = {
+    'Authorization': `Bearer ${token}`,
+    'Accept': 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    'User-Agent': 'pageel-crm-backup-client',
+  };
+
+  const res = await fetch(url, { headers });
+  if (res.status === 404) {
+    // Backups directory doesn't exist yet, return empty list
+    return [];
+  }
+  if (!res.ok) {
+    throw new Error(`GitHub API error list backups: ${res.status} ${res.statusText}`);
+  }
+  const data = await res.json();
+  if (!Array.isArray(data)) {
+    return [];
+  }
+  // Filter for JSON files
+  return data
+    .filter((f: any) => f.name.endsWith('.json') && f.type === 'file')
+    .map((f: any) => ({
+      name: f.name,
+      path: f.path,
+      sha: f.sha,
+      size: f.size,
+      downloadUrl: f.download_url
+    }))
+    .reverse(); // Newest first
+}
+
+/**
+ * Fetch a specific backup file's content from GitHub.
+ */
+export async function fetchBackupContent(params: {
+  token: string;
+  downloadUrl: string;
+}): Promise<string> {
+  const { token, downloadUrl } = params;
+  const headers = {
+    'Authorization': `Bearer ${token}`,
+    'User-Agent': 'pageel-crm-backup-client',
+  };
+
+  const res = await fetch(downloadUrl, { headers });
+  if (!res.ok) {
+    throw new Error(`GitHub API error downloading backup: ${res.status} ${res.statusText}`);
+  }
+  return res.text();
 }

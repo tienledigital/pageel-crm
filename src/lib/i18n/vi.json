@@ -53,6 +53,14 @@
     "pwd_mismatch": "Mật khẩu mới không khớp!",
     "github_test_success": "Kết nối GitHub thành công!",
     "github_backup_success": "Sao lưu hoàn tất thành công!",
-    "github_backup_confirm": "Bạn có chắc chắn muốn kích hoạt sao lưu dữ liệu lên GitHub ngay bây giờ?"
+    "github_backup_confirm": "Bạn có chắc chắn muốn kích hoạt sao lưu dữ liệu lên GitHub ngay bây giờ?",
+    "db_segment_core": "Dữ liệu nghiệp vụ (CRM Core)",
+    "db_segment_admin": "Cấu hình & Quản trị",
+    "db_segment_logs": "Nhật ký vận hành (System Logs)",
+    "db_clear_btn": "Dọn dẹp",
+    "db_clear_confirm_title": "Xác nhận dọn dẹp bảng",
+    "db_clear_confirm_desc": "Hành động này sẽ xoá vĩnh viễn toàn bộ dữ liệu trong bảng {table}. Bạn có chắc chắn muốn tiếp tục?",
+    "db_clear_success": "Dọn dẹp dữ liệu bảng {table} thành công!",
+    "db_protected": "Được bảo vệ"
   }
 }

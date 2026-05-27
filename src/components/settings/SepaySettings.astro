@@ -4,7 +4,8 @@ import { t } from '@/lib/i18n';
 interface Props {
   lang: 'vi' | 'en';
   isAdmin: boolean;
-  defaultBankAccount: string;
+  defaultBank: string;
+  defaultAccount: string;
   envStatus: {
     sepay: {
       webhookSecret: boolean;
@@ -19,7 +20,7 @@ interface Props {
   };
 }
 
-const { lang, isAdmin, defaultBankAccount, envStatus } = Astro.props;
+const { lang, isAdmin, defaultBank, defaultAccount, envStatus } = Astro.props;
 ---
 
 <section id="integrations" class="settings-card tab-panel">
@@ -45,59 +46,29 @@ const { lang, isAdmin, defaultBankAccount, envStatus } = Astro.props;
         </div>
       </div>
 
-      <div class="form-group mt-1">
-        <label for="defaultBankInput" class="form-label">{t('settings.default_bank', lang)}</label>
-        <input type="text" id="defaultBankInput" class="form-input" value={defaultBankAccount} placeholder="e.g. MB Bank - 123456789" />
+      <div class="form-group mt-1 grid-2">
+        <div>
+          <label for="defaultBankSelect" class="form-label">{lang === 'vi' ? 'Ngân hàng mặc định' : 'Default Bank'}</label>
+          <select id="defaultBankSelect" class="form-input">
+            <option value="MB" selected={defaultBank === 'MB'}>MB (MBBank)</option>
+            <option value="Techcombank" selected={defaultBank === 'Techcombank'}>Techcombank</option>
+            <option value="Vietcombank" selected={defaultBank === 'Vietcombank'}>Vietcombank</option>
+            <option value="ACB" selected={defaultBank === 'ACB'}>ACB</option>
+            <option value="VPBank" selected={defaultBank === 'VPBank'}>VPBank</option>
+            <option value="BIDV" selected={defaultBank === 'BIDV'}>BIDV</option>
+            <option value="VietinBank" selected={defaultBank === 'VietinBank'}>VietinBank</option>
+            <option value="TPBank" selected={defaultBank === 'TPBank'}>TPBank</option>
+            <option value="Sacombank" selected={defaultBank === 'Sacombank'}>Sacombank</option>
+            <option value="Agribank" selected={defaultBank === 'Agribank'}>Agribank</option>
+            <option value="VIB" selected={defaultBank === 'VIB'}>VIB</option>
+          </select>
+        </div>
+        <div>
+          <label for="defaultAccountInput" class="form-label">{lang === 'vi' ? 'Số tài khoản mặc định' : 'Default Account Number'}</label>
+          <input type="text" id="defaultAccountInput" class="form-input" value={defaultAccount} placeholder="e.g. 0399999999" />
+        </div>
       </div>
     </div>
-
-    {isAdmin && (
-      <!-- GitHub Backup -->
-      <div class="sub-section border-top">
-        <h3>{t('settings.github_backup', lang)}</h3>
-        <div class="status-grid">
-          <div class="status-tile">
-            <span>Token</span>
-            <span class={`status-badge ${envStatus.github.token ? 'success' : 'warning'}`}>
-              <span class="pulse-dot"></span>
-              {envStatus.github.token ? 'Configured' : 'Missing'}
-            </span>
-          </div>
-          <div class="status-tile">
-            <span>Repo Owner</span>
-            <span class={`status-badge ${envStatus.github.owner ? 'success' : 'warning'}`}>
-              <span class="pulse-dot"></span>
-              {envStatus.github.owner ? 'Configured' : 'Missing'}
-            </span>
-          </div>
-          <div class="status-tile">
-            <span>Repository</span>
-            <span class={`status-badge ${envStatus.github.repo ? 'success' : 'warning'}`}>
-              <span class="pulse-dot"></span>
-              {envStatus.github.repo ? 'Configured' : 'Missing'}
-            </span>
-          </div>
-          <div class="status-tile">
-            <span>Branch</span>
-            <span class={`status-badge ${envStatus.github.branch ? 'success' : 'warning'}`}>
-              <span class="pulse-dot"></span>
-              {envStatus.github.branch ? 'Configured' : 'Missing'}
-            </span>
-          </div>
-        </div>
-
-        <div class="action-buttons-group">
-          <button id="testGithubBtn" class="btn-secondary">
-            <span class="spinner" id="testGitSpinner"></span>
-            {t('settings.test_connection', lang)}
-          </button>
-          <button id="triggerBackupBtn" class="btn-accent">
-            <span class="spinner" id="backupSpinner"></span>
-            {t('settings.trigger_backup', lang)}
-          </button>
-        </div>
-      </div>
-    )}
 
     <div class="action-row border-top">
       <button id="saveIntegrationsBtn" class="btn-primary">
@@ -127,14 +98,33 @@ const { lang, isAdmin, defaultBankAccount, envStatus } = Astro.props;
       if (integSpinner) integSpinner.style.display = 'inline-block';
 
       try {
-        const bankInput = document.getElementById('defaultBankInput') as HTMLInputElement;
-        const bankVal = bankInput ? bankInput.value : '';
+        const bankSelect = document.getElementById('defaultBankSelect') as HTMLSelectElement;
+        const accountInput = document.getElementById('defaultAccountInput') as HTMLInputElement;
+        const bankVal = bankSelect ? bankSelect.value : 'MB';
+        const accountVal = accountInput ? accountInput.value : '';
+
+        // Save defaultBank
         const bankRes = await fetch('/api/crm/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: 'default_bank_account', value: bankVal })
+          body: JSON.stringify({ key: 'defaultBank', value: bankVal })
         });
-        if (!bankRes.ok) throw new Error('Bank account configuration failed');
+        if (!bankRes.ok) throw new Error('Bank brand configuration failed');
+
+        // Save defaultAccount
+        const accountRes = await fetch('/api/crm/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'defaultAccount', value: accountVal })
+        });
+        if (!accountRes.ok) throw new Error('Bank account number configuration failed');
+
+        // Backward compatibility
+        await fetch('/api/crm/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'default_bank_account', value: `${bankVal} - ${accountVal}` })
+        });
 
         showToast(i18n.saveBankSuccess || 'Integrations updated successfully!', 'success');
         setTimeout(() => window.location.reload(), 1200);
@@ -142,57 +132,6 @@ const { lang, isAdmin, defaultBankAccount, envStatus } = Astro.props;
         showToast(err.message, 'error');
         saveIntegrationsBtn.disabled = false;
         if (integSpinner) integSpinner.style.display = 'none';
-      }
-    });
-  }
-
-  // GitHub backup triggers
-  const testGithubBtn = document.getElementById('testGithubBtn') as HTMLButtonElement;
-  const testGitSpinner = document.getElementById('testGitSpinner') as HTMLSpanElement;
-  if (testGithubBtn) {
-    testGithubBtn.addEventListener('click', async () => {
-      testGithubBtn.disabled = true;
-      if (testGitSpinner) testGitSpinner.style.display = 'inline-block';
-
-      try {
-        const res = await fetch('/api/backup/test-connection', { method: 'POST' });
-        const data = await res.json();
-        if (res.ok && data.success) {
-          showToast(i18n.githubTestSuccess || 'GitHub connection working!', 'success');
-        } else {
-          showToast(data.error || 'Connection failed', 'error');
-        }
-      } catch (err: any) {
-        showToast('Network error: ' + err.message, 'error');
-      } finally {
-        testGithubBtn.disabled = false;
-        if (testGitSpinner) testGitSpinner.style.display = 'none';
-      }
-    });
-  }
-
-  const triggerBackupBtn = document.getElementById('triggerBackupBtn') as HTMLButtonElement;
-  const backupSpinner = document.getElementById('backupSpinner') as HTMLSpanElement;
-  if (triggerBackupBtn) {
-    triggerBackupBtn.addEventListener('click', async () => {
-      if (!confirm(i18n.githubBackupConfirm || 'Are you sure you want to trigger GitHub backup now?')) return;
-      triggerBackupBtn.disabled = true;
-      if (backupSpinner) backupSpinner.style.display = 'inline-block';
-
-      try {
-        const res = await fetch('/api/backup', { method: 'POST' });
-        const data = await res.json();
-        if (res.ok && data.success) {
-          showToast(i18n.githubBackupSuccess || 'Backup successfully completed!', 'success');
-          setTimeout(() => window.location.reload(), 1200);
-        } else {
-          showToast(data.error || 'Backup failed', 'error');
-        }
-      } catch (err: any) {
-        showToast('Network error: ' + err.message, 'error');
-      } finally {
-        triggerBackupBtn.disabled = false;
-        if (backupSpinner) backupSpinner.style.display = 'none';
       }
     });
   }

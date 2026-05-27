@@ -103,19 +103,33 @@ const { lang, orgName, orgLogo } = Astro.props;
         const orgNameVal = (document.getElementById('orgNameInput') as HTMLInputElement).value;
         const orgLogoVal = (document.getElementById('orgLogoInput') as HTMLInputElement).value;
 
+        // Save orgName
         const orgNameRes = await fetch('/api/crm/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'orgName', value: orgNameVal })
+        });
+        if (!orgNameRes.ok) throw new Error('Org Name update failed');
+
+        // Save orgLogo
+        const orgLogoRes = await fetch('/api/crm/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'orgLogo', value: orgLogoVal })
+        });
+        if (!orgLogoRes.ok) throw new Error('Org Logo update failed');
+
+        // Backward compatibility
+        await fetch('/api/crm/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key: 'org_name', value: orgNameVal })
         });
-        if (!orgNameRes.ok) throw new Error('Org Name update failed');
-
-        const orgLogoRes = await fetch('/api/crm/config', {
+        await fetch('/api/crm/config', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ key: 'org_logo', value: orgLogoVal })
         });
-        if (!orgLogoRes.ok) throw new Error('Org Logo update failed');
 
         showToast(i18n.saveGeneralSuccess || 'General settings saved successfully!', 'success');
         setTimeout(() => window.location.reload(), 1200);

@@ -17,6 +17,7 @@ const { lang, isAdmin } = Astro.props;
       <div class="tabs-header">
         <button class="tab-btn active" data-tab="audit">{t('settings.audit_log', lang)}</button>
         <button class="tab-btn" data-tab="debug">{t('settings.debug_log', lang)}</button>
+        <button class="tab-btn" data-tab="sync">{lang === 'vi' ? 'Nhật ký đồng bộ' : 'Sync History'}</button>
       </div>
 
       <!-- Tab Content: Audit Logs -->
@@ -86,6 +87,41 @@ const { lang, isAdmin } = Astro.props;
           <button id="nextDebugPage" class="btn-pager" disabled>Next &rarr;</button>
         </div>
       </div>
+
+      <!-- Tab Content: Sync Logs -->
+      <div class="tab-content" id="syncTab">
+        <div class="log-filters">
+          <select id="syncActionFilter" class="form-input-small">
+            <option value="">{lang === 'vi' ? 'Tất cả loại đồng bộ' : 'All Sync Actions'}</option>
+            <option value="github_backup">github_backup</option>
+            <option value="github_restore">github_restore</option>
+            <option value="sepay_sync">sepay_sync</option>
+          </select>
+          <button id="applySyncFilter" class="btn-small-secondary">Filter</button>
+        </div>
+        <div class="table-container mt-1">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Status</th>
+                <th>Message</th>
+              </tr>
+            </thead>
+            <tbody id="syncLogsBody">
+              <tr>
+                <td colspan="4" class="text-center">Click to load or search logs</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pagination-row">
+          <button id="prevSyncPage" class="btn-pager" disabled>&larr; Prev</button>
+          <span id="syncPageInfo">Page 1 of 1</span>
+          <button id="nextSyncPage" class="btn-pager" disabled>Next &rarr;</button>
+        </div>
+      </div>
     </div>
   </section>
 )}
@@ -120,17 +156,20 @@ const { lang, isAdmin } = Astro.props;
         // Automatically fetch initial page when tab is activated
         if (tabId === 'audit' && auditPage === 1) loadAuditLogs();
         if (tabId === 'debug' && debugPage === 1) loadDebugLogs();
+        if (tabId === 'sync' && syncPage === 1) loadSyncLogs();
       });
     });
 
     // Pagination variables
     let auditPage = 1;
     let debugPage = 1;
+    let syncPage = 1;
     const limit = 10;
 
     // Elements
     const auditLogsBody = document.getElementById('auditLogsBody') as HTMLTableSectionElement;
     const debugLogsBody = document.getElementById('debugLogsBody') as HTMLTableSectionElement;
+    const syncLogsBody = document.getElementById('syncLogsBody') as HTMLTableSectionElement;
 
     async function loadAuditLogs() {
       const actionInput = document.getElementById('auditActionFilter') as HTMLInputElement;
@@ -240,6 +279,49 @@ const { lang, isAdmin } = Astro.props;
       }
     }
 
+    async function loadSyncLogs() {
+      const actionSelect = document.getElementById('syncActionFilter') as HTMLSelectElement;
+      const action = actionSelect ? actionSelect.value : '';
+      try {
+        syncLogsBody.innerHTML = `<tr><td colspan="4" class="text-center">Loading sync logs...</td></tr>`;
+        const res = await fetch(`/api/settings/sync-logs?page=${syncPage}&limit=${limit}&action=${encodeURIComponent(action)}`);
+        
+        if (!res.ok) throw new Error('Failed to fetch sync logs');
+        const data = await res.json();
+
+        if (data.logs.length === 0) {
+          syncLogsBody.innerHTML = `<tr><td colspan="4" class="text-center">No sync logs found</td></tr>`;
+        } else {
+          syncLogsBody.innerHTML = data.logs.map((log: any) => `
+            <tr>
+              <td class="whitespace-nowrap">${escapeHtml(new Date(log.runAt).toLocaleString())}</td>
+              <td><span class="badge-action">${escapeHtml(log.action)}</span></td>
+              <td>
+                <span class="status-dot ${log.status === 'success' ? 'green' : 'red'}"></span>
+                ${escapeHtml(log.status)}
+              </td>
+              <td class="text-secondary overflow-ellipsis max-width-300" title="${escapeHtml(log.message)}">
+                ${escapeHtml(log.message) || '-'}
+              </td>
+            </tr>
+          `).join('');
+        }
+
+        const totalPages = Math.ceil(data.total / limit) || 1;
+        const pageInfo = document.getElementById('syncPageInfo') as HTMLSpanElement;
+        if (pageInfo) pageInfo.textContent = `Page ${syncPage} of ${totalPages}`;
+        
+        const prevBtn = document.getElementById('prevSyncPage') as HTMLButtonElement;
+        if (prevBtn) prevBtn.disabled = syncPage <= 1;
+        
+        const nextBtn = document.getElementById('nextSyncPage') as HTMLButtonElement;
+        if (nextBtn) nextBtn.disabled = syncPage >= totalPages;
+
+      } catch (err: any) {
+        syncLogsBody.innerHTML = `<tr><td colspan="4" class="text-center text-secondary">Error: ${escapeHtml(err.message)}</td></tr>`;
+      }
+    }
+
     // Attach filters
     document.getElementById('applyAuditFilter')?.addEventListener('click', () => {
       auditPage = 1;
@@ -248,6 +330,10 @@ const { lang, isAdmin } = Astro.props;
     document.getElementById('applyDebugFilter')?.addEventListener('click', () => {
       debugPage = 1;
       loadDebugLogs();
+    });
+    document.getElementById('applySyncFilter')?.addEventListener('click', () => {
+      syncPage = 1;
+      loadSyncLogs();
     });
 
     // Attach Pager
@@ -270,6 +356,16 @@ const { lang, isAdmin } = Astro.props;
     document.getElementById('nextDebugPage')?.addEventListener('click', () => {
       debugPage++;
       loadDebugLogs();
+    });
+    document.getElementById('prevSyncPage')?.addEventListener('click', () => {
+      if (syncPage > 1) {
+        syncPage--;
+        loadSyncLogs();
+      }
+    });
+    document.getElementById('nextSyncPage')?.addEventListener('click', () => {
+      syncPage++;
+      loadSyncLogs();
     });
 
     // Initial load
