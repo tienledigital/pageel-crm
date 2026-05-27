@@ -2,13 +2,13 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { customers } from '@/lib/db/schema';
-import { verifySessionCookie } from '@/lib/auth';
+import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 
 export const POST: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions
     const sessionCookie = context.cookies.get('session')?.value;
-    const secret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
+    const secret = getSessionSecret();
     
     if (!sessionCookie) {
       return new Response(JSON.stringify({ error: 'Unauthorized: No session cookie' }), {
@@ -60,7 +60,7 @@ export const POST: APIRoute = async (context) => {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: 'Internal Server Error', details: err.message }), {
+    return new Response(JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: err.message }) }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });

@@ -1,6 +1,6 @@
 import type { APIContext, MiddlewareNext } from 'astro';
 import { env } from 'cloudflare:workers';
-import { verifySessionCookie } from './lib/auth';
+import { verifySessionCookie, getSessionSecret } from './lib/auth';
 
 // Public routes that do not require authentication
 const PUBLIC_ROUTES = [
@@ -30,7 +30,7 @@ export const onRequest = async (context: APIContext, next: MiddlewareNext) => {
 
   // 2. Check Authentication for remaining routes (dashboard, other APIs...)
   const sessionCookie = context.cookies.get('session')?.value;
-  const secret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
+  const secret = getSessionSecret();
 
   if (sessionCookie) {
     const decoded = await verifySessionCookie(sessionCookie, secret);

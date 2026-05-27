@@ -3,7 +3,7 @@ import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { t } from '@/lib/i18n';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { verifySessionCookie } from '@/lib/auth';
+import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { desc, count } from 'drizzle-orm';
 import {
   users as usersTable,
@@ -21,7 +21,7 @@ const lang = Astro.locals.lang;
 const title = t('sidebar.settings', lang);
 
 const sessionCookie = Astro.cookies.get('session')?.value;
-const sessionSecret = env.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
+const sessionSecret = getSessionSecret();
 
 if (!sessionCookie) {
   return Astro.redirect('/login');
@@ -1252,6 +1252,16 @@ const i18nData = {
 </style>
 
 <script>
+  function escapeHtml(unsafe: any) {
+    if (unsafe === null || unsafe === undefined) return '';
+    return String(unsafe)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
+
   // Read attributes from DOM helper
   const layout = document.querySelector('.settings-layout') as HTMLDivElement;
   const isAdmin = layout?.getAttribute('data-is-admin') === 'true';
@@ -1531,11 +1541,11 @@ const i18nData = {
         
         userTableBody.innerHTML = usersList.map((usr: any) => `
           <tr>
-            <td><strong>${usr.username}</strong></td>
-            <td><span class="badge-action">${usr.role}</span></td>
-            <td>${new Date(usr.createdAt).toLocaleString()}</td>
+            <td><strong>${escapeHtml(usr.username)}</strong></td>
+            <td><span class="badge-action">${escapeHtml(usr.role)}</span></td>
+            <td>${escapeHtml(new Date(usr.createdAt).toLocaleString())}</td>
             <td>
-              <button class="btn-small-secondary delete-user-btn" data-id="${usr.id}">Delete</button>
+              <button class="btn-small-secondary delete-user-btn" data-id="${escapeHtml(usr.id)}">Delete</button>
             </td>
           </tr>
         `).join('');
@@ -1560,7 +1570,7 @@ const i18nData = {
           });
         });
       } catch (err: any) {
-        userTableBody.innerHTML = `<tr><td colspan="4" class="text-center text-secondary">Error: ${err.message}</td></tr>`;
+        userTableBody.innerHTML = `<tr><td colspan="4" class="text-center text-secondary">Error: ${escapeHtml(err.message)}</td></tr>`;
       }
     }
 
@@ -1660,12 +1670,12 @@ const i18nData = {
         } else {
           auditLogsBody.innerHTML = data.logs.map((log: any) => `
             <tr>
-              <td class="whitespace-nowrap">${new Date(log.createdAt).toLocaleString()}</td>
-              <td>${log.username || 'System'}</td>
-              <td><span class="badge-action">${log.action}</span></td>
-              <td>${log.target || '-'}</td>
-              <td class="text-secondary overflow-ellipsis max-width-300" title='${log.detail || ""}'>
-                ${log.detail || '-'}
+              <td class="whitespace-nowrap">${escapeHtml(new Date(log.createdAt).toLocaleString())}</td>
+              <td>${escapeHtml(log.username) || 'System'}</td>
+              <td><span class="badge-action">${escapeHtml(log.action)}</span></td>
+              <td>${escapeHtml(log.target) || '-'}</td>
+              <td class="text-secondary overflow-ellipsis max-width-300" title="${escapeHtml(log.detail)}">
+                ${escapeHtml(log.detail) || '-'}
               </td>
             </tr>
           `).join('');
@@ -1678,7 +1688,7 @@ const i18nData = {
         (document.getElementById('nextAuditPage') as HTMLButtonElement).disabled = auditPage >= totalPages;
 
       } catch (err: any) {
-        auditLogsBody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary">Error: ${err.message}</td></tr>`;
+        auditLogsBody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary">Error: ${escapeHtml(err.message)}</td></tr>`;
       }
     }
 
@@ -1700,17 +1710,17 @@ const i18nData = {
         } else {
           debugLogsBody.innerHTML = data.logs.map((log: any) => `
             <tr class="debug-row-main" style="cursor: pointer;">
-              <td class="whitespace-nowrap">${new Date(log.createdAt).toLocaleString()}</td>
-              <td><span class="badge-action ${log.level}">${log.level}</span></td>
-              <td>${log.endpoint || '-'}</td>
-              <td>${log.statusCode || '-'}</td>
-              <td class="text-secondary">${log.message}</td>
+              <td class="whitespace-nowrap">${escapeHtml(new Date(log.createdAt).toLocaleString())}</td>
+              <td><span class="badge-action ${escapeHtml(log.level)}">${escapeHtml(log.level)}</span></td>
+              <td>${escapeHtml(log.endpoint) || '-'}</td>
+              <td>${escapeHtml(log.statusCode) || '-'}</td>
+              <td class="text-secondary">${escapeHtml(log.message)}</td>
             </tr>
             <tr class="debug-row-detail" style="display: none; background: #fafafa;">
               <td colspan="5">
                 <div style="padding: 0.5rem; font-family: monospace; font-size: 0.8rem; overflow-x: auto; white-space: pre-wrap;">
-                  <strong>Request Body:</strong> ${log.requestBody || 'None'}<br/><br/>
-                  <strong>Stack Trace:</strong><br/>${log.stack || 'No stack trace available'}
+                  <strong>Request Body:</strong> ${escapeHtml(log.requestBody) || 'None'}<br/><br/>
+                  <strong>Stack Trace:</strong><br/>${escapeHtml(log.stack) || 'No stack trace available'}
                 </div>
               </td>
             </tr>
@@ -1734,7 +1744,7 @@ const i18nData = {
         (document.getElementById('nextDebugPage') as HTMLButtonElement).disabled = debugPage >= totalPages;
 
       } catch (err: any) {
-        debugLogsBody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary">Error: ${err.message}</td></tr>`;
+        debugLogsBody.innerHTML = `<tr><td colspan="5" class="text-center text-secondary">Error: ${escapeHtml(err.message)}</td></tr>`;
       }
     }
 

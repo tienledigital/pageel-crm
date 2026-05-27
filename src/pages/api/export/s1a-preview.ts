@@ -130,7 +130,7 @@ export const GET = async (context: APIContext): Promise<Response> => {
     );
   } catch (err: any) {
     return new Response(
-      JSON.stringify({ error: 'Internal Server Error', details: err.message }),
+      JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: err.message }) }),
       {
         status: 500,
         headers: { 'Content-Type': 'application/json' },

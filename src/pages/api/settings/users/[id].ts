@@ -3,7 +3,7 @@ import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { users } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { verifySessionCookie } from '@/lib/auth';
+import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { logDebug } from '@/lib/debug-logger';
 
@@ -11,7 +11,7 @@ export const DELETE: APIRoute = async (context) => {
   let db: any = null;
   try {
     const sessionCookie = context.cookies.get('session')?.value;
-    const sessionSecret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
+    const sessionSecret = getSessionSecret();
 
     if (!sessionCookie) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -93,7 +93,7 @@ export const DELETE: APIRoute = async (context) => {
         stack: err.stack
       });
     }
-    return new Response(JSON.stringify({ error: 'Internal Server Error', details: err.message }), {
+    return new Response(JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: err.message }) }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' }
     });

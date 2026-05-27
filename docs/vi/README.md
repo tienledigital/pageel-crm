@@ -9,7 +9,7 @@
   <p>Bộ máy quản lý tài chính và hóa đơn tự vận hành tối ưu cho hộ kinh doanh Việt Nam.</p>
 
   [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
-  [![Version](https://img.shields.io/badge/Version-v0.4.1-blue.svg)](../../CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/Version-v0.8.0-blue.svg)](../../CHANGELOG.md)
   ![Status](https://img.shields.io/badge/Status-Beta-orange.svg)
   [![Built with Astro](https://img.shields.io/badge/Built%20with-Astro-BC52EE.svg?logo=astro&logoColor=white)](https://astro.build)
 
@@ -43,6 +43,7 @@
 - **Định tuyến database động:** Tự động sử dụng SQLite in-memory khi test, SQLite local file khi dev cục bộ, và Cloudflare D1 khi deploy production.
 - **Báo cáo Thuế S1a-HKD:** Tự động kết xuất báo cáo thuế định kỳ theo tháng/quý dạng file Excel (tuân thủ quy chuẩn kế toán HKD).
 - **Phát triển TDD-First:** Mã nguồn được thiết kế chặt chẽ theo Repository Pattern, kiểm thử độc lập nhanh chóng với Vitest.
+- **Củng cố Bảo mật (Security Hardening v0.8.0):** Bảo mật session cookie chuẩn production, tích hợp bộ lọc chống XSS client-side, ẩn thông tin lỗi chi tiết ở production, và giới hạn tần suất brute-force đăng nhập thông qua Cloudflare KV.
 
 ---
 
@@ -76,6 +77,12 @@
      ```bash
      npx wrangler d1 migrations apply pageel-crm-db --local
      ```
+3.5. Cấu hình biến môi trường bí mật cục bộ:
+   - Tạo tệp tin `.dev.vars` trong thư mục gốc `repo/`:
+     ```bash
+     cp .dev.vars.example .dev.vars
+     ```
+     Đảm bảo bạn định nghĩa khóa `SESSION_SECRET` ngẫu nhiên và an toàn (tối thiểu 32 ký tự) bên trong `.dev.vars`. Do các khóa dự phòng mặc định cứng đã bị loại bỏ hoàn toàn, biến này là bắt buộc để ứng dụng hoạt động.
 4. Khởi chạy server phát triển:
    - Sử dụng môi trường giả lập Cloudflare (đầy đủ binding D1 & KV):
      ```bash

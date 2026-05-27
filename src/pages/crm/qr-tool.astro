@@ -554,6 +554,16 @@ if (invoiceId) {
         .replace(/[^a-zA-Z0-9 ]/g, '');
     }
 
+    function escapeHtml(unsafe) {
+      if (unsafe === null || unsafe === undefined) return '';
+      return String(unsafe)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
     // State Variables
     let selectedCustomerId = initialInvoice ? initialInvoice.customerId : '';
     let selectedCustomerName = initialInvoice ? initialInvoice.customerName : '';

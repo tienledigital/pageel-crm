@@ -62,7 +62,7 @@ export const GET = async (context: APIContext): Promise<Response> => {
         templateBuffer = await res.arrayBuffer();
       }
     } catch (e: any) {
-      return new Response(JSON.stringify({ error: 'Failed to load template', details: e.message }), {
+      return new Response(JSON.stringify({ error: 'Failed to load template', ...(import.meta.env.DEV && { details: e.message }) }), {
         status: 500,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -183,7 +183,7 @@ export const GET = async (context: APIContext): Promise<Response> => {
     return new Response(zipArrayBuffer, { status: 200, headers });
 
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: 'Internal Server Error', details: err.message }), {
+    return new Response(JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: err.message }) }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });

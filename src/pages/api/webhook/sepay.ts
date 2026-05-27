@@ -103,7 +103,7 @@ export const POST: APIRoute = async (context) => {
       });
     }
     return new Response(
-      JSON.stringify({ error: 'Internal Server Error', details: error.message }),
+      JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: error.message }) }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }

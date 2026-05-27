@@ -3,10 +3,30 @@ import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { users, customers } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
-import { verifyPassword, createSessionCookie, hashPassword } from '@/lib/auth';
+import { verifyPassword, createSessionCookie, hashPassword, getSessionSecret } from '@/lib/auth';
+import { checkRateLimit } from '@/lib/rate-limiter';
 
 export const POST: APIRoute = async (context) => {
   try {
+    // Check rate limiting first using Cloudflare KV namespace
+    const clientIp = context.request.headers.get("CF-Connecting-IP") || context.clientAddress || "127.0.0.1";
+    const rateLimit = await checkRateLimit(env?.SESSION, clientIp, '/api/auth/login');
+    if (!rateLimit.allowed) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Too many login attempts. Please try again later.',
+          ...(import.meta.env.DEV && { details: `Retry after ${rateLimit.retryAfterSeconds}s` })
+        }),
+        { 
+          status: 429, 
+          headers: { 
+            'Content-Type': 'application/json',
+            'Retry-After': String(rateLimit.retryAfterSeconds)
+          } 
+        }
+      );
+    }
+
     const body = await context.request.json();
     const { username, password } = body;
 
@@ -66,7 +86,7 @@ export const POST: APIRoute = async (context) => {
     }
 
     // 4. Setup session cookie
-    const secret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || 'fallback-secret-key-must-be-at-least-32-chars-long';
+    const secret = getSessionSecret();
     const payload = {
       id: user.id,
       username: user.username,
@@ -93,7 +113,7 @@ export const POST: APIRoute = async (context) => {
     );
   } catch (e: any) {
     return new Response(
-      JSON.stringify({ error: 'Internal Server Error', details: e.message }),
+      JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: e.message }) }),
       { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }

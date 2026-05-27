@@ -1,5 +1,5 @@
 ---
-import { env } from 'cloudflare:workers';
+
 import '@/styles/design-system.css';
 
 // Redirect if already logged in
@@ -7,14 +7,8 @@ const sessionCookie = Astro.cookies.get('session')?.value;
 if (sessionCookie) {
   // Since the login page is in the public whitelist (does not execute middleware),
   // we check the session cookie directly here to redirect authenticated users.
-  const secret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET;
-  if (!secret) {
-    console.warn('⚠️ WARNING: SESSION_SECRET env variable is not set! Using fallback-secret for local development only.');
-    if (import.meta.env.PROD) {
-      throw new Error('CRITICAL SECURITY ERROR: SESSION_SECRET is missing in production environment!');
-    }
-  }
-  const finalSecret = secret || 'fallback-secret-key-must-be-at-least-32-chars-long';
+  const { getSessionSecret } = await import('../lib/auth');
+  const finalSecret = getSessionSecret();
 
   const { verifySessionCookie } = await import('../lib/auth');
   const decoded = await verifySessionCookie(sessionCookie, finalSecret);
