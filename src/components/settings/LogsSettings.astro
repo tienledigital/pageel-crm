@@ -368,7 +368,32 @@ const { lang, isAdmin } = Astro.props;
       loadSyncLogs();
     });
 
-    // Initial load
-    loadAuditLogs();
+    // Initial load based on tab query parameter
+    const urlParams = new URLSearchParams(window.location.search);
+    const activeSubTab = urlParams.get('subtab') || '';
+
+    if (activeSubTab === 'sync' || window.location.hash === '#logs-sync') {
+      tabBtns.forEach(b => {
+        if (b.getAttribute('data-tab') === 'sync') b.classList.add('active');
+        else b.classList.remove('active');
+      });
+      tabContents.forEach(c => {
+        if (c.id === 'syncTab') c.classList.add('active');
+        else c.classList.remove('active');
+      });
+      loadSyncLogs();
+    } else if (activeSubTab === 'debug') {
+      tabBtns.forEach(b => {
+        if (b.getAttribute('data-tab') === 'debug') b.classList.add('active');
+        else b.classList.remove('active');
+      });
+      tabContents.forEach(c => {
+        if (c.id === 'debugTab') c.classList.add('active');
+        else c.classList.remove('active');
+      });
+      loadDebugLogs();
+    } else {
+      loadAuditLogs();
+    }
   }
 </script>
