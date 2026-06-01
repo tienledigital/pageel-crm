@@ -30,7 +30,8 @@ describe('Services Manager CRUD Logic', () => {
       name: 'Cloud Server Hosting',
       price: 150000,
       billingCycle: 30,
-      prefix: 'HOSTING'
+      prefix: 'HOSTING',
+      description: 'Standard cloud server for hosting'
     });
 
     expect(service).toBeDefined();
@@ -40,23 +41,27 @@ describe('Services Manager CRUD Logic', () => {
     expect(service.billingCycle).toBe(30);
     expect(service.prefix).toBe('HOSTING');
     expect(service.status).toBe('active');
+    expect(service.description).toBe('Standard cloud server for hosting');
 
     // 2. Read the service
     const retrieved = await getService(db, service.id);
     expect(retrieved).not.toBeNull();
     expect(retrieved.name).toBe('Cloud Server Hosting');
+    expect(retrieved.description).toBe('Standard cloud server for hosting');
 
     // 3. Update the service
     const updated = await updateService(db, service.id, {
       price: 180000,
       billingCycle: 60,
-      status: 'inactive'
+      status: 'inactive',
+      description: 'Updated cloud server description'
     });
 
     expect(updated).toBeDefined();
     expect(updated.price).toBe(180000);
     expect(updated.billingCycle).toBe(60);
     expect(updated.status).toBe('inactive');
+    expect(updated.description).toBe('Updated cloud server description');
 
     // 4. List services
     const servicesList = await listServices(db);

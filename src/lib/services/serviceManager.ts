@@ -6,6 +6,7 @@ export interface CreateServiceParams {
   price: number;
   billingCycle?: number;
   prefix: string;
+  description?: string;
 }
 
 export interface UpdateServiceParams {
@@ -14,6 +15,7 @@ export interface UpdateServiceParams {
   billingCycle?: number;
   prefix?: string;
   status?: 'active' | 'inactive';
+  description?: string;
 }
 
 export async function createService(db: any, params: CreateServiceParams): Promise<any> {
@@ -25,6 +27,7 @@ export async function createService(db: any, params: CreateServiceParams): Promi
     billingCycle: params.billingCycle ?? 30,
     prefix: params.prefix,
     status: 'active' as const,
+    description: params.description || null,
     createdAt: Date.now()
   };
   await db.insert(services).values(newService);
@@ -43,6 +46,7 @@ export async function updateService(db: any, id: string, params: UpdateServicePa
   if (params.billingCycle !== undefined) updateData.billingCycle = params.billingCycle;
   if (params.prefix !== undefined) updateData.prefix = params.prefix;
   if (params.status !== undefined) updateData.status = params.status;
+  if (params.description !== undefined) updateData.description = params.description;
 
   await db.update(services).set(updateData).where(eq(services.id, id));
   return await getService(db, id);
