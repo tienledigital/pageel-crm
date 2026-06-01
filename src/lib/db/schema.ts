@@ -132,6 +132,7 @@ export const services = sqliteTable('services', {
   billingCycle: integer('billing_cycle').default(30).notNull(), // default days (e.g. 30, 365)
   prefix: text('prefix').unique().notNull(), // QR prefix (e.g. HOSTING)
   status: text('status').default('active').notNull(), // active, inactive
+  description: text('description'), // Service description
   createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`).notNull(),
 });
 

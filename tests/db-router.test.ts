@@ -40,6 +40,7 @@ describe('DB Schema Verification', () => {
     expect((services as any).billingCycle).toBeDefined();
     expect((services as any).prefix).toBeDefined();
     expect((services as any).status).toBeDefined();
+    expect((services as any).description).toBeDefined();
     expect((services as any).createdAt).toBeDefined();
   });
 
