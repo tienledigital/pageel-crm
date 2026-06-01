@@ -45,7 +45,11 @@ export const invoices = sqliteTable('invoices', {
   invoiceNumber: text('invoice_number').notNull().unique(),
   amount: integer('amount').notNull(), // VND
   content: text('content').notNull(),
-  status: text('status').notNull().default('pending'), // pending, paid, cancelled
+  status: text('status').notNull().default('pending'), // pending, paid, partially_paid, cancelled
+  serviceId: text('service_id').references(() => services.id),
+  paymentId: text('payment_id').references((): any => payments.id),
+  startDate: integer('start_date'),
+  expiredAt: integer('expired_at'),
   createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`),
   paidAt: integer('paid_at'),
 }, (table) => [
@@ -55,7 +59,7 @@ export const invoices = sqliteTable('invoices', {
 // 5. payments
 export const payments = sqliteTable('payments', {
   id: text('id').primaryKey(),
-  invoiceId: text('invoice_id').references(() => invoices.id), // Nullable for direct payment without invoice
+  invoiceId: text('invoice_id').references((): any => invoices.id), // Nullable for direct payment without invoice
   customerId: text('customer_id').references(() => customers.id), // Assigned directly to customer
   amount: integer('amount').notNull(), // VND
   transactionId: text('transaction_id').unique(), // Bank transaction ID (UNIQUE)
@@ -120,4 +124,28 @@ export const debugLogs = sqliteTable('debug_logs', {
   index('idx_debug_logs_endpoint').on(table.endpoint),
   index('idx_debug_logs_created').on(table.createdAt),
 ]);
+
+export const services = sqliteTable('services', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  price: integer('price').notNull(), // VND
+  billingCycle: integer('billing_cycle').default(30).notNull(), // default days (e.g. 30, 365)
+  prefix: text('prefix').unique().notNull(), // QR prefix (e.g. HOSTING)
+  status: text('status').default('active').notNull(), // active, inactive
+  createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`).notNull(),
+});
+
+export const customerServices = sqliteTable('customer_services', {
+  id: text('id').primaryKey(),
+  customerId: text('customer_id')
+    .notNull()
+    .references(() => customers.id, { onDelete: 'cascade' }),
+  serviceId: text('service_id')
+    .notNull()
+    .references(() => services.id),
+  status: text('status').default('active').notNull(), // active, expired, suspended
+  startDate: integer('start_date').notNull(), // Unix timestamp (ms)
+  expiredAt: integer('expired_at').notNull(), // Unix timestamp (ms)
+  createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`).notNull(),
+});
 
