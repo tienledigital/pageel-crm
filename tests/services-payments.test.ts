@@ -506,7 +506,8 @@ describe('Services CRUD API Endpoints - Integration Tests', () => {
       name: 'API Cloud Service',
       price: 500000,
       billingCycle: 30,
-      prefix: 'APICLOUD'
+      prefix: 'APICLOUD',
+      description: 'API Cloud Service Description'
     };
     const postContext = createMockContext('POST', '/api/crm/services', postBody, adminToken);
     const postRes = await createServiceHandler(postContext);
@@ -516,6 +517,7 @@ describe('Services CRUD API Endpoints - Integration Tests', () => {
     expect(createdService.id).toBeDefined();
     expect(createdService.name).toBe('API Cloud Service');
     expect(createdService.price).toBe(500000);
+    expect(createdService.description).toBe('API Cloud Service Description');
 
     // 2. Read Services list via GET (Saler is allowed too)
     const getContext = createMockContext('GET', '/api/crm/services', undefined, salerToken);
@@ -525,17 +527,20 @@ describe('Services CRUD API Endpoints - Integration Tests', () => {
     const found = servicesList.find((s: any) => s.id === createdService.id);
     expect(found).toBeDefined();
     expect(found.prefix).toBe('APICLOUD');
+    expect(found.description).toBe('API Cloud Service Description');
 
     // 3. Update Service via PUT (Accountant)
     const putBody = {
       price: 600000,
-      status: 'active'
+      status: 'active',
+      description: 'Updated API Cloud Service Description'
     };
     const putContext = createMockContext('PUT', `/api/crm/services/${createdService.id}`, putBody, staffToken, { id: createdService.id });
     const putRes = await updateServiceHandler(putContext);
     expect(putRes.status).toBe(200);
     const updatedService = await putRes.json();
     expect(updatedService.price).toBe(600000);
+    expect(updatedService.description).toBe('Updated API Cloud Service Description');
 
     // 4. Delete Service via DELETE (Admin)
     const deleteContext = createMockContext('DELETE', `/api/crm/services/${createdService.id}`, undefined, adminToken, { id: createdService.id });

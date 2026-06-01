@@ -69,7 +69,7 @@ export const POST: APIRoute = async (context) => {
     }
 
     const body = await context.request.json();
-    const { name, price, billingCycle, prefix } = body;
+    const { name, price, billingCycle, prefix, description } = body;
 
     if (!name || price === undefined || !prefix) {
       return new Response(JSON.stringify({ error: 'Missing required parameters' }), {
@@ -84,6 +84,7 @@ export const POST: APIRoute = async (context) => {
       price: Number(price),
       billingCycle: billingCycle !== undefined ? Number(billingCycle) : undefined,
       prefix,
+      description,
     });
 
     return new Response(JSON.stringify(result), {

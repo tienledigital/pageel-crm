@@ -43,7 +43,7 @@ export const PUT: APIRoute = async (context) => {
     }
 
     const body = await context.request.json();
-    const { name, price, billingCycle, prefix, status } = body;
+    const { name, price, billingCycle, prefix, status, description } = body;
 
     const db = getDb(env);
     const result = await updateService(db, id, {
@@ -52,6 +52,7 @@ export const PUT: APIRoute = async (context) => {
       billingCycle: billingCycle !== undefined ? Number(billingCycle) : undefined,
       prefix,
       status,
+      description,
     });
 
     if (!result) {
