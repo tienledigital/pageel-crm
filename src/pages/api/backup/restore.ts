@@ -74,65 +74,67 @@ export async function POST(context: any) {
       throw new Error('Invalid backup data format: missing required data tables (users, staff, customers, invoices, payments, config).');
     }
 
-    const CHUNK_SIZE = 50;
+    const CHUNK_SIZE = 15;
 
     // 6. Perform the restore inside a transaction (handled conditionally per driver type)
     const isD1 = !!(env && env.DB);
 
     if (isD1) {
-      // In production Cloudflare D1 environment, we run async transaction
-      await db.transaction(async (tx: any) => {
-        // Clear tables in reverse-dependency order
-        await tx.delete(payments);
-        await tx.delete(invoices);
-        await tx.delete(customers);
-        await tx.delete(staff);
-        await tx.delete(users);
-        await tx.delete(config);
+      // In production Cloudflare D1 environment, we run batch queries
+      const batchQueries: any[] = [
+        db.delete(payments),
+        db.delete(invoices),
+        db.delete(customers),
+        db.delete(staff),
+        db.delete(users),
+        db.delete(config)
+      ];
 
-        // Bulk insert in dependency order
-        if (backupData.config.length > 0) {
-          for (let i = 0; i < backupData.config.length; i += CHUNK_SIZE) {
-            const chunk = backupData.config.slice(i, i + CHUNK_SIZE);
-            await tx.insert(config).values(chunk);
-          }
+      // Bulk insert in dependency order
+      if (backupData.config.length > 0) {
+        for (let i = 0; i < backupData.config.length; i += CHUNK_SIZE) {
+          const chunk = backupData.config.slice(i, i + CHUNK_SIZE);
+          batchQueries.push(db.insert(config).values(chunk));
         }
+      }
 
-        if (backupData.users.length > 0) {
-          for (let i = 0; i < backupData.users.length; i += CHUNK_SIZE) {
-            const chunk = backupData.users.slice(i, i + CHUNK_SIZE);
-            await tx.insert(users).values(chunk);
-          }
+      if (backupData.users.length > 0) {
+        for (let i = 0; i < backupData.users.length; i += CHUNK_SIZE) {
+          const chunk = backupData.users.slice(i, i + CHUNK_SIZE);
+          batchQueries.push(db.insert(users).values(chunk));
         }
+      }
 
-        if (backupData.staff.length > 0) {
-          for (let i = 0; i < backupData.staff.length; i += CHUNK_SIZE) {
-            const chunk = backupData.staff.slice(i, i + CHUNK_SIZE);
-            await tx.insert(staff).values(chunk);
-          }
+      if (backupData.staff.length > 0) {
+        for (let i = 0; i < backupData.staff.length; i += CHUNK_SIZE) {
+          const chunk = backupData.staff.slice(i, i + CHUNK_SIZE);
+          batchQueries.push(db.insert(staff).values(chunk));
         }
+      }
 
-        if (backupData.customers.length > 0) {
-          for (let i = 0; i < backupData.customers.length; i += CHUNK_SIZE) {
-            const chunk = backupData.customers.slice(i, i + CHUNK_SIZE);
-            await tx.insert(customers).values(chunk);
-          }
+      if (backupData.customers.length > 0) {
+        for (let i = 0; i < backupData.customers.length; i += CHUNK_SIZE) {
+          const chunk = backupData.customers.slice(i, i + CHUNK_SIZE);
+          batchQueries.push(db.insert(customers).values(chunk));
         }
+      }
 
-        if (backupData.invoices.length > 0) {
-          for (let i = 0; i < backupData.invoices.length; i += CHUNK_SIZE) {
-            const chunk = backupData.invoices.slice(i, i + CHUNK_SIZE);
-            await tx.insert(invoices).values(chunk);
-          }
+      if (backupData.invoices.length > 0) {
+        for (let i = 0; i < backupData.invoices.length; i += CHUNK_SIZE) {
+          const chunk = backupData.invoices.slice(i, i + CHUNK_SIZE);
+          batchQueries.push(db.insert(invoices).values(chunk));
         }
+      }
 
-        if (backupData.payments.length > 0) {
-          for (let i = 0; i < backupData.payments.length; i += CHUNK_SIZE) {
-            const chunk = backupData.payments.slice(i, i + CHUNK_SIZE);
-            await tx.insert(payments).values(chunk);
-          }
+      if (backupData.payments.length > 0) {
+        for (let i = 0; i < backupData.payments.length; i += CHUNK_SIZE) {
+          const chunk = backupData.payments.slice(i, i + CHUNK_SIZE);
+          batchQueries.push(db.insert(payments).values(chunk));
         }
-      });
+      }
+
+      // Execute all queries in a single transaction-safe batch operation
+      await db.batch(batchQueries as any);
     } else {
       // In better-sqlite3 environment (testing / local fallback), transactions are fully synchronous
       db.transaction((tx: any) => {
