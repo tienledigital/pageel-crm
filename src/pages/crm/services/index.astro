@@ -492,13 +492,14 @@ const translations = {
             <th>{t('services.col_cycle', lang)}</th>
             <th>{t('services.col_prefix', lang)}</th>
             <th>{t('services.col_status', lang)}</th>
+            <th>{t('services.col_desc', lang)}</th>
             {isWritable && <th>{t('services.col_actions', lang)}</th>}
           </tr>
         </thead>
         <tbody>
           {servicesList.length === 0 ? (
             <tr>
-              <td colspan={isWritable ? 6 : 5} style="text-align: center; padding: 3rem; color: var(--text-secondary);">
+              <td colspan={isWritable ? 7 : 6} style="text-align: center; padding: 3rem; color: var(--text-secondary);">
                 {t('services.no_services', lang)}
               </td>
             </tr>
@@ -521,6 +522,7 @@ const translations = {
                     {srv.status === 'active' ? t('services.active', lang) : t('services.inactive', lang)}
                   </span>
                 </td>
+                <td>{srv.description || ''}</td>
                 {isWritable && (
                   <td>
                     <div style="display: flex; gap: 0.5rem;">
@@ -578,6 +580,12 @@ const translations = {
                 <span class="mobile-card-label">ID</span>
                 <span style="font-family: monospace; font-size: 0.75rem; color: var(--text-secondary);">{srv.id}</span>
               </div>
+              {srv.description && (
+                <div class="mobile-card-row">
+                  <span class="mobile-card-label">{t('services.col_desc', lang)}</span>
+                  <span style="font-style: italic; color: var(--text-secondary);">{srv.description}</span>
+                </div>
+              )}
             </div>
             {isWritable && (
               <div class="mobile-card-footer">
@@ -628,6 +636,11 @@ const translations = {
               </small>
             </div>
 
+            <div class="form-group">
+              <label for="srv_description">{t('services.label_desc', lang)}</label>
+              <textarea id="srv_description" class="form-input" placeholder={t('services.desc_placeholder', lang)} rows="3"></textarea>
+            </div>
+
             <div class="modal-footer">
               <button type="button" class="btn-cancel" id="modalCancelBtn">{t('services.cancel', lang)}</button>
               <button type="submit" class="btn-save">{t('services.save', lang)}</button>
@@ -673,6 +686,11 @@ const translations = {
                 <option value="active">{t('services.active', lang)}</option>
                 <option value="inactive">{t('services.inactive', lang)}</option>
               </select>
+            </div>
+
+            <div class="form-group">
+              <label for="edit_srv_description">{t('services.label_desc', lang)}</label>
+              <textarea id="edit_srv_description" class="form-input" placeholder={t('services.desc_placeholder', lang)} rows="3"></textarea>
             </div>
 
             <div class="modal-footer">
@@ -739,6 +757,7 @@ const translations = {
         document.getElementById('edit_srv_billingCycle').value = srv.billingCycle;
         document.getElementById('edit_srv_prefix').value = srv.prefix;
         document.getElementById('edit_srv_status').value = srv.status;
+        document.getElementById('edit_srv_description').value = srv.description || '';
         editModal.style.display = 'flex';
       }
     });
@@ -752,12 +771,13 @@ const translations = {
         const price = document.getElementById('srv_price').value;
         const billingCycle = document.getElementById('srv_billingCycle').value;
         const prefix = document.getElementById('srv_prefix').value.trim().toUpperCase();
+        const description = document.getElementById('srv_description').value;
 
         try {
           const res = await fetch('/api/crm/services', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, price, billingCycle, prefix })
+            body: JSON.stringify({ name, price, billingCycle, prefix, description })
           });
 
           if (res.ok) {
@@ -785,12 +805,13 @@ const translations = {
         const billingCycle = document.getElementById('edit_srv_billingCycle').value;
         const prefix = document.getElementById('edit_srv_prefix').value.trim().toUpperCase();
         const status = document.getElementById('edit_srv_status').value;
+        const description = document.getElementById('edit_srv_description').value;
 
         try {
           const res = await fetch(`/api/crm/services/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, price, billingCycle, prefix, status })
+            body: JSON.stringify({ name, price, billingCycle, prefix, status, description })
           });
 
           if (res.ok) {
