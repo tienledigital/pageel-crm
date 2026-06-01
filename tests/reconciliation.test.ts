@@ -483,4 +483,41 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
       process.env.SEPAY_WEBHOOK_SECRET = oldSecret;
     }
   });
+
+  it('should use custom content template from config when generating service invoice', async () => {
+    const db = getDb();
+    const { services: servicesTable, invoices: invoicesTable, config: configTable } = await import('@/lib/db/schema');
+    const serviceId = 'srv-hosting-custom';
+    await db.insert(servicesTable).values({
+      id: serviceId,
+      name: 'Custom Service Name',
+      price: 100000,
+      billingCycle: 30,
+      prefix: 'CUSTOM_SRV',
+      status: 'active',
+      createdAt: Date.now()
+    });
+
+    // Insert custom config template
+    await db.insert(configTable).values({
+      key: 'serviceInvoiceContentTemplate',
+      value: 'Thanh toan cho dich vu {service_name} (Auto matched)',
+      updatedAt: Date.now()
+    });
+
+    const payment = {
+      transactionId: 'TX_SRV_CUSTOM',
+      amount: 100000,
+      content: '1005 - CUSTOM_SRV',
+      bank: 'Techcombank',
+      paidAt: Date.now(),
+    };
+
+    const result = await reconcilePayment(db, payment);
+    expect(result.success).toBe(true);
+
+    const generatedInvoices = await db.select().from(invoicesTable).where(eq(invoicesTable.serviceId, serviceId)).all();
+    expect(generatedInvoices).toHaveLength(1);
+    expect(generatedInvoices[0].content).toBe('Thanh toan cho dich vu Custom Service Name (Auto matched)');
+  });
 });
