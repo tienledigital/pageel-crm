@@ -383,4 +383,104 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
     expect(data2.success).toBe(true);
     expect(data2.message).toContain('Duplicate');
   });
+
+  it('should automatically match a service, generate invoice, and activate customer service via webhook', async () => {
+    const db = getDb();
+    const { services: servicesTable, customerServices: customerServicesTable, invoices: invoicesTable } = await import('@/lib/db/schema');
+    const serviceId = 'srv-hosting-webhook';
+    await db.insert(servicesTable).values({
+      id: serviceId,
+      name: 'Webhook Web Hosting',
+      price: 200000,
+      billingCycle: 30,
+      prefix: 'HOSTING_WEBHOOK',
+      status: 'active',
+      createdAt: Date.now()
+    });
+
+    const webhookPayload = {
+      id: 99993,
+      gateway: 'Techcombank',
+      transactionDate: '2026-05-20 16:40:00',
+      accountNumber: '1903000000000',
+      code: 'TX_SEPAY_WEBHOOK',
+      content: '1005 - Test User - HOSTING_WEBHOOK',
+      transferType: 'in',
+      transferAmount: 200000,
+      accumulatedBalance: 5300000,
+      subAccount: '',
+      referenceCode: 'FT12347',
+    };
+
+    const request = new Request('http://localhost/api/webhook/sepay', {
+      method: 'POST',
+      body: JSON.stringify(webhookPayload),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Apikey ${WEBHOOK_SECRET}`,
+      },
+    });
+
+    const context: any = {
+      request,
+      url: new URL('http://localhost/api/webhook/sepay'),
+      locals: { runtime: { env: { SEPAY_WEBHOOK_SECRET: WEBHOOK_SECRET } } },
+    };
+
+    const response = await webhookHandler(context);
+    expect(response.status).toBe(200);
+
+    // Verify invoice is paid
+    const inv = await db.select().from(invoicesTable).where(eq(invoicesTable.serviceId, serviceId)).all();
+    expect(inv).toHaveLength(1);
+    expect(inv[0].status).toBe('paid');
+
+    // Verify customer_services is active
+    const cs = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+    expect(cs).toHaveLength(1);
+    expect(cs[0].status).toBe('active');
+  });
+
+  it('should return 500 when SEPAY_WEBHOOK_SECRET is not configured', async () => {
+    // Delete env secrets
+    const oldSecret = process.env.SEPAY_WEBHOOK_SECRET;
+    delete process.env.SEPAY_WEBHOOK_SECRET;
+
+    const webhookPayload = {
+      id: 99994,
+      gateway: 'Techcombank',
+      transactionDate: '2026-05-20 16:45:00',
+      accountNumber: '1903000000000',
+      code: 'TX_SEPAY_NO_SECRET',
+      content: '1005 - Gia han',
+      transferType: 'in',
+      transferAmount: 100000,
+      accumulatedBalance: 5400000,
+      subAccount: '',
+      referenceCode: 'FT12348',
+    };
+
+    const request = new Request('http://localhost/api/webhook/sepay', {
+      method: 'POST',
+      body: JSON.stringify(webhookPayload),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Apikey somekey`,
+      },
+    });
+
+    const context: any = {
+      request,
+      url: new URL('http://localhost/api/webhook/sepay'),
+      locals: { runtime: { env: {} } },
+    };
+
+    try {
+      const response = await webhookHandler(context);
+      expect(response.status).toBe(500);
+    } finally {
+      // Restore secret
+      process.env.SEPAY_WEBHOOK_SECRET = oldSecret;
+    }
+  });
 });
