@@ -419,4 +419,135 @@ describe('SePay API Synchronization Endpoint - Integration Tests', () => {
     const calledUrl = mockFetch.mock.calls[0][0];
     expect(calledUrl).not.toContain('account_number=');
   });
+
+  it('should fetch from SePay using default DB configurations when no body is provided', async () => {
+    process.env.SEPAY_API_TOKEN = 'mock-sepay-token-api';
+    
+    // Seed default sepay limit and history days config
+    await db.delete(config);
+    await db.insert(config).values([
+      { key: 'sepaySyncLimit', value: '12', updatedAt: Date.now() },
+      { key: 'sepaySyncDays', value: '3', updatedAt: Date.now() }
+    ]);
+
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: 200,
+        transactions: []
+      })
+    });
+    globalThis.fetch = mockFetch;
+
+    const request = new Request('http://localhost/api/payments/sync-sepay', { method: 'POST' });
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' },
+      },
+    };
+
+    const response = await syncSepayHandler(context);
+    expect(response.status).toBe(200);
+
+    expect(mockFetch).toHaveBeenCalled();
+    const calledUrl = mockFetch.mock.calls[0][0];
+    const expectedDate = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    expect(calledUrl).toContain('limit=12');
+    expect(calledUrl).toContain(`transaction_date_min=${expectedDate}`);
+  });
+
+  it('should fetch from SePay using override parameters from body when request is from admin', async () => {
+    process.env.SEPAY_API_TOKEN = 'mock-sepay-token-api';
+
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: 200,
+        transactions: []
+      })
+    });
+    globalThis.fetch = mockFetch;
+
+    const request = new Request('http://localhost/api/payments/sync-sepay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 120, transaction_date_min: '2026-05-10' })
+    });
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' },
+      },
+    };
+
+    const response = await syncSepayHandler(context);
+    expect(response.status).toBe(200);
+
+    expect(mockFetch).toHaveBeenCalled();
+    const calledUrl = mockFetch.mock.calls[0][0];
+    expect(calledUrl).toContain('limit=120');
+    expect(calledUrl).toContain('transaction_date_min=2026-05-10');
+  });
+
+  it('should return 403 Forbidden when accountant tries to sync with override body parameters', async () => {
+    process.env.SEPAY_API_TOKEN = 'mock-sepay-token-api';
+
+    const mockFetch = vi.fn();
+    globalThis.fetch = mockFetch;
+
+    const request = new Request('http://localhost/api/payments/sync-sepay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 100 })
+    });
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-2', username: 'accountant1', role: 'accountant' },
+      },
+    };
+
+    const response = await syncSepayHandler(context);
+    expect(response.status).toBe(403);
+    const data = await response.json();
+    expect(data.error).toContain('Forbidden');
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it('should limit maximum sync transaction limit to 1000 dynamically', async () => {
+    process.env.SEPAY_API_TOKEN = 'mock-sepay-token-api';
+
+    const mockFetch = vi.fn().mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        status: 200,
+        transactions: []
+      })
+    });
+    globalThis.fetch = mockFetch;
+
+    const request = new Request('http://localhost/api/payments/sync-sepay', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ limit: 2500 })
+    });
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' },
+      },
+    };
+
+    const response = await syncSepayHandler(context);
+    expect(response.status).toBe(200);
+
+    expect(mockFetch).toHaveBeenCalled();
+    const calledUrl = mockFetch.mock.calls[0][0];
+    expect(calledUrl).toContain('limit=1000');
+  });
 });

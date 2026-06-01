@@ -35,7 +35,60 @@ export async function POST(context: any) {
   const defaultAccountConfig = await db.select().from(config).where(eq(config.key, 'defaultAccount')).limit(1);
   const accountNumber = defaultAccountConfig[0]?.value;
 
-  let sepayUrl = 'https://my.sepay.vn/userapi/transactions/list?limit=50';
+  const limitConfig = await db.select().from(config).where(eq(config.key, 'sepaySyncLimit')).limit(1);
+  const daysConfig = await db.select().from(config).where(eq(config.key, 'sepaySyncDays')).limit(1);
+
+  const defaultLimit = limitConfig[0]?.value ? Number(limitConfig[0].value) : 50;
+  const defaultDays = daysConfig[0]?.value ? Number(daysConfig[0].value) : 7;
+
+  let limit = defaultLimit;
+  let transactionDateMin = '';
+  let hasOverride = false;
+
+  // Parse JSON request body if present (Advanced Sync)
+  try {
+    const contentType = context.request.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      const body = await context.request.clone().json().catch(() => null);
+      if (body) {
+        if (body.limit !== undefined || body.transaction_date_min !== undefined) {
+          hasOverride = true;
+
+          // Strict role authorization: Only admin can perform advanced override sync
+          if (user.role !== 'admin') {
+            return new Response(
+              JSON.stringify({ error: 'Forbidden: Requires admin role for advanced sync' }),
+              {
+                status: 403,
+                headers: { 'Content-Type': 'application/json' },
+              }
+            );
+          }
+
+          if (typeof body.limit === 'number' && body.limit > 0) {
+            limit = Math.min(body.limit, 1000); // Dynamic maximum limit guard
+          }
+          if (typeof body.transaction_date_min === 'string' && body.transaction_date_min.trim() !== '') {
+            transactionDateMin = body.transaction_date_min.trim();
+          }
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore and fallback
+  }
+
+  if (!hasOverride) {
+    if (defaultDays > 0) {
+      const minTimestamp = Date.now() - defaultDays * 24 * 60 * 60 * 1000;
+      transactionDateMin = new Date(minTimestamp).toISOString().split('T')[0];
+    }
+  }
+
+  let sepayUrl = `https://my.sepay.vn/userapi/transactions/list?limit=${limit}`;
+  if (transactionDateMin) {
+    sepayUrl += `&transaction_date_min=${encodeURIComponent(transactionDateMin)}`;
+  }
   if (accountNumber && accountNumber !== '0000000000' && accountNumber.trim() !== '') {
     sepayUrl += `&account_number=${encodeURIComponent(accountNumber.trim())}`;
   }
