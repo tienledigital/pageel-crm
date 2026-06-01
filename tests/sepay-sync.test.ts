@@ -16,6 +16,8 @@ describe('SePay API Synchronization Endpoint - Integration Tests', () => {
 
   beforeEach(async () => {
     // Clear databases
+    await db.update(invoices).set({ paymentId: null });
+    await db.update(payments).set({ invoiceId: null });
     await db.delete(payments);
     await db.delete(invoices);
     await db.delete(customers);

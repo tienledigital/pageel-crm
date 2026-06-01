@@ -33,6 +33,8 @@ pnpm-debug.log*
 *.db
 *.db-journal
 *.sqlite
+*.db.bak
+*.bak
 
 # Cloudflare Wrangler
 .wrangler/

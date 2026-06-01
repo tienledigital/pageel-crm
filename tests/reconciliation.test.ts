@@ -49,10 +49,16 @@ describe('Database Reconciliation Integration Tests', () => {
     migrate(db, { migrationsFolder: path.join(__dirname, '../drizzle') });
 
     // Reset DB state
+    const { customerServices: csTable, services: sTable, invoices: iTable } = await import('@/lib/db/schema');
+    await db.update(iTable).set({ paymentId: null });
+    await db.update(payments).set({ invoiceId: null });
+    await db.delete(csTable);
     await db.delete(payments);
+    await db.delete(iTable);
     await db.delete(customers);
     await db.delete(staff);
     await db.delete(users);
+    await db.delete(sTable);
 
     // Seed normal customer
     await db.insert(customers).values({
@@ -177,6 +183,90 @@ describe('Database Reconciliation Integration Tests', () => {
 
     // Second payment with same transactionId should fail/throw database constraint error
     await expect(reconcilePayment(db, payment)).rejects.toThrow();
+  });
+
+  it('should automatically match a service by prefix, generate invoice, and activate customer service', async () => {
+    // 1. Create a service in the DB first
+    const { services: servicesTable, customerServices: customerServicesTable, invoices: invoicesTable } = await import('@/lib/db/schema');
+    const serviceId = 'srv-hosting-1';
+    await db.insert(servicesTable).values({
+      id: serviceId,
+      name: 'Web Hosting Standard',
+      price: 200000,
+      billingCycle: 30,
+      prefix: 'HOSTING',
+      status: 'active',
+      createdAt: Date.now()
+    });
+
+    // 2. Reconcile a payment with content containing "HOSTING" and enough money (200,000 VND)
+    const payment = {
+      transactionId: 'TX_SRV_1',
+      amount: 200000,
+      content: '1005 - Test Customer - HOSTING',
+      bank: 'Techcombank',
+      paidAt: Date.now(),
+    };
+
+    const result = await reconcilePayment(db, payment);
+    expect(result.success).toBe(true);
+
+    // 3. Verify an invoice was generated automatically
+    const generatedInvoices = await db.select().from(invoicesTable).where(eq(invoicesTable.serviceId, serviceId)).all();
+    expect(generatedInvoices).toHaveLength(1);
+    const invoice = generatedInvoices[0];
+    expect(invoice.customerId).toBe('1005');
+    expect(invoice.amount).toBe(200000);
+    expect(invoice.status).toBe('paid');
+    expect(invoice.startDate).toBeDefined();
+    expect(invoice.expiredAt).toBeDefined();
+
+    // 4. Verify customer_services is activated
+    const activeCustServices = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+    expect(activeCustServices).toHaveLength(1);
+    expect(activeCustServices[0].customerId).toBe('1005');
+    expect(activeCustServices[0].status).toBe('active');
+  });
+
+  it('should generate partially_paid invoice and NOT activate customer service if payment is underpaid', async () => {
+    const { services: servicesTable, customerServices: customerServicesTable, invoices: invoicesTable } = await import('@/lib/db/schema');
+    const serviceId = 'srv-hosting-2';
+    await db.insert(servicesTable).values({
+      id: serviceId,
+      name: 'Web Hosting Premium',
+      price: 300000,
+      billingCycle: 30,
+      prefix: 'HOSTING_PREMIUM',
+      status: 'active',
+      createdAt: Date.now()
+    });
+
+    // Underpaid payment (250,000 VND instead of 300,000 VND)
+    const payment = {
+      transactionId: 'TX_SRV_2',
+      amount: 250000,
+      content: '1005 - Test Customer - HOSTING_PREMIUM',
+      bank: 'Techcombank',
+      paidAt: Date.now(),
+    };
+
+    let result;
+    try {
+      result = await reconcilePayment(db, payment);
+    } catch (err: any) {
+      console.error('UNDERPAID TEST EXCEPTION:', err);
+      throw err;
+    }
+    expect(result.success).toBe(true);
+
+    // Verify invoice is partially_paid
+    const generatedInvoices = await db.select().from(invoicesTable).where(eq(invoicesTable.serviceId, serviceId)).all();
+    expect(generatedInvoices).toHaveLength(1);
+    expect(generatedInvoices[0].status).toBe('partially_paid');
+
+    // Verify customer service was NOT activated
+    const activeCustServices = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+    expect(activeCustServices).toHaveLength(0);
   });
 });
 
