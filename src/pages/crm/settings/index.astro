@@ -53,6 +53,7 @@ const orgName = configMap.get('orgName') || configMap.get('org_name') || '';
 const orgLogo = configMap.get('orgLogo') || configMap.get('org_logo') || '';
 const defaultBank = configMap.get('defaultBank') || 'MB';
 const defaultAccount = configMap.get('defaultAccount') || '';
+const serviceInvoiceContentTemplate = configMap.get('serviceInvoiceContentTemplate') || 'Auto webhook thanh toan dich vu {service_name}';
 
 // Fetch DB stats for admin
 let dbStats = [];
@@ -181,7 +182,7 @@ const i18nData = {
       <!-- TAB PANEL CONTAINER -->
       <div class="tab-panels">
         <GeneralSettings lang={lang} orgName={orgName} orgLogo={orgLogo} />
-        <SepaySettings lang={lang} isAdmin={isAdmin} defaultBank={defaultBank} defaultAccount={defaultAccount} envStatus={envStatus} />
+        <SepaySettings lang={lang} isAdmin={isAdmin} defaultBank={defaultBank} defaultAccount={defaultAccount} serviceInvoiceContentTemplate={serviceInvoiceContentTemplate} envStatus={envStatus} />
         <DatabaseSettings lang={lang} isAdmin={isAdmin} dbStats={dbStats} totalRows={totalRows} />
         {isAdmin && <BackupSettings lang={lang} isAdmin={isAdmin} envStatus={envStatus} />}
         <SecuritySettings lang={lang} isAdmin={isAdmin} />

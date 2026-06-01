@@ -2,12 +2,13 @@
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { customers, config, invoices } from '@/lib/db/schema';
+import { customers, config, invoices, services } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
 // Fetch initial data from database
 const db = getDb(env);
 const allCustomers = await db.select().from(customers);
+const activeServices = await db.select().from(services).where(eq(services.status, 'active'));
 
 const defaultBankConfig = await db.select().from(config).where(eq(config.key, 'defaultBank'));
 const defaultAccountConfig = await db.select().from(config).where(eq(config.key, 'defaultAccount'));
@@ -427,6 +428,18 @@ if (invoiceId) {
         </h3>
 
         <div class="input-group">
+          <span class="input-label">Select Service Catalog</span>
+          <select id="serviceSelect" class="select-input">
+            <option value="" data-price="" data-prefix="">-- Select Service Catalog --</option>
+            {activeServices.map((srv: any) => (
+              <option value={srv.id} data-price={srv.price} data-prefix={srv.prefix}>
+                {srv.name} - {srv.price.toLocaleString()} đ ({srv.prefix})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div class="input-group">
           <span class="input-label">Service Name (Max 15 chars)</span>
           <div class="button-grid" id="quickServices">
             <button class="quick-btn" data-value="TT GIA HAN">GIA HAN</button>
@@ -576,6 +589,7 @@ if (invoiceId) {
     // Elements
     const custSearch = document.getElementById('custSearch');
     const custSelect = document.getElementById('custSelect');
+    const serviceSelect = document.getElementById('serviceSelect');
     const serviceInput = document.getElementById('serviceInput');
     const amountInput = document.getElementById('amountInput');
     const qrStatusBox = document.getElementById('qrStatusBox');
@@ -683,6 +697,9 @@ if (invoiceId) {
     // 2. Service text input
     serviceInput.addEventListener('input', () => {
       serviceName = serviceInput.value;
+      if (serviceSelect) {
+        serviceSelect.value = '';
+      }
       
       // Deactivate quick service buttons if no longer matching
       quickServices.forEach(btn => {
@@ -695,6 +712,47 @@ if (invoiceId) {
       updateState();
     });
 
+    // Service catalog select change
+    if (serviceSelect) {
+      serviceSelect.addEventListener('change', () => {
+        const selectedOption = serviceSelect.options[serviceSelect.selectedIndex];
+        if (!selectedOption || !selectedOption.value) {
+          return;
+        }
+
+        const price = selectedOption.getAttribute('data-price') || '';
+        const prefix = selectedOption.getAttribute('data-prefix') || '';
+
+        // Update serviceName and input
+        serviceName = prefix;
+        serviceInput.value = prefix;
+
+        // Update amount and input
+        amount = Number(price) || 0;
+        amountInput.value = price;
+
+        // Reset quick services buttons active state
+        quickServices.forEach(btn => {
+          if (btn.getAttribute('data-value') === prefix) {
+            btn.classList.add('active');
+          } else {
+            btn.classList.remove('active');
+          }
+        });
+
+        // Reset quick amounts buttons active state
+        quickAmounts.forEach(btn => {
+          if (Number(btn.getAttribute('data-value')) === amount) {
+            btn.classList.add('active');
+          } else {
+            btn.classList.remove('active');
+          }
+        });
+
+        updateState();
+      });
+    }
+
     // Quick services selection
     quickServices.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -702,6 +760,9 @@ if (invoiceId) {
         btn.classList.add('active');
         serviceName = btn.getAttribute('data-value');
         serviceInput.value = serviceName;
+        if (serviceSelect) {
+          serviceSelect.value = '';
+        }
         updateState();
       });
     });
@@ -709,6 +770,9 @@ if (invoiceId) {
     // Amount text input
     amountInput.addEventListener('input', () => {
       amount = Number(amountInput.value) || 0;
+      if (serviceSelect) {
+        serviceSelect.value = '';
+      }
       
       // Deactivate quick amount buttons
       quickAmounts.forEach(btn => {
@@ -728,6 +792,9 @@ if (invoiceId) {
         btn.classList.add('active');
         amount = Number(btn.getAttribute('data-value'));
         amountInput.value = amount;
+        if (serviceSelect) {
+          serviceSelect.value = '';
+        }
         updateState();
       });
     });

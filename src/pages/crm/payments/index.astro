@@ -2,7 +2,7 @@
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { payments, customers, invoices, config } from '@/lib/db/schema';
+import { payments, customers, invoices, config, services } from '@/lib/db/schema';
 import { desc, eq, like, and, or, sql } from 'drizzle-orm';
 import { t } from '@/lib/i18n';
 
@@ -28,6 +28,13 @@ const allInvoices = await db
     status: invoices.status,
   })
   .from(invoices);
+
+// Fetch active services
+const allServices = await db
+  .select()
+  .from(services)
+  .where(eq(services.status, 'active'))
+  .orderBy(services.name);
 
 // 1. Parse query parameters for filters
 const url = new URL(Astro.request.url);
@@ -838,7 +845,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
                         📄 Invoice: <span class="mono">{tx.invoiceNumber}</span>
                       </span>
                     )}
-                    <div style="display: flex; gap: 0.25rem; align-items: center; margin-top: 0.25rem;">
+                    <div style="display: flex; gap: 0.25rem; align-items: center; margin-top: 0.25rem; flex-wrap: wrap;">
                       <button 
                         class="btn-reconcile btn-action" 
                         data-id={tx.id} 
@@ -853,6 +860,18 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
                       >
                         ✏️ Link / Edit
                       </button>
+                      {tx.type === 'in' && !tx.invoiceId && (
+                        <button 
+                          class="btn-late-assoc btn-action" 
+                          data-id={tx.id} 
+                          data-amount={tx.amount}
+                          data-content={tx.content || ''}
+                          data-customer-id={tx.customerId || ''}
+                          style="font-size: 0.7rem; padding: 0.25rem 0.5rem; background-color: rgba(99, 102, 241, 0.1); color: var(--primary); border-color: rgba(99, 102, 241, 0.2);"
+                        >
+                          ⚡ Late Assoc
+                        </button>
+                      )}
                       <button 
                         class="btn-delete-payment btn-action" 
                         data-id={tx.id}
@@ -1181,8 +1200,97 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
     </div>
   </div>
 
+  <!-- Late Association Modal -->
+  <div class="modal-backdrop" id="lateAssocModal">
+    <div class="modal-content" style="max-width: 550px;">
+      <div class="modal-header">
+        <h3>Late Association (Tạo nhanh Đơn hàng)</h3>
+        <button class="modal-close" id="lateAssocModalCloseBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="tx-info-box" style="margin-bottom: 1.25rem;">
+          <div class="tx-info-row">
+            <span class="tx-info-label">Payment ID</span>
+            <span class="tx-info-val mono" id="lateAssocTxId">TX123456</span>
+          </div>
+          <div class="tx-info-row">
+            <span class="tx-info-label">Amount Received</span>
+            <span class="tx-info-val text-success" id="lateAssocTxAmount">100,000 đ</span>
+          </div>
+          <div class="tx-info-row">
+            <span class="tx-info-label">Description</span>
+            <span class="tx-info-val" id="lateAssocTxContent" style="font-size: 0.8rem; word-break: break-all;">Transfer info</span>
+          </div>
+        </div>
+
+        <form id="lateAssocForm">
+          <input type="hidden" id="lateAssocPaymentId" />
+          
+          <!-- Customer Searchable Select -->
+          <div class="form-group">
+            <label for="lateAssocCustomerSearchInput">Customer *</label>
+            <div class="searchable-select-container">
+              <input type="text" id="lateAssocCustomerSearchInput" class="form-input" placeholder="Type to search customer..." autocomplete="off" required />
+              <input type="hidden" id="lateAssocCustomerSelect" required />
+              <div class="searchable-select-dropdown" id="lateAssocCustomerSearchDropdown" style="display: none;">
+                {allCustomers.map((cust: any) => (
+                  <div class="searchable-select-option" data-value={cust.id} data-search={`${cust.fullName.toLowerCase()} ${cust.id.toLowerCase()}`}>
+                    {cust.fullName} ({cust.id})
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <!-- Service Select -->
+          <div class="form-group">
+            <label for="lateAssocServiceSelect">Service *</label>
+            <select id="lateAssocServiceSelect" class="form-select" required>
+              <option value="">-- Select Service --</option>
+              {allServices.map((srv: any) => (
+                <option 
+                  value={srv.id} 
+                  data-price={srv.price}
+                  data-cycle={srv.billingCycle}
+                >
+                  {srv.name} - {srv.price.toLocaleString()} đ ({srv.billingCycle} days)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <!-- Custom Price -->
+          <div class="form-group">
+            <label for="lateAssocCustomPrice">Invoice Amount (VND)</label>
+            <input type="number" id="lateAssocCustomPrice" class="form-input" placeholder="Invoice price (e.g. 150000)" min="0" />
+            <small style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem; display: block;">
+              Leave blank to use default service price. If payment is less than this, invoice will be partially paid.
+            </small>
+          </div>
+
+          <!-- Date Cycle -->
+          <div class="grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+            <div class="form-group">
+              <label for="lateAssocStartDate">Start Date *</label>
+              <input type="date" id="lateAssocStartDate" class="form-input" required />
+            </div>
+            <div class="form-group">
+              <label for="lateAssocExpiredAt">End Date *</label>
+              <input type="date" id="lateAssocExpiredAt" class="form-input" required />
+            </div>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn-cancel" id="lateAssocModalCancelBtn">Cancel</button>
+            <button type="submit" class="btn-save">Create Invoice</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- Client script for modal handling -->
-  <script is:inline define:vars={{ allInvoices, classificationRules, lang }}>
+  <script is:inline define:vars={{ allInvoices, classificationRules, lang, allServices }}>
     const modal = document.getElementById('reconcileModal');
     const closeBtn = document.getElementById('modalCloseBtn');
     const cancelBtn = document.getElementById('modalCancelBtn');
@@ -1818,5 +1926,210 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         alert(lang === 'vi' ? 'Lỗi kết nối mạng, không thể lưu cấu hình luật.' : 'Network error, could not save rules.');
       }
     }
+
+    // --- Late Association Modal Logic ---
+    const lateAssocModal = document.getElementById('lateAssocModal');
+    const lateAssocModalCloseBtn = document.getElementById('lateAssocModalCloseBtn');
+    const lateAssocModalCancelBtn = document.getElementById('lateAssocModalCancelBtn');
+    const lateAssocForm = document.getElementById('lateAssocForm');
+
+    const lateAssocPaymentId = document.getElementById('lateAssocPaymentId');
+    const lateAssocTxId = document.getElementById('lateAssocTxId');
+    const lateAssocTxAmount = document.getElementById('lateAssocTxAmount');
+    const lateAssocTxContent = document.getElementById('lateAssocTxContent');
+
+    const lateAssocCustomerSearchInput = document.getElementById('lateAssocCustomerSearchInput');
+    const lateAssocCustomerSelect = document.getElementById('lateAssocCustomerSelect');
+    const lateAssocCustomerSearchDropdown = document.getElementById('lateAssocCustomerSearchDropdown');
+    const lateAssocCustomerOptions = Array.from(lateAssocCustomerSearchDropdown.querySelectorAll('.searchable-select-option'));
+
+    const lateAssocServiceSelect = document.getElementById('lateAssocServiceSelect');
+    const lateAssocCustomPrice = document.getElementById('lateAssocCustomPrice');
+    const lateAssocStartDate = document.getElementById('lateAssocStartDate');
+    const lateAssocExpiredAt = document.getElementById('lateAssocExpiredAt');
+
+    // Customer searchable select logic inside Late Association modal
+    lateAssocCustomerSearchInput.addEventListener('focus', () => {
+      lateAssocCustomerSearchDropdown.style.display = 'block';
+      lateAssocCustomerOptions.forEach(opt => opt.style.display = 'block');
+    });
+
+    lateAssocCustomerSearchInput.addEventListener('input', () => {
+      const term = lateAssocCustomerSearchInput.value.toLowerCase().trim();
+      lateAssocCustomerOptions.forEach(opt => {
+        const text = opt.getAttribute('data-search') || '';
+        if (text.includes(term)) {
+          opt.style.display = 'block';
+        } else {
+          opt.style.display = 'none';
+        }
+      });
+    });
+
+    // Option selection
+    lateAssocCustomerOptions.forEach(opt => {
+      opt.addEventListener('click', () => {
+        const val = opt.getAttribute('data-value');
+        const text = opt.textContent.trim();
+        selectLateAssocCustomer(val, text);
+        lateAssocCustomerSearchDropdown.style.display = 'none';
+      });
+    });
+
+    function selectLateAssocCustomer(id, label) {
+      lateAssocCustomerSelect.value = id;
+      lateAssocCustomerSearchInput.value = id ? label : '';
+      lateAssocCustomerOptions.forEach(opt => {
+        if (opt.getAttribute('data-value') === id) {
+          opt.classList.add('selected');
+        } else {
+          opt.classList.remove('selected');
+        }
+      });
+    }
+
+    // Auto-close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('#lateAssocModal .searchable-select-container')) {
+        if (lateAssocCustomerSearchDropdown) {
+          lateAssocCustomerSearchDropdown.style.display = 'none';
+        }
+      }
+    });
+
+    // Open Late Assoc Modal
+    document.querySelectorAll('.btn-late-assoc').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        const amount = Number(btn.getAttribute('data-amount')) || 0;
+        const content = btn.getAttribute('data-content') || '';
+        const customerId = btn.getAttribute('data-customer-id') || '';
+
+        // Reset and populate
+        lateAssocForm.reset();
+        lateAssocPaymentId.value = id;
+        lateAssocTxId.textContent = id;
+        lateAssocTxAmount.textContent = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+        lateAssocTxContent.textContent = content || 'No content description';
+
+        // Prepopulate customer if available
+        if (customerId) {
+          const matchedOpt = lateAssocCustomerOptions.find(opt => opt.getAttribute('data-value') === customerId);
+          const label = matchedOpt ? matchedOpt.textContent.trim() : customerId;
+          selectLateAssocCustomer(customerId, label);
+        } else {
+          selectLateAssocCustomer('', '');
+        }
+
+        // Set default Start Date to today
+        const todayStr = new Date().toISOString().split('T')[0];
+        lateAssocStartDate.value = todayStr;
+        lateAssocExpiredAt.value = '';
+
+        lateAssocModal.style.display = 'flex';
+      });
+    });
+
+    // Service select change -> auto calculate End Date and autofill price
+    lateAssocServiceSelect.addEventListener('change', () => {
+      const selectedOpt = lateAssocServiceSelect.options[lateAssocServiceSelect.selectedIndex];
+      if (!selectedOpt || !selectedOpt.value) {
+        lateAssocCustomPrice.value = '';
+        lateAssocExpiredAt.value = '';
+        return;
+      }
+
+      const price = selectedOpt.getAttribute('data-price');
+      const cycleDays = parseInt(selectedOpt.getAttribute('data-cycle') || '30', 10);
+
+      // Autofill price
+      lateAssocCustomPrice.value = price || '';
+
+      // Autofill End Date based on Start Date + cycleDays
+      calculateEndDate(cycleDays);
+    });
+
+    // Start date change -> recalculate End Date if service selected
+    lateAssocStartDate.addEventListener('change', () => {
+      const selectedOpt = lateAssocServiceSelect.options[lateAssocServiceSelect.selectedIndex];
+      if (selectedOpt && selectedOpt.value) {
+        const cycleDays = parseInt(selectedOpt.getAttribute('data-cycle') || '30', 10);
+        calculateEndDate(cycleDays);
+      }
+    });
+
+    function calculateEndDate(days) {
+      const startVal = lateAssocStartDate.value;
+      if (!startVal) return;
+
+      const startDate = new Date(startVal);
+      // Add days to start date
+      startDate.setDate(startDate.getDate() + days);
+
+      // Format as YYYY-MM-DD
+      const endStr = startDate.toISOString().split('T')[0];
+      lateAssocExpiredAt.value = endStr;
+    }
+
+    // Close handlers
+    function closeLateAssocModal() {
+      if (lateAssocModal) lateAssocModal.style.display = 'none';
+    }
+    if (lateAssocModalCloseBtn) lateAssocModalCloseBtn.addEventListener('click', closeLateAssocModal);
+    if (lateAssocModalCancelBtn) lateAssocModalCancelBtn.addEventListener('click', closeLateAssocModal);
+
+    window.addEventListener('click', (e) => {
+      if (e.target === lateAssocModal) closeLateAssocModal();
+    });
+
+    // Form submit
+    lateAssocForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const paymentId = lateAssocPaymentId.value;
+      const customerId = lateAssocCustomerSelect.value;
+      const serviceId = lateAssocServiceSelect.value;
+      const customPriceVal = lateAssocCustomPrice.value;
+      const customPrice = customPriceVal ? Number(customPriceVal) : undefined;
+      
+      const startVal = lateAssocStartDate.value;
+      const endVal = lateAssocExpiredAt.value;
+
+      if (!customerId) {
+        alert('Please select a valid customer.');
+        return;
+      }
+
+      // Convert to Unix timestamps (ms)
+      const startDate = new Date(startVal).getTime();
+      const expiredAt = new Date(endVal).getTime();
+
+      try {
+        const res = await fetch('/api/crm/payments/create-invoice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            paymentId,
+            customerId,
+            serviceId,
+            startDate,
+            expiredAt,
+            customPrice
+          })
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          closeLateAssocModal();
+          alert(lang === 'vi' ? 'Tạo hóa đơn và liên kết giao dịch thành công!' : 'Invoice created and payment associated successfully!');
+          window.location.reload();
+        } else {
+          alert('Error: ' + (data.error || 'Unknown error'));
+        }
+      } catch (err) {
+        console.error(err);
+        alert('Network error. Could not create invoice.');
+      }
+    });
   </script>
 </DashboardLayout>

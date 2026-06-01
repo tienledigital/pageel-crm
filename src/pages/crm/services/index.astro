@@ -1,0 +1,837 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import { env } from 'cloudflare:workers';
+import { getDb } from '@/lib/db';
+import { services } from '@/lib/db/schema';
+import { desc } from 'drizzle-orm';
+import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
+import { t } from '@/lib/i18n';
+
+const sessionCookie = Astro.cookies.get('session')?.value;
+const sessionSecret = getSessionSecret();
+const lang = Astro.locals.lang || 'vi';
+
+if (!sessionCookie) {
+  return Astro.redirect('/login');
+}
+
+const user = await verifySessionCookie(sessionCookie, sessionSecret);
+if (!user) {
+  return Astro.redirect('/login');
+}
+
+const isWritable = user.role === 'admin' || user.role === 'accountant';
+
+const db = getDb(env);
+
+// Fetch services sorted by creation date (or ID)
+const servicesList = await db
+  .select()
+  .from(services)
+  .orderBy(desc(services.createdAt));
+
+// Calculate stats
+const totalServices = servicesList.length;
+const activeServices = servicesList.filter((s: any) => s.status === 'active').length;
+const inactiveServices = servicesList.filter((s: any) => s.status === 'inactive').length;
+
+// Helper to format currency
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+}
+
+const translations = {
+  confirmDelete: t('services.confirm_delete', lang),
+  errCreate: t('services.err_create', lang),
+  errUpdate: t('services.err_update', lang),
+  errDelete: t('services.err_delete', lang),
+  netErrCreate: t('services.net_err_create', lang),
+  netErrUpdate: t('services.net_err_update', lang),
+  netErrDelete: t('services.net_err_delete', lang)
+};
+---
+
+<DashboardLayout title={t('services.title', lang)}>
+  <style>
+    .header-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+    }
+
+    .title-section h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0;
+    }
+
+    .title-section p {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      margin: 0.25rem 0 0 0;
+    }
+
+    /* Stats Grid */
+    .stats-banner {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .stat-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stat-icon.service-total {
+      background-color: rgba(99, 102, 241, 0.1);
+      color: var(--primary);
+    }
+
+    .stat-icon.service-active {
+      background-color: rgba(16, 185, 129, 0.1);
+      color: var(--success);
+    }
+
+    .stat-icon.service-inactive {
+      background-color: rgba(107, 114, 128, 0.1);
+      color: var(--text-secondary);
+    }
+
+    .stat-details {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-value {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .card-container {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 1.5rem;
+      overflow: hidden;
+    }
+
+    .table-responsive {
+      overflow-x: auto;
+    }
+
+    .custom-table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    .custom-table th {
+      padding: 1rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .custom-table td {
+      padding: 1.25rem 1rem;
+      font-size: 0.875rem;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-primary);
+      vertical-align: middle;
+    }
+
+    .custom-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .badge-active {
+      background-color: rgba(16, 185, 129, 0.1);
+      color: var(--success);
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .badge-inactive {
+      background-color: rgba(239, 68, 68, 0.1);
+      color: var(--error);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+    }
+
+    /* Actions */
+    .btn-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.85rem;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-decoration: none;
+    }
+
+    .btn-action:hover {
+      background-color: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(255, 93, 1, 0.25);
+    }
+
+    .btn-action.btn-delete:hover {
+      background-color: var(--error);
+      border-color: var(--error);
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(239, 68, 68, 0.25);
+    }
+
+    .btn-action svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    /* Modal Styles */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-content {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 500px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      animation: scale-up 0.2s ease-out;
+    }
+
+    @keyframes scale-up {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.75rem;
+    }
+
+    .modal-header h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+      letter-spacing: 0.5px;
+    }
+
+    .form-input, .form-select {
+      width: 100%;
+      background-color: var(--bg-hover);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: var(--text-primary);
+      padding: 0.65rem 0.85rem;
+      font-size: 0.875rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-input:focus, .form-select:focus {
+      border-color: var(--primary);
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+
+    .btn-cancel {
+      background-color: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-cancel:hover {
+      background-color: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .btn-save {
+      background-color: var(--primary);
+      border: 1px solid var(--primary);
+      color: #fff;
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-save:hover {
+      box-shadow: 0 4px 12px rgba(255, 93, 1, 0.25);
+    }
+
+    /* Mobile view */
+    .mobile-card-grid {
+      display: none;
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+
+    .mobile-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .mobile-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.75rem;
+    }
+
+    .mobile-card-title {
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .mobile-card-body {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+    }
+
+    .mobile-card-row {
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .mobile-card-label {
+      color: var(--text-secondary);
+    }
+
+    .mobile-card-footer {
+      border-top: 1px solid var(--border-color);
+      padding-top: 0.75rem;
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.5rem;
+    }
+
+    @media (max-width: 768px) {
+      .table-responsive {
+        display: none;
+      }
+      .mobile-card-grid {
+        display: grid;
+      }
+    }
+  </style>
+
+  <div class="header-container">
+    <div class="title-section">
+      <h1>{t('services.title', lang)}</h1>
+      <p>{t('services.subtitle', lang)}</p>
+    </div>
+    {isWritable && (
+      <div class="action-section">
+        <button id="btnNewService" class="btn-save" style="display: inline-flex; align-items: center; gap: 0.5rem;">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+          </svg>
+          <span>{t('services.create_btn', lang)}</span>
+        </button>
+      </div>
+    )}
+  </div>
+
+  <!-- Stats Grid -->
+  <div class="stats-banner">
+    <div class="stat-card">
+      <div class="stat-icon service-total">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 24px; height: 24px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+        </svg>
+      </div>
+      <div class="stat-details">
+        <span class="stat-label">{t('services.total_services', lang)}</span>
+        <span class="stat-value">{totalServices}</span>
+        <span style="font-size: 0.75rem; color: var(--text-secondary);">{t('services.total_desc', lang)}</span>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-icon service-active">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 24px; height: 24px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <div class="stat-details">
+        <span class="stat-label">{t('services.active_services', lang)}</span>
+        <span class="stat-value" style="color: var(--success);">{activeServices}</span>
+        <span style="font-size: 0.75rem; color: var(--text-secondary);">{t('services.active_desc', lang)}</span>
+      </div>
+    </div>
+
+    <div class="stat-card">
+      <div class="stat-icon service-inactive">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 24px; height: 24px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+        </svg>
+      </div>
+      <div class="stat-details">
+        <span class="stat-label">{t('services.inactive_services', lang)}</span>
+        <span class="stat-value" style="color: var(--text-secondary);">{inactiveServices}</span>
+        <span style="font-size: 0.75rem; color: var(--text-secondary);">{t('services.inactive_desc', lang)}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card-container">
+    <!-- Desktop Table -->
+    <div class="table-responsive">
+      <table class="custom-table">
+        <thead>
+          <tr>
+            <th>{t('services.col_name', lang)}</th>
+            <th>{t('services.col_price', lang)}</th>
+            <th>{t('services.col_cycle', lang)}</th>
+            <th>{t('services.col_prefix', lang)}</th>
+            <th>{t('services.col_status', lang)}</th>
+            {isWritable && <th>{t('services.col_actions', lang)}</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {servicesList.length === 0 ? (
+            <tr>
+              <td colspan={isWritable ? 6 : 5} style="text-align: center; padding: 3rem; color: var(--text-secondary);">
+                {t('services.no_services', lang)}
+              </td>
+            </tr>
+          ) : (
+            servicesList.map((srv: any) => (
+              <tr>
+                <td>
+                  <div style="font-weight: 600; color: var(--text-primary);">{srv.name}</div>
+                  <div style="font-size: 0.75rem; color: var(--text-secondary); font-family: monospace;">ID: {srv.id}</div>
+                </td>
+                <td style="font-weight: 600;">{formatCurrency(srv.price)}</td>
+                <td>{srv.billingCycle} {t('services.days', lang)}</td>
+                <td>
+                  <span style="font-family: monospace; background-color: var(--bg-hover); padding: 0.2rem 0.5rem; border-radius: 4px; font-weight: 600; color: var(--primary);">
+                    {srv.prefix}
+                  </span>
+                </td>
+                <td>
+                  <span class={`badge ${srv.status === 'active' ? 'badge-active' : 'badge-inactive'}`}>
+                    {srv.status === 'active' ? t('services.active', lang) : t('services.inactive', lang)}
+                  </span>
+                </td>
+                {isWritable && (
+                  <td>
+                    <div style="display: flex; gap: 0.5rem;">
+                      <button class="btn-action btn-edit-srv" data-service={JSON.stringify(srv)}>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                        </svg>
+                        {t('payments.edit', lang)}
+                      </button>
+                      <button class="btn-action btn-delete btn-delete-srv" data-id={srv.id} data-name={srv.name}>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                        </svg>
+                        {t('payments.delete', lang)}
+                      </button>
+                    </div>
+                  </td>
+                )}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Mobile view -->
+    <div class="mobile-card-grid">
+      {servicesList.length === 0 ? (
+        <div style="text-align: center; padding: 2rem; color: var(--text-secondary);">
+          {t('services.no_services', lang)}
+        </div>
+      ) : (
+        servicesList.map((srv: any) => (
+          <div class="mobile-card">
+            <div class="mobile-card-header">
+              <span class="mobile-card-title">{srv.name}</span>
+              <span class={`badge ${srv.status === 'active' ? 'badge-active' : 'badge-inactive'}`}>
+                {srv.status === 'active' ? t('services.active', lang) : t('services.inactive', lang)}
+              </span>
+            </div>
+            <div class="mobile-card-body">
+              <div class="mobile-card-row">
+                <span class="mobile-card-label">{t('services.col_price', lang)}</span>
+                <strong style="color: var(--text-primary);">{formatCurrency(srv.price)}</strong>
+              </div>
+              <div class="mobile-card-row">
+                <span class="mobile-card-label">{t('services.col_cycle', lang)}</span>
+                <span>{srv.billingCycle} {t('services.days', lang)}</span>
+              </div>
+              <div class="mobile-card-row">
+                <span class="mobile-card-label">{t('services.col_prefix', lang)}</span>
+                <span style="font-family: monospace; font-weight: 600; color: var(--primary);">{srv.prefix}</span>
+              </div>
+              <div class="mobile-card-row">
+                <span class="mobile-card-label">ID</span>
+                <span style="font-family: monospace; font-size: 0.75rem; color: var(--text-secondary);">{srv.id}</span>
+              </div>
+            </div>
+            {isWritable && (
+              <div class="mobile-card-footer">
+                <button class="btn-action btn-edit-srv" data-service={JSON.stringify(srv)}>
+                  {t('payments.edit', lang)}
+                </button>
+                <button class="btn-action btn-delete btn-delete-srv" data-id={srv.id} data-name={srv.name}>
+                  {t('payments.delete', lang)}
+                </button>
+              </div>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  </div>
+
+  <!-- Create Service Modal -->
+  {isWritable && (
+    <div class="modal-backdrop" id="newServiceModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>{t('services.create_title', lang)}</h3>
+          <button class="modal-close" id="modalCloseBtn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="newServiceForm">
+            <div class="form-group">
+              <label for="srv_name">{t('services.label_name', lang)}</label>
+              <input type="text" id="srv_name" class="form-input" required placeholder="e.g. VPS Hosting" maxlength="100" />
+            </div>
+
+            <div class="form-group">
+              <label for="srv_price">{t('services.label_price', lang)}</label>
+              <input type="number" id="srv_price" class="form-input" required placeholder="e.g. 150000" min="0" />
+            </div>
+
+            <div class="form-group">
+              <label for="srv_billingCycle">{t('services.label_cycle', lang)}</label>
+              <input type="number" id="srv_billingCycle" class="form-input" required value="30" min="1" />
+            </div>
+
+            <div class="form-group">
+              <label for="srv_prefix">{t('services.label_prefix', lang)}</label>
+              <input type="text" id="srv_prefix" class="form-input" required placeholder="e.g. VPS" maxlength="15" style="text-transform: uppercase;" />
+              <small style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem; display: block;">
+                {t('services.prefix_desc', lang)}
+              </small>
+            </div>
+
+            <div class="modal-footer">
+              <button type="button" class="btn-cancel" id="modalCancelBtn">{t('services.cancel', lang)}</button>
+              <button type="submit" class="btn-save">{t('services.save', lang)}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Service Modal -->
+    <div class="modal-backdrop" id="editServiceModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>{t('services.edit_title', lang)}</h3>
+          <button class="modal-close" id="editModalCloseBtn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="editServiceForm">
+            <input type="hidden" id="edit_srv_id" />
+            <div class="form-group">
+              <label for="edit_srv_name">{t('services.label_name', lang)}</label>
+              <input type="text" id="edit_srv_name" class="form-input" required placeholder="e.g. VPS Hosting" maxlength="100" />
+            </div>
+
+            <div class="form-group">
+              <label for="edit_srv_price">{t('services.label_price', lang)}</label>
+              <input type="number" id="edit_srv_price" class="form-input" required placeholder="e.g. 150000" min="0" />
+            </div>
+
+            <div class="form-group">
+              <label for="edit_srv_billingCycle">{t('services.label_cycle', lang)}</label>
+              <input type="number" id="edit_srv_billingCycle" class="form-input" required min="1" />
+            </div>
+
+            <div class="form-group">
+              <label for="edit_srv_prefix">{t('services.label_prefix', lang)}</label>
+              <input type="text" id="edit_srv_prefix" class="form-input" required placeholder="e.g. VPS" maxlength="15" style="text-transform: uppercase;" />
+            </div>
+
+            <div class="form-group">
+              <label for="edit_srv_status">{t('services.label_status', lang)}</label>
+              <select id="edit_srv_status" class="form-select" required>
+                <option value="active">{t('services.active', lang)}</option>
+                <option value="inactive">{t('services.inactive', lang)}</option>
+              </select>
+            </div>
+
+            <div class="modal-footer">
+              <button type="button" class="btn-cancel" id="editModalCancelBtn">{t('services.cancel', lang)}</button>
+              <button type="submit" class="btn-save">{t('services.save_changes', lang)}</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  )}
+
+  <script is:inline define:vars={{ translations }}>
+    // Elements
+    const modal = document.getElementById('newServiceModal');
+    const openBtn = document.getElementById('btnNewService');
+    const closeBtn = document.getElementById('modalCloseBtn');
+    const cancelBtn = document.getElementById('modalCancelBtn');
+    const form = document.getElementById('newServiceForm');
+
+    const editModal = document.getElementById('editServiceModal');
+    const editCloseBtn = document.getElementById('editModalCloseBtn');
+    const editCancelBtn = document.getElementById('editModalCancelBtn');
+    const editForm = document.getElementById('editServiceForm');
+
+    // Open Modal
+    if (openBtn) {
+      openBtn.addEventListener('click', () => {
+        form.reset();
+        modal.style.display = 'flex';
+      });
+    }
+
+    // Close Modal
+    function closeModal() {
+      if (modal) modal.style.display = 'none';
+    }
+
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+    // Close Edit Modal
+    function closeEditModal() {
+      if (editModal) editModal.style.display = 'none';
+    }
+
+    if (editCloseBtn) editCloseBtn.addEventListener('click', closeEditModal);
+    if (editCancelBtn) editCancelBtn.addEventListener('click', closeEditModal);
+
+    // Global click listener to close modals when clicking backdrop
+    window.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+      if (e.target === editModal) closeEditModal();
+    });
+
+    // Populate and open edit modal
+    document.addEventListener('click', (e) => {
+      const editBtn = e.target.closest('.btn-edit-srv');
+      if (editBtn) {
+        const srv = JSON.parse(editBtn.dataset.service);
+        document.getElementById('edit_srv_id').value = srv.id;
+        document.getElementById('edit_srv_name').value = srv.name;
+        document.getElementById('edit_srv_price').value = srv.price;
+        document.getElementById('edit_srv_billingCycle').value = srv.billingCycle;
+        document.getElementById('edit_srv_prefix').value = srv.prefix;
+        document.getElementById('edit_srv_status').value = srv.status;
+        editModal.style.display = 'flex';
+      }
+    });
+
+    // Handle Create form submit
+    if (form) {
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const name = document.getElementById('srv_name').value;
+        const price = document.getElementById('srv_price').value;
+        const billingCycle = document.getElementById('srv_billingCycle').value;
+        const prefix = document.getElementById('srv_prefix').value.trim().toUpperCase();
+
+        try {
+          const res = await fetch('/api/crm/services', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, price, billingCycle, prefix })
+          });
+
+          if (res.ok) {
+            closeModal();
+            window.location.reload();
+          } else {
+            const data = await res.json();
+            alert(translations.errCreate + (data.error || 'Unknown error'));
+          }
+        } catch (err) {
+          console.error(err);
+          alert(translations.netErrCreate);
+        }
+      });
+    }
+
+    // Handle Edit form submit
+    if (editForm) {
+      editForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const id = document.getElementById('edit_srv_id').value;
+        const name = document.getElementById('edit_srv_name').value;
+        const price = document.getElementById('edit_srv_price').value;
+        const billingCycle = document.getElementById('edit_srv_billingCycle').value;
+        const prefix = document.getElementById('edit_srv_prefix').value.trim().toUpperCase();
+        const status = document.getElementById('edit_srv_status').value;
+
+        try {
+          const res = await fetch(`/api/crm/services/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, price, billingCycle, prefix, status })
+          });
+
+          if (res.ok) {
+            closeEditModal();
+            window.location.reload();
+          } else {
+            const data = await res.json();
+            alert(translations.errUpdate + (data.error || 'Unknown error'));
+          }
+        } catch (err) {
+          console.error(err);
+          alert(translations.netErrUpdate);
+        }
+      });
+    }
+
+    // Handle Delete service click
+    document.addEventListener('click', async (e) => {
+      const deleteBtn = e.target.closest('.btn-delete-srv');
+      if (deleteBtn) {
+        const id = deleteBtn.dataset.id;
+        const name = deleteBtn.dataset.name;
+        
+        if (confirm(translations.confirmDelete.replace('{name}', name))) {
+          try {
+            const res = await fetch(`/api/crm/services/${id}`, {
+              method: 'DELETE'
+            });
+
+            if (res.ok) {
+              window.location.reload();
+            } else {
+              const data = await res.json();
+              alert(translations.errDelete + (data.error || 'Unknown error'));
+            }
+          } catch (err) {
+            console.error(err);
+            alert(translations.netErrDelete);
+          }
+        }
+      }
+    });
+  </script>
+</DashboardLayout>

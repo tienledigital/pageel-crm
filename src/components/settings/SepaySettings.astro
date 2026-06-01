@@ -6,6 +6,7 @@ interface Props {
   isAdmin: boolean;
   defaultBank: string;
   defaultAccount: string;
+  serviceInvoiceContentTemplate: string;
   envStatus: {
     sepay: {
       webhookSecret: boolean;
@@ -20,7 +21,7 @@ interface Props {
   };
 }
 
-const { lang, isAdmin, defaultBank, defaultAccount, envStatus } = Astro.props;
+const { lang, isAdmin, defaultBank, defaultAccount, serviceInvoiceContentTemplate, envStatus } = Astro.props;
 ---
 
 <section id="integrations" class="settings-card tab-panel">
@@ -68,6 +69,14 @@ const { lang, isAdmin, defaultBank, defaultAccount, envStatus } = Astro.props;
           <input type="text" id="defaultAccountInput" class="form-input" value={defaultAccount} placeholder="e.g. 0399999999" />
         </div>
       </div>
+
+      <div class="form-group mt-1">
+        <label for="webhookDescTemplateInput" class="form-label">{t('settings.webhook_desc_template', lang)}</label>
+        <input type="text" id="webhookDescTemplateInput" class="form-input" value={serviceInvoiceContentTemplate} placeholder="e.g. Auto webhook thanh toan dich vu {service_name}" />
+        <small style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem; display: block;">
+          {t('settings.webhook_desc_template_hint', lang)}
+        </small>
+      </div>
     </div>
 
     <div class="action-row border-top">
@@ -100,8 +109,10 @@ const { lang, isAdmin, defaultBank, defaultAccount, envStatus } = Astro.props;
       try {
         const bankSelect = document.getElementById('defaultBankSelect') as HTMLSelectElement;
         const accountInput = document.getElementById('defaultAccountInput') as HTMLInputElement;
+        const templateInput = document.getElementById('webhookDescTemplateInput') as HTMLInputElement;
         const bankVal = bankSelect ? bankSelect.value : 'MB';
         const accountVal = accountInput ? accountInput.value : '';
+        const templateVal = templateInput ? templateInput.value : '';
 
         // Save defaultBank
         const bankRes = await fetch('/api/crm/config', {
@@ -118,6 +129,14 @@ const { lang, isAdmin, defaultBank, defaultAccount, envStatus } = Astro.props;
           body: JSON.stringify({ key: 'defaultAccount', value: accountVal })
         });
         if (!accountRes.ok) throw new Error('Bank account number configuration failed');
+
+        // Save serviceInvoiceContentTemplate
+        const templateRes = await fetch('/api/crm/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'serviceInvoiceContentTemplate', value: templateVal })
+        });
+        if (!templateRes.ok) throw new Error('Auto webhook description template configuration failed');
 
         // Backward compatibility
         await fetch('/api/crm/config', {
