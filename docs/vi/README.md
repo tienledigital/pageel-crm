@@ -9,7 +9,7 @@
   <p>Bộ máy quản lý tài chính và hóa đơn tự vận hành tối ưu cho hộ kinh doanh Việt Nam.</p>
 
   [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
-  [![Version](https://img.shields.io/badge/Version-v0.8.0-blue.svg)](../../CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/Version-v0.9.0-blue.svg)](../../CHANGELOG.md)
   ![Status](https://img.shields.io/badge/Status-Beta-orange.svg)
   [![Built with Astro](https://img.shields.io/badge/Built%20with-Astro-BC52EE.svg?logo=astro&logoColor=white)](https://astro.build)
 
@@ -44,6 +44,7 @@
 - **Báo cáo Thuế S1a-HKD:** Tự động kết xuất báo cáo thuế định kỳ theo tháng/quý dạng file Excel (tuân thủ quy chuẩn kế toán HKD).
 - **Phát triển TDD-First:** Mã nguồn được thiết kế chặt chẽ theo Repository Pattern, kiểm thử độc lập nhanh chóng với Vitest.
 - **Củng cố Bảo mật (Security Hardening v0.8.0):** Bảo mật session cookie chuẩn production, tích hợp bộ lọc chống XSS client-side, ẩn thông tin lỗi chi tiết ở production, và giới hạn tần suất brute-force đăng nhập thông qua Cloudflare KV.
+- **Quản lý Dịch vụ & Gán giao dịch nhanh (v0.9.0):** Tích hợp quản lý danh mục sản phẩm/dịch vụ, gán giao dịch thủ công (Late Association) cho các khoản chuyển khoản chưa khớp tự động, sinh VietQR động chứa tiền tố dịch vụ, và cấu hình tùy chỉnh mô tả hóa đơn tự động theo mẫu template.
 
 ---
 
