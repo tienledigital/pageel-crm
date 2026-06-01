@@ -11,7 +11,10 @@ export const POST: APIRoute = async (context) => {
   let requestBody: any = null;
   try {
     const authHeader = context.request.headers.get('Authorization');
-    const secret = env?.SEPAY_WEBHOOK_SECRET || import.meta.env.SEPAY_WEBHOOK_SECRET || 'sepay-fallback-secret';
+    const secret = env?.SEPAY_WEBHOOK_SECRET || import.meta.env.SEPAY_WEBHOOK_SECRET;
+    if (!secret) {
+      throw new Error('SEPAY_WEBHOOK_SECRET is not configured');
+    }
 
     // Verify token while hiding actual token in logs for security
     if (!authHeader || authHeader !== `Apikey ${secret}`) {

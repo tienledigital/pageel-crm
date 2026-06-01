@@ -49,10 +49,16 @@ describe('Database Reconciliation Integration Tests', () => {
     migrate(db, { migrationsFolder: path.join(__dirname, '../drizzle') });
 
     // Reset DB state
+    const { customerServices: csTable, services: sTable, invoices: iTable } = await import('@/lib/db/schema');
+    await db.update(iTable).set({ paymentId: null });
+    await db.update(payments).set({ invoiceId: null });
+    await db.delete(csTable);
     await db.delete(payments);
+    await db.delete(iTable);
     await db.delete(customers);
     await db.delete(staff);
     await db.delete(users);
+    await db.delete(sTable);
 
     // Seed normal customer
     await db.insert(customers).values({
@@ -178,6 +184,90 @@ describe('Database Reconciliation Integration Tests', () => {
     // Second payment with same transactionId should fail/throw database constraint error
     await expect(reconcilePayment(db, payment)).rejects.toThrow();
   });
+
+  it('should automatically match a service by prefix, generate invoice, and activate customer service', async () => {
+    // 1. Create a service in the DB first
+    const { services: servicesTable, customerServices: customerServicesTable, invoices: invoicesTable } = await import('@/lib/db/schema');
+    const serviceId = 'srv-hosting-1';
+    await db.insert(servicesTable).values({
+      id: serviceId,
+      name: 'Web Hosting Standard',
+      price: 200000,
+      billingCycle: 30,
+      prefix: 'HOSTING',
+      status: 'active',
+      createdAt: Date.now()
+    });
+
+    // 2. Reconcile a payment with content containing "HOSTING" and enough money (200,000 VND)
+    const payment = {
+      transactionId: 'TX_SRV_1',
+      amount: 200000,
+      content: '1005 - Test Customer - HOSTING',
+      bank: 'Techcombank',
+      paidAt: Date.now(),
+    };
+
+    const result = await reconcilePayment(db, payment);
+    expect(result.success).toBe(true);
+
+    // 3. Verify an invoice was generated automatically
+    const generatedInvoices = await db.select().from(invoicesTable).where(eq(invoicesTable.serviceId, serviceId)).all();
+    expect(generatedInvoices).toHaveLength(1);
+    const invoice = generatedInvoices[0];
+    expect(invoice.customerId).toBe('1005');
+    expect(invoice.amount).toBe(200000);
+    expect(invoice.status).toBe('paid');
+    expect(invoice.startDate).toBeDefined();
+    expect(invoice.expiredAt).toBeDefined();
+
+    // 4. Verify customer_services is activated
+    const activeCustServices = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+    expect(activeCustServices).toHaveLength(1);
+    expect(activeCustServices[0].customerId).toBe('1005');
+    expect(activeCustServices[0].status).toBe('active');
+  });
+
+  it('should generate partially_paid invoice and NOT activate customer service if payment is underpaid', async () => {
+    const { services: servicesTable, customerServices: customerServicesTable, invoices: invoicesTable } = await import('@/lib/db/schema');
+    const serviceId = 'srv-hosting-2';
+    await db.insert(servicesTable).values({
+      id: serviceId,
+      name: 'Web Hosting Premium',
+      price: 300000,
+      billingCycle: 30,
+      prefix: 'HOSTING_PREMIUM',
+      status: 'active',
+      createdAt: Date.now()
+    });
+
+    // Underpaid payment (250,000 VND instead of 300,000 VND)
+    const payment = {
+      transactionId: 'TX_SRV_2',
+      amount: 250000,
+      content: '1005 - Test Customer - HOSTING_PREMIUM',
+      bank: 'Techcombank',
+      paidAt: Date.now(),
+    };
+
+    let result;
+    try {
+      result = await reconcilePayment(db, payment);
+    } catch (err: any) {
+      console.error('UNDERPAID TEST EXCEPTION:', err);
+      throw err;
+    }
+    expect(result.success).toBe(true);
+
+    // Verify invoice is partially_paid
+    const generatedInvoices = await db.select().from(invoicesTable).where(eq(invoicesTable.serviceId, serviceId)).all();
+    expect(generatedInvoices).toHaveLength(1);
+    expect(generatedInvoices[0].status).toBe('partially_paid');
+
+    // Verify customer service was NOT activated
+    const activeCustServices = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+    expect(activeCustServices).toHaveLength(0);
+  });
 });
 
 describe('Sepay Webhook Endpoint Integration Tests', () => {
@@ -292,5 +382,142 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
     const data2 = await res2.json();
     expect(data2.success).toBe(true);
     expect(data2.message).toContain('Duplicate');
+  });
+
+  it('should automatically match a service, generate invoice, and activate customer service via webhook', async () => {
+    const db = getDb();
+    const { services: servicesTable, customerServices: customerServicesTable, invoices: invoicesTable } = await import('@/lib/db/schema');
+    const serviceId = 'srv-hosting-webhook';
+    await db.insert(servicesTable).values({
+      id: serviceId,
+      name: 'Webhook Web Hosting',
+      price: 200000,
+      billingCycle: 30,
+      prefix: 'HOSTING_WEBHOOK',
+      status: 'active',
+      createdAt: Date.now()
+    });
+
+    const webhookPayload = {
+      id: 99993,
+      gateway: 'Techcombank',
+      transactionDate: '2026-05-20 16:40:00',
+      accountNumber: '1903000000000',
+      code: 'TX_SEPAY_WEBHOOK',
+      content: '1005 - Test User - HOSTING_WEBHOOK',
+      transferType: 'in',
+      transferAmount: 200000,
+      accumulatedBalance: 5300000,
+      subAccount: '',
+      referenceCode: 'FT12347',
+    };
+
+    const request = new Request('http://localhost/api/webhook/sepay', {
+      method: 'POST',
+      body: JSON.stringify(webhookPayload),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Apikey ${WEBHOOK_SECRET}`,
+      },
+    });
+
+    const context: any = {
+      request,
+      url: new URL('http://localhost/api/webhook/sepay'),
+      locals: { runtime: { env: { SEPAY_WEBHOOK_SECRET: WEBHOOK_SECRET } } },
+    };
+
+    const response = await webhookHandler(context);
+    expect(response.status).toBe(200);
+
+    // Verify invoice is paid
+    const inv = await db.select().from(invoicesTable).where(eq(invoicesTable.serviceId, serviceId)).all();
+    expect(inv).toHaveLength(1);
+    expect(inv[0].status).toBe('paid');
+
+    // Verify customer_services is active
+    const cs = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+    expect(cs).toHaveLength(1);
+    expect(cs[0].status).toBe('active');
+  });
+
+  it('should return 500 when SEPAY_WEBHOOK_SECRET is not configured', async () => {
+    // Delete env secrets
+    const oldSecret = process.env.SEPAY_WEBHOOK_SECRET;
+    delete process.env.SEPAY_WEBHOOK_SECRET;
+
+    const webhookPayload = {
+      id: 99994,
+      gateway: 'Techcombank',
+      transactionDate: '2026-05-20 16:45:00',
+      accountNumber: '1903000000000',
+      code: 'TX_SEPAY_NO_SECRET',
+      content: '1005 - Gia han',
+      transferType: 'in',
+      transferAmount: 100000,
+      accumulatedBalance: 5400000,
+      subAccount: '',
+      referenceCode: 'FT12348',
+    };
+
+    const request = new Request('http://localhost/api/webhook/sepay', {
+      method: 'POST',
+      body: JSON.stringify(webhookPayload),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Apikey somekey`,
+      },
+    });
+
+    const context: any = {
+      request,
+      url: new URL('http://localhost/api/webhook/sepay'),
+      locals: { runtime: { env: {} } },
+    };
+
+    try {
+      const response = await webhookHandler(context);
+      expect(response.status).toBe(500);
+    } finally {
+      // Restore secret
+      process.env.SEPAY_WEBHOOK_SECRET = oldSecret;
+    }
+  });
+
+  it('should use custom content template from config when generating service invoice', async () => {
+    const db = getDb();
+    const { services: servicesTable, invoices: invoicesTable, config: configTable } = await import('@/lib/db/schema');
+    const serviceId = 'srv-hosting-custom';
+    await db.insert(servicesTable).values({
+      id: serviceId,
+      name: 'Custom Service Name',
+      price: 100000,
+      billingCycle: 30,
+      prefix: 'CUSTOM_SRV',
+      status: 'active',
+      createdAt: Date.now()
+    });
+
+    // Insert custom config template
+    await db.insert(configTable).values({
+      key: 'serviceInvoiceContentTemplate',
+      value: 'Thanh toan cho dich vu {service_name} (Auto matched)',
+      updatedAt: Date.now()
+    });
+
+    const payment = {
+      transactionId: 'TX_SRV_CUSTOM',
+      amount: 100000,
+      content: '1005 - CUSTOM_SRV',
+      bank: 'Techcombank',
+      paidAt: Date.now(),
+    };
+
+    const result = await reconcilePayment(db, payment);
+    expect(result.success).toBe(true);
+
+    const generatedInvoices = await db.select().from(invoicesTable).where(eq(invoicesTable.serviceId, serviceId)).all();
+    expect(generatedInvoices).toHaveLength(1);
+    expect(generatedInvoices[0].content).toBe('Thanh toan cho dich vu Custom Service Name (Auto matched)');
   });
 });
