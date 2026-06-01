@@ -10,7 +10,9 @@ import {
   listServices,
   createInvoiceFromPayment
 } from '@/lib/services/serviceManager';
-import { customers, staff, payments, invoices, customerServices } from '@/lib/db/schema';
+import { customers, staff, payments, invoices, customerServices, services, users } from '@/lib/db/schema';
+import { createSessionCookie } from '@/lib/auth';
+import { POST as createInvoiceHandler } from '@/pages/api/crm/payments/create-invoice';
 
 describe('Services Manager CRUD Logic', () => {
   beforeAll(async () => {
@@ -249,5 +251,144 @@ describe('Late Association & Underpayment Logic', () => {
         staffId: TEST_STAFF.id
       })
     ).rejects.toThrow('PAYMENT_ALREADY_RECONCILED');
+  });
+});
+
+describe('Late Association API Endpoint - Integration Tests', () => {
+  const SESSION_SECRET = 'fallback-secret-key-must-be-at-least-32-chars-long';
+  let adminToken: string;
+  let staffToken: string;
+  let salerToken: string;
+
+  beforeAll(async () => {
+    process.env.SESSION_SECRET = SESSION_SECRET;
+    adminToken = await createSessionCookie({
+      id: 'usr-admin',
+      username: 'admin1',
+      role: 'admin',
+      createdAt: Date.now()
+    }, SESSION_SECRET);
+
+    staffToken = await createSessionCookie({
+      id: 'usr-accountant',
+      username: 'accountant1',
+      role: 'accountant',
+      createdAt: Date.now()
+    }, SESSION_SECRET);
+
+    salerToken = await createSessionCookie({
+      id: 'usr-saler',
+      username: 'saler1',
+      role: 'saler',
+      createdAt: Date.now()
+    }, SESSION_SECRET);
+  });
+
+  function createMockContext(body?: any, token?: string) {
+    const cookiesMap = new Map();
+    if (token) {
+      cookiesMap.set('session', { value: token });
+    }
+    const request = new Request('http://localhost/api/crm/payments/create-invoice', {
+      method: 'POST',
+      body: body ? JSON.stringify(body) : undefined,
+      headers: { 'Content-Type': 'application/json' }
+    });
+    return {
+      request,
+      url: new URL(request.url),
+      cookies: cookiesMap,
+      locals: {
+        runtime: { env: { SESSION_SECRET } }
+      }
+    } as any;
+  }
+
+  it('should return 401 Unauthorized if user session cookie is missing', async () => {
+    const context = createMockContext({ paymentId: 'PAY-1' });
+    const response = await createInvoiceHandler(context);
+    expect(response.status).toBe(401);
+  });
+
+  it('should return 403 Forbidden if user is saler', async () => {
+    const context = createMockContext({ paymentId: 'PAY-1' }, salerToken);
+    const response = await createInvoiceHandler(context);
+    expect(response.status).toBe(403);
+  });
+
+  it('should return 400 Bad Request if required body parameter is missing', async () => {
+    const context = createMockContext({ customerId: 'CUST-101' }, staffToken);
+    const response = await createInvoiceHandler(context);
+    expect(response.status).toBe(400);
+  });
+
+  it('should successfully associate payment, create invoice and activate customer service', async () => {
+    const db = getDb();
+    
+    // Seed database entities
+    const customerId = 'CUST-API-1';
+    const staffId = 'STAFF-API-1';
+    const serviceId = 'srv-api-1';
+    const paymentId = 'PAY-API-1';
+
+    await db.insert(customers).values({
+      id: customerId,
+      fullName: 'API Customer',
+      phone: '0123456789'
+    });
+
+    await db.insert(users).values({
+      id: 'usr-accountant',
+      username: 'accountant1',
+      passwordHash: 'mocked_password_hash',
+      role: 'accountant'
+    });
+
+    await db.insert(staff).values({
+      id: staffId,
+      userId: 'usr-accountant',
+      fullName: 'API Accountant'
+    });
+
+    await db.insert(services).values({
+      id: serviceId,
+      name: 'API hosting service',
+      price: 200000,
+      billingCycle: 30,
+      prefix: 'API_SRV',
+      status: 'active',
+      createdAt: Date.now()
+    });
+
+    await db.insert(payments).values({
+      id: paymentId,
+      amount: 200000,
+      transactionId: 'TX_API_1',
+      paidAt: Date.now(),
+      content: 'API payment',
+      type: 'in'
+    });
+
+    const body = {
+      paymentId,
+      customerId,
+      serviceId,
+      startDate: Date.now(),
+      expiredAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      customPrice: 200000
+    };
+
+    const context = createMockContext(body, staffToken);
+    const response = await createInvoiceHandler(context);
+    expect(response.status).toBe(200);
+
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.invoiceId).toBeDefined();
+
+    // Verify DB
+    const inv = await db.select().from(invoices).where(eq(invoices.id, data.invoiceId)).get();
+    expect(inv.status).toBe('paid');
+    expect(inv.paymentId).toBe(paymentId);
   });
 });
