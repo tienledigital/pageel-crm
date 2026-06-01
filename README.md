@@ -9,7 +9,7 @@
   <p>Self-hosted financial and invoicing engine tailored for Vietnamese small businesses.</p>
 
   [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-  [![Version](https://img.shields.io/badge/Version-v0.8.0-blue.svg)](CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/Version-v0.9.0-blue.svg)](CHANGELOG.md)
   ![Status](https://img.shields.io/badge/Status-Beta-orange.svg)
   [![Built with Astro](https://img.shields.io/badge/Built%20with-Astro-BC52EE.svg?logo=astro&logoColor=white)](https://astro.build)
 
@@ -44,6 +44,7 @@
 - **Financial Compliance:** Auto-generates quarterly and monthly tax report spreadsheets complying with standard Vietnamese bookkeeping guidelines (S1a-HKD).
 - **TDD-First Architecture:** Decoupled codebase utilizing Repository patterns, tested locally with Vitest.
 - **Security Hardening (v0.8.0):** Production-grade session auth security, built-in client-side XSS protection, production verbose error masking, and sliding-window rate limiting on login via Cloudflare KV namespace.
+- **Services & Late Association (v0.9.0):** Integrated product/service catalog management, manual transaction association (Late Association) for unmatched payments, dynamic VietQR prefix generation based on selected services, and customizable automated invoice description templates.
 
 ---
 

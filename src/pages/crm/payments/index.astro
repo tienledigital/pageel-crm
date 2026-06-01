@@ -8,6 +8,8 @@ import { t } from '@/lib/i18n';
 
 const db = getDb(env);
 const lang = Astro.locals.lang || 'vi';
+const user = Astro.locals.user;
+const isAdmin = user?.role === 'admin';
 
 // Fetch all customers for manual link dropdown
 const allCustomers = await db
@@ -145,10 +147,12 @@ try {
 const defaultBankConfig = await db.select().from(config).where(eq(config.key, 'defaultBank')).limit(1);
 const defaultAccountConfig = await db.select().from(config).where(eq(config.key, 'defaultAccount')).limit(1);
 const orgNameConfig = await db.select().from(config).where(eq(config.key, 'orgName')).limit(1);
+const sepaySyncLimitConfig = await db.select().from(config).where(eq(config.key, 'sepaySyncLimit')).limit(1);
 
 const defaultBank = defaultBankConfig[0]?.value || 'MB';
 const defaultAccount = defaultAccountConfig[0]?.value || '0000000000';
 const orgName = orgNameConfig[0]?.value || 'Pageel';
+const sepaySyncLimit = sepaySyncLimitConfig[0]?.value || '50';
 
 // Query all customer IDs and invoice numbers for trigger match checks
 const allCustomerIds = new Set(
@@ -482,6 +486,10 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
       color: #fff;
     }
 
+    #btnAdvancedSyncOption:hover {
+      background-color: var(--bg-hover) !important;
+    }
+
     /* Modal Styles */
     .modal-backdrop {
       display: none;
@@ -679,12 +687,26 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
     <div class="title-section">
     </div>
     <div class="action-section">
-      <button id="btnSyncSepay" class="btn-filter" style="background-color: var(--primary); display: inline-flex; align-items: center; gap: 0.5rem;">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-        </svg>
-        <span>{t('payments.scan_btn', lang)}</span>
-      </button>
+      <div class="split-button-container" style="display: inline-flex; position: relative;">
+        <button id="btnSyncSepay" class="btn-filter" style="background-color: var(--primary); display: inline-flex; align-items: center; gap: 0.5rem; border-top-right-radius: 0; border-bottom-right-radius: 0; border-right: 1px solid rgba(255,255,255,0.2); height: 38px;">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+          </svg>
+          <span>{t('payments.scan_btn', lang)}</span>
+        </button>
+        {isAdmin && (
+          <button type="button" id="btnSyncSepayDropdown" class="btn-filter" style="background-color: var(--primary); padding-left: 0.5rem; padding-right: 0.5rem; border-top-left-radius: 0; border-bottom-left-radius: 0; display: inline-flex; align-items: center; justify-content: center; height: 38px;">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width: 12px; height: 12px;">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
+          </button>
+          <div id="syncSepayDropdownMenu" style="display: none; position: absolute; top: 100%; right: 0; margin-top: 0.25rem; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100; min-width: 160px; overflow: hidden;">
+            <button type="button" id="btnAdvancedSyncOption" style="width: 100%; text-align: left; padding: 0.75rem 1rem; background: none; border: none; font-size: 0.875rem; color: var(--text-primary); cursor: pointer; transition: background 0.15s;">
+              {lang === 'vi' ? 'Quét nâng cao...' : 'Advanced Sync...'}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   </div>
 
@@ -1289,8 +1311,40 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
     </div>
   </div>
 
+  <!-- Advanced Sync Modal -->
+  {isAdmin && (
+    <div id="advancedSyncModal" class="modal-backdrop">
+      <div class="modal-content" style="max-width: 420px;">
+        <div class="modal-header">
+          <h3>{lang === 'vi' ? 'Quét nâng cao SePay' : 'Advanced SePay Sync'}</h3>
+          <button id="advancedSyncClose" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="advSyncDateMin">{lang === 'vi' ? 'Quét từ ngày' : 'Sync From Date'}</label>
+            <input type="date" id="advSyncDateMin" class="form-input" />
+          </div>
+          <div class="form-group">
+            <label for="advSyncLimit">{lang === 'vi' ? 'Giới hạn số lượng giao dịch' : 'Transaction Limit'}</label>
+            <input type="number" id="advSyncLimit" class="form-input" min="1" max="1000" value={sepaySyncLimit} />
+            <small style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem; display: block;">
+              {lang === 'vi' ? 'Tối đa 1000 giao dịch để tránh tràn bộ nhớ.' : 'Maximum 1000 transactions to prevent memory overflow.'}
+            </small>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button id="btnCancelAdvSync" class="btn-cancel">{lang === 'vi' ? 'Hủy' : 'Cancel'}</button>
+          <button id="btnSubmitAdvSync" class="btn-save" style="background-color: var(--primary); border-color: var(--primary);">
+            <span class="spinner" id="advSyncSpinner" style="display: none;"></span>
+            {lang === 'vi' ? 'Đồng bộ' : 'Sync Now'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )}
+
   <!-- Client script for modal handling -->
-  <script is:inline define:vars={{ allInvoices, classificationRules, lang, allServices }}>
+  <script is:inline define:vars={{ allInvoices, classificationRules, lang, allServices, sepaySyncLimit }}>
     const modal = document.getElementById('reconcileModal');
     const closeBtn = document.getElementById('modalCloseBtn');
     const cancelBtn = document.getElementById('modalCancelBtn');
@@ -1524,6 +1578,123 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         } finally {
           btnSyncSepay.disabled = false;
           btnSyncSepay.innerHTML = originalText;
+        }
+      });
+    }
+
+    // --- Advanced Sync Configuration & Modal Logic ---
+    const btnSyncSepayDropdown = document.getElementById('btnSyncSepayDropdown');
+    const syncSepayDropdownMenu = document.getElementById('syncSepayDropdownMenu');
+    const btnAdvancedSyncOption = document.getElementById('btnAdvancedSyncOption');
+    const advancedSyncModal = document.getElementById('advancedSyncModal');
+    const advancedSyncClose = document.getElementById('advancedSyncClose');
+    const btnCancelAdvSync = document.getElementById('btnCancelAdvSync');
+    const btnSubmitAdvSync = document.getElementById('btnSubmitAdvSync');
+    const advSyncSpinner = document.getElementById('advSyncSpinner');
+    const advSyncDateMin = document.getElementById('advSyncDateMin');
+    const advSyncLimit = document.getElementById('advSyncLimit');
+
+    if (btnSyncSepayDropdown && syncSepayDropdownMenu) {
+      btnSyncSepayDropdown.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isHidden = syncSepayDropdownMenu.style.display === 'none';
+        syncSepayDropdownMenu.style.display = isHidden ? 'block' : 'none';
+      });
+
+      document.addEventListener('click', () => {
+        syncSepayDropdownMenu.style.display = 'none';
+      });
+    }
+
+    if (btnAdvancedSyncOption && advancedSyncModal) {
+      btnAdvancedSyncOption.addEventListener('click', () => {
+        if (advSyncDateMin && !advSyncDateMin.value) {
+          const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+          advSyncDateMin.value = sevenDaysAgo.toISOString().split('T')[0];
+        }
+        if (advSyncLimit) {
+          advSyncLimit.value = sepaySyncLimit || '50';
+        }
+        advancedSyncModal.style.display = 'flex';
+      });
+    }
+
+    function closeAdvancedSyncModal() {
+      if (advancedSyncModal) advancedSyncModal.style.display = 'none';
+    }
+
+    if (advancedSyncClose) advancedSyncClose.addEventListener('click', closeAdvancedSyncModal);
+    if (btnCancelAdvSync) btnCancelAdvSync.addEventListener('click', closeAdvancedSyncModal);
+
+    window.addEventListener('click', (e) => {
+      if (e.target === advancedSyncModal) closeAdvancedSyncModal();
+    });
+
+    if (btnSubmitAdvSync) {
+      btnSubmitAdvSync.addEventListener('click', async () => {
+        let limitVal = advSyncLimit ? parseInt(advSyncLimit.value, 10) : 50;
+        if (isNaN(limitVal) || limitVal <= 0) {
+          alert(lang === 'vi' ? 'Giới hạn số lượng giao dịch phải là số lớn hơn 0' : 'Limit must be a positive number');
+          return;
+        }
+        if (limitVal > 1000) {
+          limitVal = 1000;
+          if (advSyncLimit) advSyncLimit.value = '1000';
+        }
+
+        const dateMinVal = advSyncDateMin ? advSyncDateMin.value.trim() : '';
+
+        btnSubmitAdvSync.disabled = true;
+        if (advSyncSpinner) advSyncSpinner.style.display = 'inline-block';
+
+        try {
+          const res = await fetch('/api/payments/sync-sepay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              limit: limitVal,
+              transaction_date_min: dateMinVal || undefined
+            })
+          });
+
+          const data = await res.json();
+          console.log('[Advanced SePay Sync] Full response:', JSON.stringify(data, null, 2));
+
+          if (res.ok && data.success) {
+            const summary = lang === 'vi' ? [
+              data.message,
+              `\nChi tiết:`,
+              `- SePay API trả về: ${data.debug?.rawTransactionCount ?? '?'} giao dịch`,
+              `- Đã nạp mới: ${data.newReconciled}`,
+              `- Trùng lặp bỏ qua: ${data.duplicates}`,
+              `- Giao dịch ra bỏ qua: ${data.skippedOutgoing}`,
+              data.errors?.length ? `- Lỗi: ${data.errors.join(', ')}` : '',
+              `\n(Mở Console trình duyệt để xem chi tiết đầy đủ)`,
+            ].filter(Boolean).join('\n') : [
+              data.message,
+              `\nDetails:`,
+              `- SePay API returned: ${data.debug?.rawTransactionCount ?? '?'} transactions`,
+              `- Newly imported: ${data.newReconciled}`,
+              `- Duplicates skipped: ${data.duplicates}`,
+              `- Outgoing skipped: ${data.skippedOutgoing}`,
+              data.errors?.length ? `- Errors: ${data.errors.join(', ')}` : '',
+              `\n(Open browser Console for full details)`,
+            ].filter(Boolean).join('\n');
+
+            alert(summary);
+            closeAdvancedSyncModal();
+            if (data.newReconciled > 0) {
+              window.location.reload();
+            }
+          } else {
+            alert(lang === 'vi' ? 'Lỗi quét giao dịch nâng cao: ' + (data.error || 'Không rõ lỗi') : 'Advanced Scan error: ' + (data.error || 'Unknown error'));
+          }
+        } catch (err) {
+          console.error(err);
+          alert(lang === 'vi' ? 'Lỗi kết nối mạng, không thể quét SePay nâng cao.' : 'Network connection error, unable to scan SePay advanced.');
+        } finally {
+          btnSubmitAdvSync.disabled = false;
+          if (advSyncSpinner) advSyncSpinner.style.display = 'none';
         }
       });
     }

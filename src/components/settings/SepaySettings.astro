@@ -7,6 +7,8 @@ interface Props {
   defaultBank: string;
   defaultAccount: string;
   serviceInvoiceContentTemplate: string;
+  sepaySyncLimit: string;
+  sepaySyncDays: string;
   envStatus: {
     sepay: {
       webhookSecret: boolean;
@@ -21,7 +23,7 @@ interface Props {
   };
 }
 
-const { lang, isAdmin, defaultBank, defaultAccount, serviceInvoiceContentTemplate, envStatus } = Astro.props;
+const { lang, isAdmin, defaultBank, defaultAccount, serviceInvoiceContentTemplate, envStatus, sepaySyncLimit, sepaySyncDays } = Astro.props;
 ---
 
 <section id="integrations" class="settings-card tab-panel">
@@ -70,6 +72,17 @@ const { lang, isAdmin, defaultBank, defaultAccount, serviceInvoiceContentTemplat
         </div>
       </div>
 
+      <div class="form-group mt-1 grid-2">
+        <div>
+          <label for="sepaySyncLimitInput" class="form-label">{lang === 'vi' ? 'Số lượng quét mặc định' : 'Default Sync Limit'}</label>
+          <input type="number" id="sepaySyncLimitInput" class="form-input" value={sepaySyncLimit} min="1" max="1000" placeholder="e.g. 50" />
+        </div>
+        <div>
+          <label for="sepaySyncDaysInput" class="form-label">{lang === 'vi' ? 'Số ngày quét mặc định' : 'Default History Days'}</label>
+          <input type="number" id="sepaySyncDaysInput" class="form-input" value={sepaySyncDays} min="1" placeholder="e.g. 7" />
+        </div>
+      </div>
+
       <div class="form-group mt-1">
         <label for="webhookDescTemplateInput" class="form-label">{t('settings.webhook_desc_template', lang)}</label>
         <input type="text" id="webhookDescTemplateInput" class="form-input" value={serviceInvoiceContentTemplate} placeholder="e.g. Auto webhook thanh toan dich vu {service_name}" />
@@ -110,9 +123,14 @@ const { lang, isAdmin, defaultBank, defaultAccount, serviceInvoiceContentTemplat
         const bankSelect = document.getElementById('defaultBankSelect') as HTMLSelectElement;
         const accountInput = document.getElementById('defaultAccountInput') as HTMLInputElement;
         const templateInput = document.getElementById('webhookDescTemplateInput') as HTMLInputElement;
+        const limitInput = document.getElementById('sepaySyncLimitInput') as HTMLInputElement;
+        const daysInput = document.getElementById('sepaySyncDaysInput') as HTMLInputElement;
+        
         const bankVal = bankSelect ? bankSelect.value : 'MB';
         const accountVal = accountInput ? accountInput.value : '';
         const templateVal = templateInput ? templateInput.value : '';
+        const limitVal = limitInput ? limitInput.value : '50';
+        const daysVal = daysInput ? daysInput.value : '7';
 
         // Save defaultBank
         const bankRes = await fetch('/api/crm/config', {
@@ -129,6 +147,22 @@ const { lang, isAdmin, defaultBank, defaultAccount, serviceInvoiceContentTemplat
           body: JSON.stringify({ key: 'defaultAccount', value: accountVal })
         });
         if (!accountRes.ok) throw new Error('Bank account number configuration failed');
+
+        // Save sepaySyncLimit
+        const limitRes = await fetch('/api/crm/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'sepaySyncLimit', value: limitVal })
+        });
+        if (!limitRes.ok) throw new Error('Sync limit configuration failed');
+
+        // Save sepaySyncDays
+        const daysRes = await fetch('/api/crm/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: 'sepaySyncDays', value: daysVal })
+        });
+        if (!daysRes.ok) throw new Error('Sync history days configuration failed');
 
         // Save serviceInvoiceContentTemplate
         const templateRes = await fetch('/api/crm/config', {
