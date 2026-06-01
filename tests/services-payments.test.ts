@@ -13,6 +13,8 @@ import {
 import { customers, staff, payments, invoices, customerServices, services, users } from '@/lib/db/schema';
 import { createSessionCookie } from '@/lib/auth';
 import { POST as createInvoiceHandler } from '@/pages/api/crm/payments/create-invoice';
+import { GET as getServicesHandler, POST as createServiceHandler } from '@/pages/api/crm/services/index';
+import { PUT as updateServiceHandler, DELETE as deleteServiceHandler } from '@/pages/api/crm/services/[id]';
 
 describe('Services Manager CRUD Logic', () => {
   beforeAll(async () => {
@@ -390,5 +392,153 @@ describe('Late Association API Endpoint - Integration Tests', () => {
     const inv = await db.select().from(invoices).where(eq(invoices.id, data.invoiceId)).get();
     expect(inv.status).toBe('paid');
     expect(inv.paymentId).toBe(paymentId);
+  });
+});
+
+describe('Services CRUD API Endpoints - Integration Tests', () => {
+  const SESSION_SECRET = 'fallback-secret-key-must-be-at-least-32-chars-long';
+  let adminToken: string;
+  let staffToken: string;
+  let salerToken: string;
+
+  beforeAll(async () => {
+    process.env.SESSION_SECRET = SESSION_SECRET;
+    adminToken = await createSessionCookie({
+      id: 'usr-admin-srv',
+      username: 'adminsrv',
+      role: 'admin',
+      createdAt: Date.now()
+    }, SESSION_SECRET);
+
+    staffToken = await createSessionCookie({
+      id: 'usr-accountant-srv',
+      username: 'accountantsrv',
+      role: 'accountant',
+      createdAt: Date.now()
+    }, SESSION_SECRET);
+
+    salerToken = await createSessionCookie({
+      id: 'usr-saler-srv',
+      username: 'salersrv',
+      role: 'saler',
+      createdAt: Date.now()
+    }, SESSION_SECRET);
+  });
+
+  function createMockContext(method: string, pathUrl: string, body?: any, token?: string, params?: any) {
+    const cookiesMap = new Map();
+    if (token) {
+      cookiesMap.set('session', { value: token });
+    }
+    const request = new Request(`http://localhost${pathUrl}`, {
+      method,
+      body: body ? JSON.stringify(body) : undefined,
+      headers: { 'Content-Type': 'application/json' }
+    });
+    return {
+      request,
+      url: new URL(request.url),
+      cookies: cookiesMap,
+      params: params || {},
+      locals: {
+        runtime: { env: { SESSION_SECRET } }
+      }
+    } as any;
+  }
+
+  it('should return 401 Unauthorized if user session cookie is missing', async () => {
+    // Test GET /api/crm/services
+    const getContext = createMockContext('GET', '/api/crm/services');
+    const getRes = await getServicesHandler(getContext);
+    expect(getRes.status).toBe(401);
+
+    // Test POST /api/crm/services
+    const postContext = createMockContext('POST', '/api/crm/services', { name: 'S1', price: 100 });
+    const postRes = await createServiceHandler(postContext);
+    expect(postRes.status).toBe(401);
+
+    // Test PUT /api/crm/services/some-id
+    const putContext = createMockContext('PUT', '/api/crm/services/some-id', { price: 200 }, undefined, { id: 'some-id' });
+    const putRes = await updateServiceHandler(putContext);
+    expect(putRes.status).toBe(401);
+
+    // Test DELETE /api/crm/services/some-id
+    const deleteContext = createMockContext('DELETE', '/api/crm/services/some-id', undefined, undefined, { id: 'some-id' });
+    const deleteRes = await deleteServiceHandler(deleteContext);
+    expect(deleteRes.status).toBe(401);
+  });
+
+  it('should return 403 Forbidden for writing operations if user is saler', async () => {
+    // Test POST
+    const postContext = createMockContext('POST', '/api/crm/services', { name: 'S1', price: 100 }, salerToken);
+    const postRes = await createServiceHandler(postContext);
+    expect(postRes.status).toBe(403);
+
+    // Test PUT
+    const putContext = createMockContext('PUT', '/api/crm/services/some-id', { price: 200 }, salerToken, { id: 'some-id' });
+    const putRes = await updateServiceHandler(putContext);
+    expect(putRes.status).toBe(403);
+
+    // Test DELETE
+    const deleteContext = createMockContext('DELETE', '/api/crm/services/some-id', undefined, salerToken, { id: 'some-id' });
+    const deleteRes = await deleteServiceHandler(deleteContext);
+    expect(deleteRes.status).toBe(403);
+  });
+
+  it('should allow saler to GET services list', async () => {
+    const getContext = createMockContext('GET', '/api/crm/services', undefined, salerToken);
+    const getRes = await getServicesHandler(getContext);
+    expect(getRes.status).toBe(200);
+    const list = await getRes.json();
+    expect(Array.isArray(list)).toBe(true);
+  });
+
+  it('should allow admin/accountant to perform CRUD on services', async () => {
+    const db = getDb();
+
+    // 1. Create Service via POST (Admin)
+    const postBody = {
+      name: 'API Cloud Service',
+      price: 500000,
+      billingCycle: 30,
+      prefix: 'APICLOUD'
+    };
+    const postContext = createMockContext('POST', '/api/crm/services', postBody, adminToken);
+    const postRes = await createServiceHandler(postContext);
+    expect(postRes.status).toBe(201);
+    
+    const createdService = await postRes.json();
+    expect(createdService.id).toBeDefined();
+    expect(createdService.name).toBe('API Cloud Service');
+    expect(createdService.price).toBe(500000);
+
+    // 2. Read Services list via GET (Saler is allowed too)
+    const getContext = createMockContext('GET', '/api/crm/services', undefined, salerToken);
+    const getRes = await getServicesHandler(getContext);
+    expect(getRes.status).toBe(200);
+    const servicesList = await getRes.json();
+    const found = servicesList.find((s: any) => s.id === createdService.id);
+    expect(found).toBeDefined();
+    expect(found.prefix).toBe('APICLOUD');
+
+    // 3. Update Service via PUT (Accountant)
+    const putBody = {
+      price: 600000,
+      status: 'active'
+    };
+    const putContext = createMockContext('PUT', `/api/crm/services/${createdService.id}`, putBody, staffToken, { id: createdService.id });
+    const putRes = await updateServiceHandler(putContext);
+    expect(putRes.status).toBe(200);
+    const updatedService = await putRes.json();
+    expect(updatedService.price).toBe(600000);
+
+    // 4. Delete Service via DELETE (Admin)
+    const deleteContext = createMockContext('DELETE', `/api/crm/services/${createdService.id}`, undefined, adminToken, { id: createdService.id });
+    const deleteRes = await deleteServiceHandler(deleteContext);
+    expect(deleteRes.status).toBe(200);
+
+    // 5. Verify it is deleted from DB
+    const checkDb = await db.select().from(services).where(eq(services.id, createdService.id)).get();
+    expect(checkDb).toBeUndefined();
   });
 });
