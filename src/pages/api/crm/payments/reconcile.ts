@@ -1,3 +1,4 @@
+// @para-doc [operations-guide.md#4-doi-soat--gan-go-hoa-don-bang-tay-manual-reconciliations]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -5,6 +6,7 @@ import { payments, invoices } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 
+// @para-doc [operations-guide.md#4-doi-soat--gan-go-hoa-don-bang-tay-manual-reconciliations]
 export const POST: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions
@@ -93,6 +95,7 @@ export const POST: APIRoute = async (context) => {
   }
 };
 
+// @para-doc [operations-guide.md#4-doi-soat--gan-go-hoa-don-bang-tay-manual-reconciliations]
 export const DELETE: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions

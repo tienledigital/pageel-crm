@@ -1,3 +1,4 @@
+// @para-doc [sepay-integration.md#2-ghi-nhan-giao-dich-reconciliation-logic]
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { reconcilePayment } from '@/lib/reconciliation';
@@ -5,6 +6,7 @@ import { config } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { logDebug } from '@/lib/debug-logger';
 
+// @para-doc [sepay-integration.md#2-cau-hinh-quet-giao-dich-chu-dong-sync-api]
 export async function POST(context: any) {
   // 1. Verify authentication & authorization
   const user = context.locals.user;

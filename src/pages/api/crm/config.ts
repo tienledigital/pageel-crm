@@ -1,3 +1,4 @@
+// @para-doc [api-contracts.md#system-configuration]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -7,6 +8,7 @@ import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { logDebug } from '@/lib/debug-logger';
 
+// @para-doc [administration-guide.md#2-co-cau-quy-tac-doi-soat--phan-loai-giao-dich-dong-rules-configuration]
 export const POST: APIRoute = async (context) => {
   let db: any = null;
   let requestBody: any = null;

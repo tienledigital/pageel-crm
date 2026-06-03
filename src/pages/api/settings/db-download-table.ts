@@ -1,3 +1,4 @@
+// @para-doc [administration-guide.md#5-bao-tri-co-so-du-lieu--giai-phong-dung-luong-database-maintenance]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -6,6 +7,7 @@ import { syncLogs, auditLogs, debugLogs } from '@/lib/db/schema';
 import { desc } from 'drizzle-orm';
 import { logAudit } from '@/lib/audit';
 
+// @para-doc [administration-guide.md#5-bao-tri-co-so-du-lieu--giai-phong-dung-luong-database-maintenance]
 export const GET: APIRoute = async (context) => {
   const sessionCookie = context.cookies.get('session')?.value;
   const sessionSecret = getSessionSecret();

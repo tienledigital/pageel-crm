@@ -1,5 +1,7 @@
+// @para-doc [spec.md#relational-database]
 import type { Invoice } from '../types';
 
+// @para-doc [spec.md#relational-database]
 export interface IInvoiceRepository {
   findById(id: string): Promise<Invoice | null>;
   findByInvoiceNumber(invoiceNumber: string): Promise<Invoice | null>;

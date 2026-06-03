@@ -1,3 +1,4 @@
+// @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
 import type { APIContext } from 'astro';
 import { getDb } from '@/lib/db';
 import { payments, customers, invoices } from '@/lib/db/schema';
@@ -5,7 +6,19 @@ import { eq, and, gte, lte, isNotNull } from 'drizzle-orm';
 import { env } from 'cloudflare:workers';
 import JSZip from 'jszip';
 import { generateS1a, exportYearlyS1aZip, type ExportPayment } from '@/lib/reports/excelGenerator';
+import { TEMPLATE_BASE64 } from '@/lib/reports/excelTemplateBase64';
 
+// Lazy Singleton Cache for Excel template in RAM
+let cachedTemplateBuffer: ArrayBuffer | null = null;
+const getTemplateBuffer = (): ArrayBuffer => {
+  if (!cachedTemplateBuffer) {
+    const buffer = Buffer.from(TEMPLATE_BASE64, 'base64');
+    cachedTemplateBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
+  }
+  return cachedTemplateBuffer;
+};
+
+// @para-doc [tax-reporting-spec.md#zip]
 export const GET = async (context: APIContext): Promise<Response> => {
   try {
     // 1. Verify user session and permissions
@@ -48,19 +61,7 @@ export const GET = async (context: APIContext): Promise<Response> => {
     // 3. Load template file
     let templateBuffer: ArrayBuffer;
     try {
-      const templateSubpath = '/templates/S1a-HKD-excel.xlsx';
-      if (process.env.NODE_ENV === 'test') {
-        const fs = await import('fs');
-        const path = await import('path');
-        const filePath = path.join(process.cwd(), 'public/templates/S1a-HKD-excel.xlsx');
-        const buffer = fs.readFileSync(filePath);
-        templateBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
-      } else {
-        const templateUrl = new URL(templateSubpath, context.url);
-        const res = await fetch(templateUrl);
-        if (!res.ok) throw new Error(`Template not found at ${templateUrl}`);
-        templateBuffer = await res.arrayBuffer();
-      }
+      templateBuffer = getTemplateBuffer();
     } catch (e: any) {
       return new Response(JSON.stringify({ error: 'Failed to load template', ...(import.meta.env.DEV && { details: e.message }) }), {
         status: 500,

@@ -1,3 +1,4 @@
+// @para-doc [api-contracts.md#customer-management]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -6,6 +7,7 @@ import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { eq } from 'drizzle-orm';
 
+// @para-doc [db-schema.md#2-bang-customers-danh-muc-khach-hang]
 export const PUT: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions

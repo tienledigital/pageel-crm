@@ -1,9 +1,11 @@
+// @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
 import type { APIContext } from 'astro';
 import { getDb } from '@/lib/db';
 import { payments, customers, invoices } from '@/lib/db/schema';
 import { eq, and, gte, lte, isNotNull } from 'drizzle-orm';
 import { env } from 'cloudflare:workers';
 
+// @para-doc [tax-reporting-spec.md#zip]
 export const GET = async (context: APIContext): Promise<Response> => {
   try {
     // 1. Verify user session and permissions

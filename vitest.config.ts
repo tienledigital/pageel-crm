@@ -1,3 +1,4 @@
+// @para-doc [qa-testing-guide.md#testing-architecture-overview]
 import { defineConfig } from 'vitest/config';
 import path from 'path';
 

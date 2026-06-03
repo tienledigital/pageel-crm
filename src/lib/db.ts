@@ -1,3 +1,4 @@
+// @para-doc [spec.md#relational-database]
 import { drizzle as drizzleD1 } from 'drizzle-orm/d1';
 import { drizzle as drizzleSqlite } from 'drizzle-orm/better-sqlite3';
 import Database from 'better-sqlite3';
@@ -5,6 +6,7 @@ import * as schema from './db/schema';
 
 let sqliteDb: any = null;
 
+// @para-doc [development-guide.md#database]
 export function getDb(platformEnv?: { DB: any }) {
   // 1. Testing environment
   if (process.env.NODE_ENV === 'test') {

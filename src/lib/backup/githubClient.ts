@@ -1,5 +1,7 @@
+// @para-doc [operations-guide.md#5-huong-dan-khoi-phuc-du-lieu-database-disaster-recovery]
 import { users, staff, customers, invoices, payments, config } from '../db/schema';
 
+// @para-doc [operations-guide.md#5-huong-dan-khoi-phuc-du-lieu-database-disaster-recovery]
 export interface BackupParams {
   token: string;
   owner: string;
@@ -13,6 +15,7 @@ export interface BackupParams {
 /**
  * Export all relevant tables to a minified JSON string.
  */
+// @para-doc [infrastructure.md#3-kien-truc-sao-luu-du-lieu-qua-github-api-github-backup-pipeline]
 export async function exportDatabaseToJson(db: any): Promise<string> {
   const allUsers = await db.select().from(users);
   const allStaff = await db.select().from(staff);
@@ -35,6 +38,7 @@ export async function exportDatabaseToJson(db: any): Promise<string> {
  * Push file content directly to GitHub repo using Git Database low-level API.
  * Uses a 5-step process: GET ref, POST blob, POST tree, POST commit, PATCH ref.
  */
+// @para-doc [infrastructure.md#3-kien-truc-sao-luu-du-lieu-qua-github-api-github-backup-pipeline]
 export async function pushBackupToGit(params: BackupParams): Promise<string> {
   const { token, owner, repo, branch, filePath, content, commitMessage } = params;
 
@@ -188,6 +192,7 @@ export async function pushBackupToGit(params: BackupParams): Promise<string> {
  * Fetch backup files list from GitHub repository.
  * Returns array of files in the backups/ folder.
  */
+// @para-doc [infrastructure.md#3-kien-truc-sao-luu-du-lieu-qua-github-api-github-backup-pipeline]
 export async function listBackupsFromGit(params: {
   token: string;
   owner: string;
@@ -230,6 +235,7 @@ export async function listBackupsFromGit(params: {
 /**
  * Fetch a specific backup file's content from GitHub.
  */
+// @para-doc [operations-guide.md#5-huong-dan-khoi-phuc-du-lieu-database-disaster-recovery]
 export async function fetchBackupContent(params: {
   token: string;
   downloadUrl: string;

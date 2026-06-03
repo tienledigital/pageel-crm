@@ -1,3 +1,4 @@
+// @para-doc [administration-guide.md#3-phan-quyen-nguoi-dung--crud-quan-tri-user-management]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -7,6 +8,7 @@ import { verifySessionCookie, hashPassword, getSessionSecret } from '@/lib/auth'
 import { logAudit } from '@/lib/audit';
 import { logDebug } from '@/lib/debug-logger';
 
+// @para-doc [administration-guide.md#3-phan-quyen-nguoi-dung--crud-quan-tri-user-management]
 export const GET: APIRoute = async (context) => {
   let db: any = null;
   try {
@@ -65,6 +67,7 @@ export const GET: APIRoute = async (context) => {
   }
 };
 
+// @para-doc [administration-guide.md#3-phan-quyen-nguoi-dung--crud-quan-tri-user-management]
 export const POST: APIRoute = async (context) => {
   let db: any = null;
   let requestBody: any = null;

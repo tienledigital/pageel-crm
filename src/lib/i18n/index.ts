@@ -1,3 +1,4 @@
+// @para-doc [spec.md#i18n]
 import viTranslations from './vi.json';
 import enTranslations from './en.json';
 
@@ -6,6 +7,7 @@ const translations: Record<string, any> = {
   en: enTranslations,
 };
 
+// @para-doc [spec.md#i18n]
 export function t(key: string, lang: 'vi' | 'en' = 'vi'): string {
   const currentLang = translations[lang] ? lang : 'vi';
   const dict = translations[currentLang];

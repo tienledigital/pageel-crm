@@ -1,3 +1,4 @@
+// @para-doc [api-contracts.md#late-association]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -6,6 +7,7 @@ import { createInvoiceFromPayment } from '@/lib/services/serviceManager';
 import { eq } from 'drizzle-orm';
 import { staff } from '@/lib/db/schema';
 
+// @para-doc [services-payments-spec.md#b-co-che-doi-soat--xu-ly-thanh-toan-thieu-underpayment]
 export const POST: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions

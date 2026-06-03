@@ -1,3 +1,4 @@
+// @para-doc [operations-guide.md#5-huong-dan-khoi-phuc-du-lieu-database-disaster-recovery]
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { fetchBackupContent } from '@/lib/backup/githubClient';
@@ -5,6 +6,7 @@ import { users, staff, customers, invoices, payments, config, syncLogs } from '@
 import { logDebug } from '@/lib/debug-logger';
 import { eq } from 'drizzle-orm';
 
+// @para-doc [operations-guide.md#5-huong-dan-khoi-phuc-du-lieu-database-disaster-recovery]
 export async function POST(context: any) {
   // 1. Verify authentication & authorization
   const user = context.locals.user;
