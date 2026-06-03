@@ -9,7 +9,11 @@ export default defineConfig({
   adapter: cloudflare(),
   vite: {
     ssr: {
-      external: ['better-sqlite3', '@libsql/client']
+      external: ['better-sqlite3', '@libsql/client'],
+      noExternal: ['exceljs', 'jszip'],
+      optimizeDeps: {
+        include: ['exceljs', 'jszip']
+      }
     }
   }
 });
