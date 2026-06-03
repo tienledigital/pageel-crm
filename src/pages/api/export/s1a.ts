@@ -184,11 +184,7 @@ export const GET = async (context: APIContext): Promise<Response> => {
     return new Response(zipArrayBuffer, { status: 200, headers });
 
   } catch (err: any) {
-    return new Response(JSON.stringify({ 
-      error: 'Internal Server Error', 
-      details: err.message,
-      stack: err.stack
-    }), {
+    return new Response(JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: err.message }) }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });

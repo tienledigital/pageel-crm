@@ -18,15 +18,6 @@ export interface ExportPayment {
   } | null;
 }
 
-// @para-doc [tax-reporting-spec.md#remove-accents]
-const removeAccents = (str: string): string => {
-  return str
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D');
-};
-
 // @para-doc [tax-reporting-spec.md#sanitize-formula]
 const sanitizeFormula = (value: string | null | undefined): string => {
   if (!value) return '';
@@ -41,14 +32,14 @@ const sanitizeFormula = (value: string | null | undefined): string => {
 const getPaymentDescription = (payment: ExportPayment): string => {
   if (payment.customer) {
     const id = payment.customer.id;
-    const name = removeAccents(payment.customer.fullName);
-    const service = payment.invoice ? removeAccents(payment.invoice.content) : 'TT GIA HAN';
+    const name = payment.customer.fullName;
+    const service = payment.invoice ? payment.invoice.content : 'TT GIA HAN';
     return `${id} - ${name} - ${service}`;
   }
   if (payment.invoice) {
-    return `INVOICE ${payment.invoice.invoiceNumber} - ${removeAccents(payment.invoice.content)}`;
+    return `INVOICE ${payment.invoice.invoiceNumber} - ${payment.invoice.content}`;
   }
-  return payment.content ? removeAccents(payment.content) : 'KHACH VANG LAI - THANH TOAN';
+  return payment.content ? payment.content : 'KHACH VANG LAI - THANH TOAN';
 };
 
 /**
