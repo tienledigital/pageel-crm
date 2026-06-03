@@ -78,7 +78,8 @@ const loadExcelJS = async () => {
       }
     }
   }
-  const ExcelJS = await import('exceljs');
+  // @ts-ignore
+  const ExcelJS = await import('exceljs/dist/exceljs.bare.js');
   return (ExcelJS as any).default || ExcelJS;
 };
 
