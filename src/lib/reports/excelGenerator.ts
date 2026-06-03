@@ -1,6 +1,4 @@
 // @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
-import './polyfillUmask';
-import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 
 // @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
@@ -53,8 +51,40 @@ const getPaymentDescription = (payment: ExportPayment): string => {
   return payment.content ? removeAccents(payment.content) : 'KHACH VANG LAI - THANH TOAN';
 };
 
+/**
+ * Lazily load ExcelJS with process.umask polyfill.
+ * ExcelJS calls process.umask() during module initialization which fails
+ * in Cloudflare Workers / unenv runtime. By using dynamic import, the module
+ * is only loaded when actually needed (at request time), not during SSR route
+ * resolution. The polyfill is applied right before import.
+ */
+// @para-doc [infrastructure.md#exceljs]
+const loadExcelJS = async () => {
+  // Polyfill process.umask before ExcelJS module initialization
+  if (typeof process !== 'undefined') {
+    try {
+      // Use Object.defineProperty to override unenv's read-only getter for process.umask
+      Object.defineProperty(process, 'umask', {
+        value: () => 0o022,
+        writable: true,
+        configurable: true,
+      });
+    } catch (e) {
+      // Fallback to direct assignment if defineProperty fails
+      try {
+        (process as any).umask = () => 0o022;
+      } catch (err) {
+        // Ignore if completely frozen
+      }
+    }
+  }
+  const ExcelJS = await import('exceljs');
+  return ExcelJS.default;
+};
+
 // @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
 export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportPayment[]): Promise<ArrayBuffer> => {
+  const ExcelJS = await loadExcelJS();
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(templateBuffer);
   
