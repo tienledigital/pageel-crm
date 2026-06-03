@@ -9,7 +9,7 @@
   <p>Bộ máy quản lý tài chính và hóa đơn tự vận hành tối ưu cho hộ kinh doanh Việt Nam.</p>
 
   [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
-  [![Version](https://img.shields.io/badge/Version-v0.9.0-blue.svg)](../../CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/Version-v0.9.1-blue.svg)](../../CHANGELOG.md)
   ![Status](https://img.shields.io/badge/Status-Beta-orange.svg)
   [![Built with Astro](https://img.shields.io/badge/Built%20with-Astro-BC52EE.svg?logo=astro&logoColor=white)](https://astro.build)
 
@@ -128,7 +128,7 @@ Khi khởi chạy cục bộ bằng `npm run dev` hoặc `npm run dev:cf`, ứng
 
 ## 🚀 Triển khai hệ thống (Deployment)
 
-Để xem hướng dẫn chi tiết từng bước triển khai ứng dụng lên Cloudflare Workers (kèm D1 Database, KV Namespace) và thiết lập tài khoản Admin ban đầu bảo mật, vui lòng tham khảo [Hướng dẫn Triển khai Hệ thống](guides/deployment-guide.md).
+Để xem hướng dẫn chi tiết từng bước triển khai ứng dụng lên Cloudflare Workers (kèm D1 Database, KV Namespace) và thiết lập tài khoản Admin ban đầu bảo mật, vui lòng tham khảo [Hướng dẫn Triển khai Hệ thống](../../../docs/guides/deployment-guide.md).
 
 ---
 

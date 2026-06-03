@@ -1,9 +1,12 @@
+// @para-doc [auth-spec.md#42-gioi-han-tan-suat-dang-nhap-bang-kv-kv-based-rate-limiting]
 export interface RateLimitResult {
   allowed: boolean;
   remaining: number;
   retryAfterSeconds?: number;
 }
 
+// @para-doc [auth-spec.md#42-gioi-han-tan-suat-dang-nhap-bang-kv-kv-based-rate-limiting]
+// @para-doc [infrastructure.md#23-cloudflare-kv-gioi-han-tan-suat-dang-nhap]
 export async function checkRateLimit(
   kv: any,
   ip: string,

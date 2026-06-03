@@ -1,5 +1,7 @@
+// @para-doc [spec.md#i18n]
 import type { APIContext } from 'astro';
 
+// @para-doc [spec.md#i18n]
 export async function POST(context: APIContext): Promise<Response> {
   // 1. Check authentication (reusing context.locals.user injected by middleware)
   const user = context.locals.user;

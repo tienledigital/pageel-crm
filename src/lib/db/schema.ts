@@ -1,3 +1,4 @@
+// @para-doc [spec.md#relational-database]
 import { sqliteTable, text, integer, index } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 

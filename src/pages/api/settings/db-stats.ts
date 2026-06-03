@@ -1,3 +1,4 @@
+// @para-doc [administration-guide.md#5-bao-tri-co-so-du-lieu--giai-phong-dung-luong-database-maintenance]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -15,6 +16,7 @@ import {
   debugLogs
 } from '@/lib/db/schema';
 
+// @para-doc [administration-guide.md#5-bao-tri-co-so-du-lieu--giai-phong-dung-luong-database-maintenance]
 export const GET: APIRoute = async (context) => {
   try {
     const sessionCookie = context.cookies.get('session')?.value;

@@ -1,3 +1,4 @@
+// @para-doc [administration-guide.md#system-logs]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -6,6 +7,7 @@ import { eq, and, desc, count } from 'drizzle-orm';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { logDebug } from '@/lib/debug-logger';
 
+// @para-doc [administration-guide.md#41-nhat-ky-kiem-toan-audit-logs]
 export const GET: APIRoute = async (context) => {
   let db: any = null;
   try {

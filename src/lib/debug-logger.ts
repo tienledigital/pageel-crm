@@ -1,5 +1,7 @@
+// @para-doc [administration-guide.md#system-logs]
 import { debugLogs } from '@/lib/db/schema';
 
+// @para-doc [administration-guide.md#system-logs]
 export interface DebugLogPayload {
   level?: 'error' | 'warn' | 'info' | 'debug';
   endpoint?: string | null;
@@ -13,6 +15,7 @@ export interface DebugLogPayload {
 /**
  * Sanitizes request payload by removing sensitive credentials recursively
  */
+// @para-doc [administration-guide.md#debug-logs]
 function sanitizeRequestBody(body: any): any {
   if (!body) return body;
   if (typeof body !== 'object') return body;
@@ -40,6 +43,7 @@ function sanitizeRequestBody(body: any): any {
 /**
  * Scrubs tokens, keys, and authorization headers from error messages and stack traces
  */
+// @para-doc [administration-guide.md#debug-logs]
 function scrubSensitiveText(text: string | null | undefined): string | null {
   if (!text) return null;
 
@@ -58,6 +62,7 @@ function scrubSensitiveText(text: string | null | undefined): string | null {
 /**
  * Logs a debugging event or exception to the database
  */
+// @para-doc [administration-guide.md#debug-logs]
 export async function logDebug(
   db: any,
   payload: DebugLogPayload

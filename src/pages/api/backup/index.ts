@@ -1,9 +1,11 @@
+// @para-doc [operations-guide.md#5-huong-dan-khoi-phuc-du-lieu-database-disaster-recovery]
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { exportDatabaseToJson, pushBackupToGit, listBackupsFromGit } from '@/lib/backup/githubClient';
 import { syncLogs } from '@/lib/db/schema';
 import { logDebug } from '@/lib/debug-logger';
 
+// @para-doc [infrastructure.md#3-kien-truc-sao-luu-du-lieu-qua-github-api-github-backup-pipeline]
 export async function POST(context: any) {
   // 1. Verify authentication & authorization
   const user = context.locals.user;
@@ -99,6 +101,7 @@ export async function POST(context: any) {
   }
 }
 
+// @para-doc [operations-guide.md#5-huong-dan-khoi-phuc-du-lieu-database-disaster-recovery]
 export async function GET(context: any) {
   // 1. Verify authentication & authorization
   const user = context.locals.user;
@@ -146,6 +149,7 @@ export async function GET(context: any) {
   }
 }
 
+// @para-doc [operations-guide.md#5-huong-dan-khoi-phuc-du-lieu-database-disaster-recovery]
 function sanitizeError(error: any): string {
   if (!error) return 'Unknown error';
   let message = error.message || String(error);

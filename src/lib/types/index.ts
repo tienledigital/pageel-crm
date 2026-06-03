@@ -1,3 +1,4 @@
+// @para-doc [spec.md#relational-database]
 import type { InferSelectModel, InferInsertModel } from 'drizzle-orm';
 import * as schema from '../db/schema';
 

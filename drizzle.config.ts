@@ -1,3 +1,4 @@
+// @para-doc [spec.md#relational-database]
 import { defineConfig } from 'drizzle-kit';
 
 export default defineConfig({

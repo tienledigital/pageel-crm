@@ -1,6 +1,25 @@
+---
+title: "changelog"
+order: 1
+---
 # Changelog
 
 All notable changes to this project will be documented in this file.
+
+## [0.9.1] - 2026-06-03
+
+### Added
+- **Dynamic SePay Sync Config**: Added advanced sync modal and split button on CRM payments dashboard.
+- **Upfront SSR Optimization**: Excluded `exceljs` and `jszip` from Vite SSR optimization, resolving `require is not defined` and lazy pre-bundling crashes.
+
+### Fixed
+- **Cloudflare Workers Excel template error**: Inline template xlsx to base64 code (`excelTemplateBase64.ts`) and cached ArrayBuffer in RAM via Lazy Singleton, resolving "Failed to load template" on production.
+- **Umask Polyfill**: Patched process.umask using `polyfillUmask.ts` loaded statically before ExcelJS initialization.
+
+## [0.9.0] - 2026-06-01
+
+### Added
+- **Services & Late Association**: Added product/service catalog management, manual transaction association (Late Association) for unmatched payments.
 
 ## [0.8.1] - 2026-05-27
 

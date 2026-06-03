@@ -9,6 +9,24 @@ import { customers, invoices, payments } from '../src/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
+import crypto from 'crypto';
+import { TEMPLATE_BASE64, TEMPLATE_SHA256 } from '../src/lib/reports/excelTemplateBase64';
+
+describe('Excel Template Base64 Integrity', () => {
+  it('should match the SHA-256 hash of the static excel template file', () => {
+    const staticPath = path.join(__dirname, '../public/templates/S1a-HKD-excel.xlsx');
+    const staticBuffer = fs.readFileSync(staticPath);
+    const staticHash = crypto.createHash('sha256').update(staticBuffer).digest('hex');
+
+    // Decode the Base64 string to buffer and hash it
+    const inlineBuffer = Buffer.from(TEMPLATE_BASE64, 'base64');
+    const inlineHash = crypto.createHash('sha256').update(inlineBuffer).digest('hex');
+
+    expect(TEMPLATE_SHA256).toBe(staticHash);
+    expect(inlineHash).toBe(staticHash);
+    expect(TEMPLATE_BASE64.length).toBeGreaterThan(0);
+  });
+});
 
 const getTemplateBuffer = (): ArrayBuffer => {
   const filePath = path.join(__dirname, '../public/templates/S1a-HKD-excel.xlsx');

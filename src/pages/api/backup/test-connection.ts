@@ -1,5 +1,6 @@
 import { env } from 'cloudflare:workers';
 
+// @para-doc [operations-guide.md#5-huong-dan-khoi-phuc-du-lieu-database-disaster-recovery]
 export async function POST(context: any) {
   // 1. Verify authentication & authorization
   const user = context.locals.user;
@@ -103,6 +104,7 @@ export async function POST(context: any) {
   }
 }
 
+// @para-doc [operations-guide.md#5-huong-dan-khoi-phuc-du-lieu-database-disaster-recovery]
 function sanitizeError(error: any): string {
   if (!error) return 'Unknown error';
   let message = error.message || String(error);

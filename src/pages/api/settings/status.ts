@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 
+// @para-doc [administration-guide.md#5-bao-tri-co-so-du-lieu--giai-phong-dung-luong-database-maintenance]
 export const GET: APIRoute = async (context) => {
   try {
     const sessionCookie = context.cookies.get('session')?.value;

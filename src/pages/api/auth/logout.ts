@@ -1,5 +1,7 @@
+// @para-doc [auth-spec.md#32-dang-xuat-post-apiauthlogout]
 import type { APIRoute } from 'astro';
 
+// @para-doc [auth-spec.md#32-dang-xuat-post-apiauthlogout]
 export const POST: APIRoute = async (context) => {
   context.cookies.delete('session', {
     path: '/',

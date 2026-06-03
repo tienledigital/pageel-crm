@@ -1,3 +1,4 @@
+// @para-doc [sepay-integration.md#reconciliation-logic]
 import { eq, sql, and } from 'drizzle-orm';
 import { customers, payments, config, invoices, services, customerServices } from './db/schema';
 
@@ -5,6 +6,7 @@ import { customers, payments, config, invoices, services, customerServices } fro
  * Parses customer ID from payment transfer memo content.
  * Matches legacy format "AG1002 - ..." or new format "1005 - ...".
  */
+// @para-doc [sepay-integration.md#memo-parsing]
 export function parseCustomerIdFromMemo(memo: string): string | null {
   if (!memo) return null;
   const trimmed = memo.trim();
@@ -27,6 +29,7 @@ export function parseCustomerIdFromMemo(memo: string): string | null {
 /**
  * Scans transaction memo content to automatically match any existing customer ID.
  */
+// @para-doc [sepay-integration.md#memo-parsing]
 export async function autoMatchCustomer(db: any, content: string): Promise<string | null> {
   if (!content) return null;
   
@@ -67,6 +70,7 @@ export async function autoMatchCustomer(db: any, content: string): Promise<strin
 /**
  * Scans transaction memo content to automatically match any existing invoice number.
  */
+// @para-doc [sepay-integration.md#memo-parsing]
 export async function autoMatchInvoice(
   db: any,
   content: string
@@ -96,6 +100,36 @@ export async function autoMatchInvoice(
   return null;
 }
 
+/**
+ * Sums up all payments associated with a given invoice.
+ * If the sum of payments equals or exceeds the invoice amount, updates status to 'paid'.
+ */
+// @para-doc [sepay-integration.md#reconciliation-logic]
+export async function checkAndUnionPartialPayments(db: any, invoiceId: string): Promise<boolean> {
+  const invoice = await db.select().from(invoices).where(eq(invoices.id, invoiceId)).get();
+  if (!invoice) return false;
+
+  // Calculates sum(payments.amount) for the target invoice
+  const result = await db
+    .select({
+      total: sql<number>`sum(${payments.amount})`
+    })
+    .from(payments)
+    .where(eq(payments.invoiceId, invoiceId))
+    .get();
+
+  const totalPaid = result?.total || 0;
+  if (totalPaid >= invoice.amount) {
+    await db
+      .update(invoices)
+      .set({ status: 'paid' })
+      .where(eq(invoices.id, invoiceId));
+    return true;
+  }
+  return false;
+}
+
+// @para-doc [sepay-integration.md#reconciliation-logic]
 export interface ReconcileResult {
   success: boolean;
   message: string;
@@ -106,6 +140,7 @@ export interface ReconcileResult {
  * Reconciles a bank payment transaction.
  * Creates a payment entry and extends service duration if customer is matched.
  */
+// @para-doc [sepay-integration.md#reconciliation-logic]
 export async function reconcilePayment(
   db: any,
   payment: {
@@ -366,12 +401,19 @@ export async function reconcilePayment(
       if (matchedInvoice) {
         const paidAmount = payment.amount;
         const invoiceAmount = matchedInvoice.amount;
-        const status = paidAmount >= invoiceAmount ? 'paid' : 'partially_paid';
+        let status = paidAmount >= invoiceAmount ? 'paid' : 'partially_paid';
 
         await db
           .update(invoices)
           .set({ status, paidAt: payment.paidAt, paymentId: paymentRecordId })
           .where(eq(invoices.id, targetInvoiceId));
+
+        if (status === 'partially_paid') {
+          const isNowPaid = await checkAndUnionPartialPayments(db, targetInvoiceId);
+          if (isNowPaid) {
+            status = 'paid';
+          }
+        }
 
         // If pre-existing invoice has a serviceId, activate/extend it upon full payment
         if (matchedInvoice.serviceId && status === 'paid') {
@@ -563,6 +605,7 @@ export async function reconcilePayment(
 /**
  * Re-applies current rules to all existing payments that are unlinked or unclassified.
  */
+// @para-doc [sepay-integration.md#reconciliation-logic]
 export async function applyRulesToExistingPayments(db: any, rules: any[]): Promise<number> {
   const allExistingPayments = await db.select().from(payments);
   let updatedCount = 0;
@@ -641,10 +684,21 @@ export async function applyRulesToExistingPayments(db: any, rules: any[]): Promi
 
         // If invoice is newly linked, update invoice status
         if (targetInvoiceId && invoiceChanged) {
-          await db
-            .update(invoices)
-            .set({ status: 'paid', paidAt: payment.paidAt })
-            .where(eq(invoices.id, targetInvoiceId));
+          const invoice = await db.select().from(invoices).where(eq(invoices.id, targetInvoiceId)).get();
+          if (invoice) {
+            let status = payment.amount >= invoice.amount ? 'paid' : 'partially_paid';
+            await db
+              .update(invoices)
+              .set({ status, paidAt: payment.paidAt })
+              .where(eq(invoices.id, targetInvoiceId));
+
+            if (status === 'partially_paid') {
+              const isNowPaid = await checkAndUnionPartialPayments(db, targetInvoiceId);
+              if (isNowPaid) {
+                status = 'paid';
+              }
+            }
+          }
         }
 
         // If customer changed from anonymous to a real customer, and payment is income, extend expiredAt

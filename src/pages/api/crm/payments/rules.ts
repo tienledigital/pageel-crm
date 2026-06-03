@@ -1,3 +1,4 @@
+// @para-doc [sepay-integration.md#2-ghi-nhan-giao-dich-reconciliation-logic]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -6,6 +7,7 @@ import { eq } from 'drizzle-orm';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { applyRulesToExistingPayments } from '@/lib/reconciliation';
 
+// @para-doc [sepay-integration.md#2-ghi-nhan-giao-dich-reconciliation-logic]
 export const GET: APIRoute = async (context) => {
   try {
     const db = getDb(env);
@@ -24,6 +26,7 @@ export const GET: APIRoute = async (context) => {
   }
 };
 
+// @para-doc [api-contracts.md#102-luu-tru-quy-tac-phan-loai-giao-dich-va-hoi-to]
 export const POST: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions

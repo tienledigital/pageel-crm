@@ -1,5 +1,9 @@
+// @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
+import './polyfillUmask';
+import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
 
+// @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
 export interface ExportPayment {
   paidAt: number; // Unix timestamp in milliseconds
   amount: number;
@@ -16,6 +20,7 @@ export interface ExportPayment {
   } | null;
 }
 
+// @para-doc [tax-reporting-spec.md#remove-accents]
 const removeAccents = (str: string): string => {
   return str
     .normalize('NFD')
@@ -24,6 +29,7 @@ const removeAccents = (str: string): string => {
     .replace(/Đ/g, 'D');
 };
 
+// @para-doc [tax-reporting-spec.md#sanitize-formula]
 const sanitizeFormula = (value: string | null | undefined): string => {
   if (!value) return '';
   const firstChar = value.charAt(0);
@@ -33,6 +39,7 @@ const sanitizeFormula = (value: string | null | undefined): string => {
   return value;
 };
 
+// @para-doc [tax-reporting-spec.md#get-payment-description]
 const getPaymentDescription = (payment: ExportPayment): string => {
   if (payment.customer) {
     const id = payment.customer.id;
@@ -46,33 +53,8 @@ const getPaymentDescription = (payment: ExportPayment): string => {
   return payment.content ? removeAccents(payment.content) : 'KHACH VANG LAI - THANH TOAN';
 };
 
-/**
- * Lazily load ExcelJS with process.umask polyfill.
- * ExcelJS calls process.umask() during module initialization which fails
- * in Cloudflare Workers / unenv runtime. By using dynamic import, the module
- * is only loaded when actually needed (at request time), not during SSR route
- * resolution. The polyfill is applied right before import.
- */
-const loadExcelJS = async () => {
-  // Polyfill process.umask before ExcelJS module initialization
-  if (typeof process !== 'undefined') {
-    const origUmask = process.umask;
-    if (!origUmask || typeof origUmask !== 'function') {
-      (process as any).umask = () => 0o022;
-    } else {
-      try {
-        origUmask();
-      } catch {
-        (process as any).umask = () => 0o022;
-      }
-    }
-  }
-  const ExcelJS = await import('exceljs');
-  return ExcelJS.default;
-};
-
+// @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
 export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportPayment[]): Promise<ArrayBuffer> => {
-  const ExcelJS = await loadExcelJS();
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(templateBuffer);
   
@@ -198,6 +180,7 @@ export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportP
   return uint8Array.buffer.slice(uint8Array.byteOffset, uint8Array.byteOffset + uint8Array.byteLength) as ArrayBuffer;
 };
 
+// @para-doc [tax-reporting-spec.md#zip]
 export const exportYearlyS1aZip = async (
   payments: ExportPayment[],
   year: number,

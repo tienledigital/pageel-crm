@@ -1,3 +1,4 @@
+// @para-doc [auth-spec.md#session-cookie]
 import type { APIContext, MiddlewareNext } from 'astro';
 import { env } from 'cloudflare:workers';
 import { verifySessionCookie, getSessionSecret } from './lib/auth';
@@ -10,6 +11,7 @@ const PUBLIC_ROUTES = [
   '/api/webhook/sepay',
 ];
 
+// @para-doc [auth-spec.md#quy-trinh-ky-va-xac-thuc-hmac-signature-flow]
 export const onRequest = async (context: APIContext, next: MiddlewareNext) => {
   const { pathname } = context.url;
 

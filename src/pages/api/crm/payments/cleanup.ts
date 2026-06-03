@@ -1,3 +1,4 @@
+// @para-doc [operations-guide.md#4-doi-soat--gan-go-hoa-don-bang-tay-manual-reconciliations]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -5,6 +6,7 @@ import { payments, invoices, config } from '@/lib/db/schema';
 import { eq, ne, and, isNotNull } from 'drizzle-orm';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 
+// @para-doc [api-contracts.md#103-don-dep-giao-dich-ngan-hang-khong-khop-so-tai-khoan-mac-dinh]
 export const POST: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions

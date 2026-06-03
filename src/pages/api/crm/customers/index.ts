@@ -1,9 +1,11 @@
+// @para-doc [api-contracts.md#customer-management]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { customers } from '@/lib/db/schema';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 
+// @para-doc [db-schema.md#2-bang-customers-danh-muc-khach-hang]
 export const POST: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions

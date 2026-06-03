@@ -1,5 +1,7 @@
+// @para-doc [administration-guide.md#system-logs]
 import { auditLogs } from '@/lib/db/schema';
 
+// @para-doc [administration-guide.md#system-logs]
 export interface AuditLogPayload {
   userId?: string | null;
   username?: string | null;
@@ -16,6 +18,7 @@ export interface AuditLogPayload {
 /**
  * Redacts sensitive fields (passwords, secrets, tokens) recursively in JSON objects
  */
+// @para-doc [administration-guide.md#41-nhat-ky-kiem-toan-audit-logs]
 function redactSensitive(data: any): any {
   if (!data) return data;
   if (typeof data !== 'object') return data;
@@ -43,6 +46,7 @@ function redactSensitive(data: any): any {
 /**
  * Inserts a new audit log record into the database
  */
+// @para-doc [administration-guide.md#41-nhat-ky-kiem-toan-audit-logs]
 export async function logAudit(
   db: any,
   payload: AuditLogPayload

@@ -1,6 +1,8 @@
+// @para-doc [services-payments-spec.md#project-structure]
 import { eq, and } from 'drizzle-orm';
 import { services, customerServices, invoices, payments, customers } from '@/lib/db/schema';
 
+// @para-doc [services-payments-spec.md#service-helpers]
 export interface CreateServiceParams {
   name: string;
   price: number;
@@ -9,6 +11,7 @@ export interface CreateServiceParams {
   description?: string;
 }
 
+// @para-doc [services-payments-spec.md#service-helpers]
 export interface UpdateServiceParams {
   name?: string;
   price?: number;
@@ -18,6 +21,7 @@ export interface UpdateServiceParams {
   description?: string;
 }
 
+// @para-doc [services-payments-spec.md#service-helpers]
 export async function createService(db: any, params: CreateServiceParams): Promise<any> {
   const id = crypto.randomUUID();
   const newService = {
@@ -34,11 +38,13 @@ export async function createService(db: any, params: CreateServiceParams): Promi
   return newService;
 }
 
+// @para-doc [services-payments-spec.md#service-helpers]
 export async function getService(db: any, id: string): Promise<any> {
   const result = await db.select().from(services).where(eq(services.id, id)).get();
   return result || null;
 }
 
+// @para-doc [services-payments-spec.md#service-helpers]
 export async function updateService(db: any, id: string, params: UpdateServiceParams): Promise<any> {
   const updateData: any = {};
   if (params.name !== undefined) updateData.name = params.name;
@@ -52,10 +58,12 @@ export async function updateService(db: any, id: string, params: UpdateServicePa
   return await getService(db, id);
 }
 
+// @para-doc [api-contracts.md#services-crud-apis]
 export async function listServices(db: any): Promise<any[]> {
   return await db.select().from(services).all();
 }
 
+// @para-doc [services-payments-spec.md#late-association]
 export interface CreateInvoiceFromPaymentParams {
   paymentId: string;
   customerId: string;
@@ -66,6 +74,7 @@ export interface CreateInvoiceFromPaymentParams {
   customPrice?: number;
 }
 
+// @para-doc [services-payments-spec.md#late-association]
 export async function createInvoiceFromPayment(
   db: any,
   params: CreateInvoiceFromPaymentParams
