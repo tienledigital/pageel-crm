@@ -79,7 +79,7 @@ const loadExcelJS = async () => {
     }
   }
   const ExcelJS = await import('exceljs');
-  return ExcelJS.default;
+  return (ExcelJS as any).default || ExcelJS;
 };
 
 // @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
@@ -176,7 +176,7 @@ export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportP
   for (let r = currentRow + 1; r <= currentRow + 30; r++) {
     const row = worksheet.getRow(r);
     let foundSignature = false;
-    row.eachCell({ includeEmpty: true }, (cell) => {
+    row.eachCell({ includeEmpty: true }, (cell: any) => {
       const val = cell.value?.toString() || '';
       if (val.includes('Ngày') && val.includes('tháng') && val.includes('năm')) {
         foundSignature = true;
