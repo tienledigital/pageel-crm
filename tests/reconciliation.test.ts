@@ -97,12 +97,35 @@ describe('Database Reconciliation Integration Tests', () => {
   });
 
   it('should successfully reconcile payment and extend service period for valid customer', async () => {
+    const { services: servicesTable, customerServices: customerServicesTable } = await import('@/lib/db/schema');
+    const serviceId = 'srv-legacy-1';
+    await db.insert(servicesTable).values({
+      id: serviceId,
+      name: 'Legacy Service 1',
+      price: 200000,
+      billingCycle: 60,
+      prefix: 'LEGACY1',
+      status: 'active',
+      createdAt: Date.now()
+    });
+
     const initialExpiredAt = Date.now() + 10 * 24 * 60 * 60 * 1000; // 10 days in future
 
-    // Set customer 1005 expiredAt to a future date to test cumulative extension
+    // Set customer 1005 expiredAt and default serviceId
     await db.update(customers)
-      .set({ expiredAt: initialExpiredAt })
+      .set({ expiredAt: initialExpiredAt, serviceId })
       .where(eq(customers.id, '1005'));
+
+    // Create an active customer service starting now and expiring at initialExpiredAt
+    await db.insert(customerServicesTable).values({
+      id: crypto.randomUUID(),
+      customerId: '1005',
+      serviceId,
+      status: 'active',
+      startDate: Date.now(),
+      expiredAt: initialExpiredAt,
+      createdAt: Date.now()
+    });
 
     const payment = {
       transactionId: 'TX10001',
@@ -128,10 +151,24 @@ describe('Database Reconciliation Integration Tests', () => {
     // Verify customer's expiredAt was updated
     // Extending 60 days (60 * 24 * 60 * 60 * 1000 = 5184000000 ms) from initialExpiredAt
     const updatedCustomer = await db.select().from(customers).where(eq(customers.id, '1005'));
-    expect(updatedCustomer[0].expiredAt).toBe(initialExpiredAt + 5184000000);
+    expect(updatedCustomer[0].expiredAt).toBe(initialExpiredAt + 60 * 24 * 60 * 60 * 1000);
   });
 
   it('should extend from current timestamp if customer expiredAt is null or in the past', async () => {
+    const { services: servicesTable } = await import('@/lib/db/schema');
+    const serviceId = 'srv-legacy-2';
+    await db.insert(servicesTable).values({
+      id: serviceId,
+      name: 'Legacy Service 2',
+      price: 100000,
+      billingCycle: 30,
+      prefix: 'LEGACY2',
+      status: 'active',
+      createdAt: Date.now()
+    });
+
+    await db.update(customers).set({ serviceId }).where(eq(customers.id, '1002'));
+
     const now = Date.now();
     const payment = {
       transactionId: 'TX10002',
@@ -435,6 +472,123 @@ describe('Database Reconciliation Integration Tests', () => {
       expect(virtualPayments).toHaveLength(1);
       expect(virtualPayments[0].amount).toBe(200000);
       expect(virtualPayments[0].orderId).toBe(order.id);
+    });
+  });
+
+  describe('New Order-Centric and Customer-Priority matching logic (Phase 11-13 TDD)', () => {
+    it('should automatically match orderNumber ORD-xxxx in memo and reconcile against existing pending order', async () => {
+      const { services: servicesTable, orders: ordersTable, customerServices: customerServicesTable } = await import('@/lib/db/schema');
+      const serviceId = 'srv-ordmatch-1';
+      await db.insert(servicesTable).values({
+        id: serviceId,
+        name: 'Order Match Service',
+        price: 250000,
+        billingCycle: 30,
+        prefix: 'ORDMATCH',
+        status: 'active',
+        createdAt: Date.now()
+      });
+
+      // Insert pre-existing pending order
+      const orderId = 'ord-pre-existing-123';
+      const orderNumber = 'ORD-1717559999';
+      await db.insert(ordersTable).values({
+        id: orderId,
+        customerId: '1005',
+        orderNumber,
+        amount: 250000,
+        content: 'Custom pending order',
+        status: 'pending',
+        serviceId,
+        createdAt: Date.now()
+      });
+
+      const payment = {
+        transactionId: 'TX_ORDMATCH_1',
+        amount: 250000,
+        content: `1005 - NGUYEN VAN A - ${orderNumber}`,
+        bank: 'Techcombank',
+        paidAt: Date.now(),
+      };
+
+      const result = await reconcilePayment(db, payment);
+      expect(result.success).toBe(true);
+
+      // Verify no new order was created (still 1 order in database)
+      const allOrders = await db.select().from(ordersTable).all();
+      expect(allOrders).toHaveLength(1);
+      expect(allOrders[0].id).toBe(orderId);
+      expect(allOrders[0].status).toBe('paid'); // updated to paid
+
+      // Verify customer service was activated
+      const activeCS = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+      expect(activeCS).toHaveLength(1);
+      expect(activeCS[0].status).toBe('active');
+    });
+
+    it('should automatically generate order for customer default service when customer ID is matched without prefix', async () => {
+      const { services: servicesTable, orders: ordersTable, customerServices: customerServicesTable } = await import('@/lib/db/schema');
+      const serviceId = 'srv-custdefault-1';
+      await db.insert(servicesTable).values({
+        id: serviceId,
+        name: 'Default Service',
+        price: 150000,
+        billingCycle: 30,
+        prefix: 'DEFAULTSrv',
+        status: 'active',
+        createdAt: Date.now()
+      });
+
+      // Assign default service to customer 1005
+      await db.update(customers).set({ serviceId }).where(eq(customers.id, '1005'));
+
+      const payment = {
+        transactionId: 'TX_CUSTDEFAULT_1',
+        amount: 150000,
+        content: '1005 - Test User no prefix',
+        bank: 'Techcombank',
+        paidAt: Date.now(),
+      };
+
+      const result = await reconcilePayment(db, payment);
+      expect(result.success).toBe(true);
+
+      // Verify a new order was generated automatically for the default service
+      const allOrders = await db.select().from(ordersTable).where(eq(ordersTable.serviceId, serviceId)).all();
+      expect(allOrders).toHaveLength(1);
+      expect(allOrders[0].status).toBe('paid');
+
+      // Verify service was activated
+      const activeCS = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+      expect(activeCS).toHaveLength(1);
+    });
+
+    it('should not generate order but link customerId to payment when customer ID is matched but has no default service and no prefix', async () => {
+      const { orders: ordersTable } = await import('@/lib/db/schema');
+      
+      // Ensure customer 1005 has no default service
+      await db.update(customers).set({ serviceId: null }).where(eq(customers.id, '1005'));
+
+      const payment = {
+        transactionId: 'TX_NOPREFIX_NO_DEFAULT',
+        amount: 120000,
+        content: '1005 - Random Transfer',
+        bank: 'Techcombank',
+        paidAt: Date.now(),
+      };
+
+      const result = await reconcilePayment(db, payment);
+      expect(result.success).toBe(true);
+
+      // Verify NO order was generated in database
+      const allOrders = await db.select().from(ordersTable).all();
+      expect(allOrders).toHaveLength(0);
+
+      // Verify payment was inserted and linked to customer 1005
+      const insertedPayments = await db.select().from(payments).where(eq(payments.transactionId, 'TX_NOPREFIX_NO_DEFAULT')).all();
+      expect(insertedPayments).toHaveLength(1);
+      expect(insertedPayments[0].customerId).toBe('1005');
+      expect(insertedPayments[0].orderId).toBeNull();
     });
   });
 });

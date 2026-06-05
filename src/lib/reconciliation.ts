@@ -101,6 +101,46 @@ export async function autoMatchInvoice(
 }
 
 /**
+ * Scans transaction memo content to automatically match any existing order number.
+ */
+// @para-doc [sepay-integration.md#memo-parsing]
+export async function autoMatchOrder(
+  db: any,
+  content: string
+): Promise<{ orderId: string; customerId: string | null } | null> {
+  if (!content) return null;
+
+  // Find all word tokens (alphanumeric sequences, allowing dashes)
+  const tokens = content.match(/[a-zA-Z0-9-]+/g);
+  if (!tokens) return null;
+
+  for (const token of tokens) {
+    let cleaned = token.trim();
+    if (cleaned.length < 3) continue;
+
+    // Normalize ORDxxxx to ORD-xxxx
+    if (/^ord\d+/i.test(cleaned)) {
+      cleaned = 'ORD-' + cleaned.substring(3);
+    }
+
+    if (/^ord-/i.test(cleaned)) {
+      const matched = await db
+        .select()
+        .from(orders)
+        .where(sql`LOWER(${orders.orderNumber}) = ${cleaned.toLowerCase()}`);
+      if (matched.length > 0) {
+        return {
+          orderId: matched[0].id,
+          customerId: matched[0].customerId,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
  * Sums up all payments associated with a given invoice.
  * If the sum of payments equals or exceeds the invoice amount, updates status to 'paid'.
  */
@@ -172,47 +212,6 @@ export async function reconcilePayment(
       }
     }
 
-    // 1. Fetch custom rules from config table
-    let matchedRule: any = null;
-    try {
-      const rulesRecord = await tx
-        .select()
-        .from(config)
-        .where(eq(config.key, 'payment_classification_rules'))
-        .limit(1);
-
-      if (rulesRecord.length > 0) {
-        const rules = JSON.parse(rulesRecord[0].value);
-        if (Array.isArray(rules)) {
-          const paymentContentLower = (payment.content || '').toLowerCase();
-          for (const rule of rules) {
-            if (rule.matchType === 'auto_customer') {
-              const matchedCustId = await autoMatchCustomer(tx, payment.content);
-              if (matchedCustId) {
-                matchedRule = { ...rule, resolvedCustomerId: matchedCustId };
-                break;
-              }
-            } else if (rule.matchType === 'auto_invoice') {
-              const matchedInv = await autoMatchInvoice(tx, payment.content);
-              if (matchedInv) {
-                matchedRule = { 
-                  ...rule, 
-                  resolvedInvoiceId: matchedInv.invoiceId, 
-                  resolvedCustomerId: matchedInv.customerId 
-                };
-                break;
-              }
-            } else if (rule.pattern && paymentContentLower.includes(rule.pattern.toLowerCase())) {
-              matchedRule = rule;
-              break;
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.error('[Reconciliation] Failed to load custom rules:', err);
-    }
-
     let targetCustomerId = 'CUST-ANONYMOUS';
     let targetInvoiceId = payment.invoiceId || null;
     let targetOrderId: string | null = null;
@@ -220,50 +219,101 @@ export async function reconcilePayment(
     let paymentCategory = 'non_revenue';
     let taxCategory: string | null = null;
 
-    if (matchedRule) {
-      paymentType = matchedRule.type || payment.type || 'in';
-      taxCategory = matchedRule.taxCategory || null;
-      paymentCategory = paymentType === 'out' ? 'non_revenue' : (matchedRule.category || 'non_revenue');
-      
-      if (matchedRule.resolvedInvoiceId) {
-        targetInvoiceId = matchedRule.resolvedInvoiceId;
+    // Step 1: Scan for order match (ORD-xxxx)
+    const matchedOrder = await autoMatchOrder(tx, payment.content);
+    if (matchedOrder) {
+      targetOrderId = matchedOrder.orderId;
+      if (matchedOrder.customerId) {
+        targetCustomerId = matchedOrder.customerId;
+      }
+      paymentCategory = 'revenue';
+    } else {
+      // 1. Fetch custom rules from config table
+      let matchedRule: any = null;
+      try {
+        const rulesRecord = await tx
+          .select()
+          .from(config)
+          .where(eq(config.key, 'payment_classification_rules'))
+          .limit(1);
+
+        if (rulesRecord.length > 0) {
+          const rules = JSON.parse(rulesRecord[0].value);
+          if (Array.isArray(rules)) {
+            const paymentContentLower = (payment.content || '').toLowerCase();
+            for (const rule of rules) {
+              if (rule.matchType === 'auto_customer') {
+                const matchedCustId = await autoMatchCustomer(tx, payment.content);
+                if (matchedCustId) {
+                  matchedRule = { ...rule, resolvedCustomerId: matchedCustId };
+                  break;
+                }
+              } else if (rule.matchType === 'auto_invoice') {
+                const matchedInv = await autoMatchInvoice(tx, payment.content);
+                if (matchedInv) {
+                  matchedRule = { 
+                    ...rule, 
+                    resolvedInvoiceId: matchedInv.invoiceId, 
+                    resolvedCustomerId: matchedInv.customerId 
+                  };
+                  break;
+                }
+              } else if (rule.pattern && paymentContentLower.includes(rule.pattern.toLowerCase())) {
+                matchedRule = rule;
+                break;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Reconciliation] Failed to load custom rules:', err);
       }
 
-      if (matchedRule.resolvedCustomerId) {
-        targetCustomerId = matchedRule.resolvedCustomerId;
-      } else if (matchedRule.targetCustomerId) {
-        const matchedCustomers = await tx
-          .select()
-          .from(customers)
-          .where(eq(customers.id, matchedRule.targetCustomerId));
+      if (matchedRule) {
+        paymentType = matchedRule.type || payment.type || 'in';
+        taxCategory = matchedRule.taxCategory || null;
+        paymentCategory = paymentType === 'out' ? 'non_revenue' : (matchedRule.category || 'non_revenue');
         
-        if (matchedCustomers.length > 0) {
-          targetCustomerId = matchedCustomers[0].id;
+        if (matchedRule.resolvedInvoiceId) {
+          targetInvoiceId = matchedRule.resolvedInvoiceId;
+        }
+
+        if (matchedRule.resolvedCustomerId) {
+          targetCustomerId = matchedRule.resolvedCustomerId;
+        } else if (matchedRule.targetCustomerId) {
+          const matchedCustomers = await tx
+            .select()
+            .from(customers)
+            .where(eq(customers.id, matchedRule.targetCustomerId));
+          
+          if (matchedCustomers.length > 0) {
+            targetCustomerId = matchedCustomers[0].id;
+          }
+        } else {
+          const parsedId = parseCustomerIdFromMemo(payment.content);
+          if (parsedId) {
+            const matchedCustomers = await tx
+              .select()
+              .from(customers)
+              .where(eq(customers.id, parsedId));
+            
+            if (matchedCustomers.length > 0) {
+              targetCustomerId = matchedCustomers[0].id;
+            }
+          }
         }
       } else {
         const parsedId = parseCustomerIdFromMemo(payment.content);
+        console.log('[DEBUG reconcilePayment] parsedId:', parsedId);
         if (parsedId) {
           const matchedCustomers = await tx
             .select()
             .from(customers)
             .where(eq(customers.id, parsedId));
-          
+          console.log('[DEBUG reconcilePayment] matchedCustomers count:', matchedCustomers.length);
           if (matchedCustomers.length > 0) {
             targetCustomerId = matchedCustomers[0].id;
           }
-        }
-      }
-    } else {
-      const parsedId = parseCustomerIdFromMemo(payment.content);
-      console.log('[DEBUG reconcilePayment] parsedId:', parsedId);
-      if (parsedId) {
-        const matchedCustomers = await tx
-          .select()
-          .from(customers)
-          .where(eq(customers.id, parsedId));
-        console.log('[DEBUG reconcilePayment] matchedCustomers count:', matchedCustomers.length);
-        if (matchedCustomers.length > 0) {
-          targetCustomerId = matchedCustomers[0].id;
         }
       }
     }
@@ -318,8 +368,8 @@ export async function reconcilePayment(
           matchedService = await tx.select().from(services).where(eq(services.id, customerInfo.serviceId)).get();
         }
 
-        // If service is matched and no manual invoice is linked yet, generate an order
-        if (matchedService && !targetInvoiceId) {
+        // If service is matched and no manual invoice or order is linked yet, generate an order
+        if (matchedService && !targetInvoiceId && !targetOrderId) {
           let startDate = payment.paidAt;
           const existingCustomerService = await tx
             .select()
@@ -433,74 +483,9 @@ export async function reconcilePayment(
       }
     }
 
-    // Check if the customer has any outstanding pending or partially paid orders/invoices
-    let hasOutstanding = false;
-    if (targetCustomerId && targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
-      const outstandingOrders = await tx
-        .select({ id: orders.id })
-        .from(orders)
-        .where(
-          and(
-            eq(orders.customerId, targetCustomerId),
-            sql`${orders.status} IN ('pending', 'partially_paid')`
-          )
-        )
-        .limit(1);
-
-      const outstandingInvoices = await tx
-        .select({ id: invoices.id })
-        .from(invoices)
-        .where(
-          and(
-            eq(invoices.customerId, targetCustomerId),
-            sql`${invoices.status} IN ('pending', 'partially_paid')`
-          )
-        )
-        .limit(1);
-
-      hasOutstanding = outstandingOrders.length > 0 || outstandingInvoices.length > 0;
-    }
-
-    // Fallback to legacy custom-extension logic if no service was matched and no outstanding items exist
-    if (targetCustomerId && targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in' && !matchedService && !hasOutstanding) {
-      const matched = await tx
-        .select()
-        .from(customers)
-        .where(eq(customers.id, targetCustomerId));
-      
-      if (matched.length > 0) {
-        const customer = matched[0];
-        const daysToExtend = Math.floor(payment.amount / 100000) * 30;
-        
-        if (daysToExtend > 0) {
-          const now = Date.now();
-          const baseTime = (customer.expiredAt && customer.expiredAt > now) 
-            ? customer.expiredAt 
-            : now;
-          
-          const newExpiredAt = baseTime + daysToExtend * 24 * 60 * 60 * 1000;
-
-          const costToDeduct = Math.floor(payment.amount / 100000) * 100000;
-          await tx
-            .update(customers)
-            .set({ 
-              expiredAt: newExpiredAt,
-              balance: sql`${customers.balance} - ${costToDeduct}`
-            })
-            .where(eq(customers.id, targetCustomerId));
-
-          return {
-            success: true,
-            message: `Successfully reconciled and extended service for customer ${targetCustomerId}`,
-            expiredAt: newExpiredAt,
-          };
-        }
-      }
-    }
-
     // 4. Trigger wallet scan to pay off any outstanding partially paid orders or invoices
     if (targetCustomerId && targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
-      await reconcileCustomerWallet(tx, targetCustomerId, paymentRecordId);
+      await reconcileCustomerWallet(tx, targetCustomerId, paymentRecordId, targetOrderId || undefined);
     }
 
     // Fetch final customer info and order status
@@ -512,22 +497,22 @@ export async function reconcilePayment(
       finalExpiredAt = finalCustomer?.expiredAt || undefined;
     }
     
-    if (autoGeneratedOrderId) {
-      const finalOrder = await tx.select().from(orders).where(eq(orders.id, autoGeneratedOrderId)).get();
+    if (targetOrderId) {
+      const finalOrder = await tx.select().from(orders).where(eq(orders.id, targetOrderId)).get();
       isFullyPaid = finalOrder?.status === 'paid';
     }
 
-    if (matchedService && autoGeneratedOrderId) {
+    if (targetOrderId) {
       if (isFullyPaid && finalExpiredAt) {
         return {
           success: true,
-          message: `Successfully reconciled and extended service ${matchedService.name} for customer ${targetCustomerId}`,
+          message: `Successfully reconciled and extended service for customer ${targetCustomerId}`,
           expiredAt: finalExpiredAt,
         };
       } else {
         return {
           success: true,
-          message: `Reconciled underpayment for service ${matchedService.name} (Invoice partially_paid)`,
+          message: `Reconciled payment for order (status: ${isFullyPaid ? 'paid' : 'partially_paid'})`,
         };
       }
     }
@@ -552,7 +537,7 @@ export async function reconcilePayment(
 /**
  * Automatically scans and deducts from customer balance to pay off partially paid orders or invoices.
  */
-export async function reconcileCustomerWallet(db: any, customerId: string, paymentId?: string): Promise<void> {
+export async function reconcileCustomerWallet(db: any, customerId: string, paymentId?: string, preferredOrderId?: string): Promise<void> {
   const customer = await db.select().from(customers).where(eq(customers.id, customerId)).get();
   console.log('[DEBUG reconcileCustomerWallet start] customerId:', customerId, 'balance:', customer?.balance);
   if (!customer) return;
@@ -588,8 +573,14 @@ export async function reconcileCustomerWallet(db: any, customerId: string, payme
     ...partialInvoices.map((i: any) => ({ ...i, isInvoice: true }))
   ];
 
-  // Sort by createdAt ascending
-  items.sort((a: any, b: any) => (a.createdAt || 0) - (b.createdAt || 0));
+  // Sort by preferredOrderId first (if matched), then by createdAt ascending
+  items.sort((a: any, b: any) => {
+    if (preferredOrderId) {
+      if (a.id === preferredOrderId && !a.isInvoice) return -1;
+      if (b.id === preferredOrderId && !b.isInvoice) return 1;
+    }
+    return (a.createdAt || 0) - (b.createdAt || 0);
+  });
   console.log('[DEBUG reconcileCustomerWallet items] fetched items count:', items.length);
 
   for (const item of items) {

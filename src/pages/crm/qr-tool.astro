@@ -2,7 +2,7 @@
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { customers, config, invoices, services } from '@/lib/db/schema';
+import { customers, config, invoices, services, orders } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
 // Fetch initial data from database
@@ -24,6 +24,7 @@ const orgLogo = orgLogoConfig[0]?.value || '';
 const url = new URL(Astro.request.url);
 const initialCustomerId = url.searchParams.get('customerId') || '';
 const invoiceId = url.searchParams.get('invoiceId') || '';
+const orderId = url.searchParams.get('orderId') || '';
 const lang = Astro.locals.lang || 'vi';
 
 let initialInvoice = null;
@@ -44,6 +45,26 @@ if (invoiceId) {
   
   if (invoiceData.length > 0) {
     initialInvoice = invoiceData[0];
+  }
+}
+
+let initialOrder = null;
+if (orderId) {
+  const orderData = await db
+    .select({
+      id: orders.id,
+      orderNumber: orders.orderNumber,
+      amount: orders.amount,
+      customerId: orders.customerId,
+      customerName: customers.fullName,
+    })
+    .from(orders)
+    .leftJoin(customers, eq(orders.customerId, customers.id))
+    .where(eq(orders.id, orderId))
+    .limit(1);
+  
+  if (orderData.length > 0) {
+    initialOrder = orderData[0];
   }
 }
 ---
@@ -563,7 +584,7 @@ if (invoiceId) {
   </div>
 
   <!-- Client-side state & UI handling -->
-  <script is:inline define:vars={{ defaultBank, defaultAccount, orgName, initialInvoice, lang }}>
+  <script is:inline define:vars={{ defaultBank, defaultAccount, orgName, initialInvoice, initialOrder, lang }}>
     // Accent helper to translate Vietnamese accents
     function removeAccents(str) {
       return str
@@ -585,10 +606,10 @@ if (invoiceId) {
     }
 
     // State Variables
-    let selectedCustomerId = initialInvoice ? initialInvoice.customerId : '';
-    let selectedCustomerName = initialInvoice ? initialInvoice.customerName : '';
-    let serviceName = initialInvoice ? initialInvoice.invoiceNumber : '';
-    let amount = initialInvoice ? initialInvoice.amount : 0;
+    let selectedCustomerId = initialInvoice ? initialInvoice.customerId : (initialOrder ? initialOrder.customerId : '');
+    let selectedCustomerName = initialInvoice ? initialInvoice.customerName : (initialOrder ? initialOrder.customerName : '');
+    let serviceName = initialInvoice ? initialInvoice.invoiceNumber : (initialOrder ? initialOrder.orderNumber : '');
+    let amount = initialInvoice ? initialInvoice.amount : (initialOrder ? initialOrder.amount : 0);
     let period = 'none';
     let qrTemplate = 'compact2';
     let qrUrl = '';
@@ -999,7 +1020,7 @@ if (invoiceId) {
       }
     });
 
-    // Initialize state on page load (if customerId or invoiceId parameter provided)
+    // Initialize state on page load (if customerId, invoiceId or orderId parameter provided)
     if (initialInvoice) {
       custSelect.value = initialInvoice.customerId;
       amountInput.value = initialInvoice.amount;
@@ -1009,6 +1030,17 @@ if (invoiceId) {
       selectedCustomerName = initialInvoice.customerName;
       amount = initialInvoice.amount;
       serviceName = initialInvoice.invoiceNumber;
+      
+      updateState();
+    } else if (initialOrder) {
+      custSelect.value = initialOrder.customerId;
+      amountInput.value = initialOrder.amount;
+      serviceInput.value = initialOrder.orderNumber;
+      
+      selectedCustomerId = initialOrder.customerId;
+      selectedCustomerName = initialOrder.customerName;
+      amount = initialOrder.amount;
+      serviceName = initialOrder.orderNumber;
       
       updateState();
     } else if (custSelect.value) {

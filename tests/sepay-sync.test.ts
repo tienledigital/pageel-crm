@@ -15,14 +15,31 @@ describe('SePay API Synchronization Endpoint - Integration Tests', () => {
   });
 
   beforeEach(async () => {
+    const { customerServices: csTable, orders: ordersTable, services: servicesTable } = await import('../src/lib/db/schema');
     // Clear databases
     await db.update(invoices).set({ paymentId: null });
-    await db.update(payments).set({ invoiceId: null });
+    await db.update(ordersTable).set({ paymentId: null });
+    await db.update(payments).set({ invoiceId: null, orderId: null });
+    await db.delete(ordersTable);
+    await db.delete(csTable);
     await db.delete(payments);
     await db.delete(invoices);
     await db.delete(customers);
     await db.delete(users);
     await db.delete(config);
+    await db.delete(servicesTable);
+
+    // Seed default service
+    const serviceId = 'srv-test-sync-1';
+    await db.insert(servicesTable).values({
+      id: serviceId,
+      name: 'Default Service',
+      price: 100000,
+      billingCycle: 30,
+      prefix: 'MOCK_PREFIX',
+      status: 'active',
+      createdAt: Date.now()
+    });
 
     // Setup active test customers
     await db.insert(customers).values({
@@ -30,6 +47,7 @@ describe('SePay API Synchronization Endpoint - Integration Tests', () => {
       fullName: 'Customer One Hundred Five',
       phone: '0987654321',
       expiredAt: null,
+      serviceId: serviceId,
     });
 
     await db.insert(customers).values({
