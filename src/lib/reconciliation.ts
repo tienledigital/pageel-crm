@@ -1,6 +1,6 @@
 // @para-doc [sepay-integration.md#reconciliation-logic]
 import { eq, sql, and } from 'drizzle-orm';
-import { customers, payments, config, invoices, services, customerServices } from './db/schema';
+import { customers, payments, config, invoices, services, customerServices, orders } from './db/schema';
 
 /**
  * Parses customer ID from payment transfer memo content.
@@ -157,311 +157,542 @@ export async function reconcilePayment(
     invoiceId?: string;
   }
 ): Promise<ReconcileResult> {
-  // 1. Fetch custom rules from config table
-  let matchedRule: any = null;
-  try {
-    const rulesRecord = await db
-      .select()
-      .from(config)
-      .where(eq(config.key, 'payment_classification_rules'))
-      .limit(1);
+  const isD1 = !db.session?.client?.transaction;
 
-    if (rulesRecord.length > 0) {
-      const rules = JSON.parse(rulesRecord[0].value);
-      if (Array.isArray(rules)) {
-        const paymentContentLower = (payment.content || '').toLowerCase();
-        for (const rule of rules) {
-          if (rule.matchType === 'auto_customer') {
-            const matchedCustId = await autoMatchCustomer(db, payment.content);
-            if (matchedCustId) {
-              matchedRule = { ...rule, resolvedCustomerId: matchedCustId };
+  const executeReconcile = async (tx: any) => {
+    // Check if payment with same transactionId already exists to prevent duplicate error logs
+    if (payment.transactionId) {
+      const existing = await tx
+        .select({ id: payments.id })
+        .from(payments)
+        .where(eq(payments.transactionId, payment.transactionId))
+        .limit(1);
+      if (existing.length > 0) {
+        throw new Error('UNIQUE constraint failed: payments.transaction_id');
+      }
+    }
+
+    // 1. Fetch custom rules from config table
+    let matchedRule: any = null;
+    try {
+      const rulesRecord = await tx
+        .select()
+        .from(config)
+        .where(eq(config.key, 'payment_classification_rules'))
+        .limit(1);
+
+      if (rulesRecord.length > 0) {
+        const rules = JSON.parse(rulesRecord[0].value);
+        if (Array.isArray(rules)) {
+          const paymentContentLower = (payment.content || '').toLowerCase();
+          for (const rule of rules) {
+            if (rule.matchType === 'auto_customer') {
+              const matchedCustId = await autoMatchCustomer(tx, payment.content);
+              if (matchedCustId) {
+                matchedRule = { ...rule, resolvedCustomerId: matchedCustId };
+                break;
+              }
+            } else if (rule.matchType === 'auto_invoice') {
+              const matchedInv = await autoMatchInvoice(tx, payment.content);
+              if (matchedInv) {
+                matchedRule = { 
+                  ...rule, 
+                  resolvedInvoiceId: matchedInv.invoiceId, 
+                  resolvedCustomerId: matchedInv.customerId 
+                };
+                break;
+              }
+            } else if (rule.pattern && paymentContentLower.includes(rule.pattern.toLowerCase())) {
+              matchedRule = rule;
               break;
             }
-          } else if (rule.matchType === 'auto_invoice') {
-            const matchedInv = await autoMatchInvoice(db, payment.content);
-            if (matchedInv) {
-              matchedRule = { 
-                ...rule, 
-                resolvedInvoiceId: matchedInv.invoiceId, 
-                resolvedCustomerId: matchedInv.customerId 
-              };
-              break;
-            }
-          } else if (rule.pattern && paymentContentLower.includes(rule.pattern.toLowerCase())) {
-            matchedRule = rule;
-            break; // Match first rule
           }
         }
       }
-    }
-  } catch (err) {
-    console.error('[Reconciliation] Failed to load custom rules:', err);
-  }
-
-  let targetCustomerId = 'CUST-ANONYMOUS';
-  let targetInvoiceId = payment.invoiceId || null;
-  let paymentType = payment.type || 'in';
-  let paymentCategory = 'non_revenue';
-  let taxCategory: string | null = null;
-
-  if (matchedRule) {
-    paymentType = matchedRule.type || payment.type || 'in';
-    taxCategory = matchedRule.taxCategory || null;
-    paymentCategory = paymentType === 'out' ? 'non_revenue' : (matchedRule.category || 'non_revenue');
-    
-    if (matchedRule.resolvedInvoiceId) {
-      targetInvoiceId = matchedRule.resolvedInvoiceId;
+    } catch (err) {
+      console.error('[Reconciliation] Failed to load custom rules:', err);
     }
 
-    if (matchedRule.resolvedCustomerId) {
-      targetCustomerId = matchedRule.resolvedCustomerId;
-    } else if (matchedRule.targetCustomerId) {
-      const matchedCustomers = await db
-        .select()
-        .from(customers)
-        .where(eq(customers.id, matchedRule.targetCustomerId));
+    let targetCustomerId = 'CUST-ANONYMOUS';
+    let targetInvoiceId = payment.invoiceId || null;
+    let targetOrderId: string | null = null;
+    let paymentType = payment.type || 'in';
+    let paymentCategory = 'non_revenue';
+    let taxCategory: string | null = null;
+
+    if (matchedRule) {
+      paymentType = matchedRule.type || payment.type || 'in';
+      taxCategory = matchedRule.taxCategory || null;
+      paymentCategory = paymentType === 'out' ? 'non_revenue' : (matchedRule.category || 'non_revenue');
       
-      if (matchedCustomers.length > 0) {
-        targetCustomerId = matchedCustomers[0].id;
+      if (matchedRule.resolvedInvoiceId) {
+        targetInvoiceId = matchedRule.resolvedInvoiceId;
+      }
+
+      if (matchedRule.resolvedCustomerId) {
+        targetCustomerId = matchedRule.resolvedCustomerId;
+      } else if (matchedRule.targetCustomerId) {
+        const matchedCustomers = await tx
+          .select()
+          .from(customers)
+          .where(eq(customers.id, matchedRule.targetCustomerId));
+        
+        if (matchedCustomers.length > 0) {
+          targetCustomerId = matchedCustomers[0].id;
+        }
+      } else {
+        const parsedId = parseCustomerIdFromMemo(payment.content);
+        if (parsedId) {
+          const matchedCustomers = await tx
+            .select()
+            .from(customers)
+            .where(eq(customers.id, parsedId));
+          
+          if (matchedCustomers.length > 0) {
+            targetCustomerId = matchedCustomers[0].id;
+          }
+        }
       }
     } else {
-      // Fall back to default memo parsing if rule matched but has no specific customer
       const parsedId = parseCustomerIdFromMemo(payment.content);
+      console.log('[DEBUG reconcilePayment] parsedId:', parsedId);
       if (parsedId) {
-        const matchedCustomers = await db
+        const matchedCustomers = await tx
           .select()
           .from(customers)
           .where(eq(customers.id, parsedId));
-        
+        console.log('[DEBUG reconcilePayment] matchedCustomers count:', matchedCustomers.length);
         if (matchedCustomers.length > 0) {
           targetCustomerId = matchedCustomers[0].id;
         }
       }
     }
-  } else {
-    // Default parsing logic
-    const parsedId = parseCustomerIdFromMemo(payment.content);
-    if (parsedId) {
-      const matchedCustomers = await db
-        .select()
-        .from(customers)
-        .where(eq(customers.id, parsedId));
-      
-      if (matchedCustomers.length > 0) {
-        targetCustomerId = matchedCustomers[0].id;
-      }
+    console.log('[DEBUG reconcilePayment] resolved targetCustomerId:', targetCustomerId);
+
+    if (paymentType === 'out') {
+      paymentCategory = 'non_revenue';
     }
-  }
 
-  // Force non_revenue for outgoing flow
-  if (paymentType === 'out') {
-    paymentCategory = 'non_revenue';
-  }
+    // Update customer balance first
+    if (targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
+      await tx.update(customers)
+        .set({ balance: sql`${customers.balance} + ${payment.amount}` })
+        .where(eq(customers.id, targetCustomerId));
+    }
 
-  // 1.5. A. Auto match service from memo content prefix
-  let matchedService: any = null;
-  let autoGeneratedInvoiceId: string | null = null;
-  let autoInvoiceStatus: 'paid' | 'partially_paid' = 'paid';
-  let autoServiceExpiredAt: number | null = null;
+    // Load customer info for balance matching
+    let customerInfo = null;
+    if (targetCustomerId !== 'CUST-ANONYMOUS') {
+      customerInfo = await tx.select().from(customers).where(eq(customers.id, targetCustomerId)).get();
+    }
 
-  if (targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
-    try {
-      const activeServices = await db
-        .select()
-        .from(services)
-        .where(eq(services.status, 'active'))
-        .all();
+    let matchedService: any = null;
+    let autoGeneratedOrderId: string | null = null;
+    let autoOrderStatus: 'paid' | 'partially_paid' = 'paid';
+    let autoServiceExpiredAt: number | null = null;
 
-      activeServices.sort((a: any, b: any) => (b.prefix || '').length - (a.prefix || '').length);
-
-      const contentUpper = (payment.content || '').toUpperCase();
-      for (const s of activeServices) {
-        if (s.prefix && contentUpper.includes(s.prefix.toUpperCase())) {
-          matchedService = s;
-          break;
-        }
-      }
-
-      // If service is matched and no invoice is linked yet, generate one
-      if (matchedService && !targetInvoiceId) {
-        let startDate = payment.paidAt;
-        const existingCustomerService = await db
+    if (targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
+      try {
+        const activeServices = await tx
           .select()
-          .from(customerServices)
-          .where(
-            and(
-              eq(customerServices.customerId, targetCustomerId),
-              eq(customerServices.serviceId, matchedService.id)
-            )
-          )
-          .get();
+          .from(services)
+          .where(eq(services.status, 'active'))
+          .all();
 
-        if (existingCustomerService && existingCustomerService.status === 'active' && existingCustomerService.expiredAt > payment.paidAt) {
-          startDate = existingCustomerService.expiredAt;
-        }
-        
-        autoServiceExpiredAt = startDate + matchedService.billingCycle * 24 * 60 * 60 * 1000;
-        autoInvoiceStatus = payment.amount >= matchedService.price ? 'paid' : 'partially_paid';
-        autoGeneratedInvoiceId = crypto.randomUUID();
+        activeServices.sort((a: any, b: any) => (b.prefix || '').length - (a.prefix || '').length);
 
-        // Check if there is a custom content template configured in DB
-        let invoiceContent = `Auto webhook thanh toan dich vu ${matchedService.name}`;
-        try {
-          const customTemplateConfig = await db.select().from(config).where(eq(config.key, 'serviceInvoiceContentTemplate')).limit(1);
-          if (customTemplateConfig.length > 0 && customTemplateConfig[0].value) {
-            invoiceContent = customTemplateConfig[0].value.replace('{service_name}', matchedService.name);
-          }
-        } catch (configErr) {
-          console.warn('[Reconciliation] Failed to fetch custom template config:', configErr);
-        }
-
-        try {
-          await db.insert(invoices).values({
-            id: autoGeneratedInvoiceId,
-            customerId: targetCustomerId,
-            staffId: null, 
-            invoiceNumber: `ORD-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
-            amount: matchedService.price,
-            content: invoiceContent,
-            status: autoInvoiceStatus,
-            serviceId: matchedService.id,
-            paymentId: null, // we will link this after inserting payment
-            startDate,
-            expiredAt: autoServiceExpiredAt,
-            createdAt: Date.now(),
-            paidAt: payment.paidAt,
-          });
-        } catch (err: any) {
-          console.error('[Reconciliation] db.insert(invoices) failed. CustomerId:', targetCustomerId, 'ServiceId:', matchedService.id, 'Error:', err.message);
-          throw err;
-        }
-
-        targetInvoiceId = autoGeneratedInvoiceId;
-      }
-    } catch (err) {
-      console.error('[Reconciliation] Failed to auto-match service:', err);
-      throw err;
-    }
-  }
-
-  // Check if payment with same transactionId already exists to prevent duplicate error logs in console
-  if (payment.transactionId) {
-    const existing = await db
-      .select({ id: payments.id })
-      .from(payments)
-      .where(eq(payments.transactionId, payment.transactionId))
-      .limit(1);
-    if (existing.length > 0) {
-      throw new Error('UNIQUE constraint failed: payments.transaction_id');
-    }
-  }
-
-  // Insert payment record (will throw if transactionId is duplicate due to UNIQUE constraint)
-  const paymentRecordId = crypto.randomUUID();
-  try {
-    await db.insert(payments).values({
-      id: paymentRecordId,
-      invoiceId: targetInvoiceId,
-      customerId: targetCustomerId,
-      amount: payment.amount,
-      transactionId: payment.transactionId,
-      bank: payment.bank || null,
-      accountNumber: payment.accountNumber || null,
-      senderAccount: payment.senderAccount || null,
-      senderName: payment.senderName || null,
-      senderBank: payment.senderBank || null,
-      content: payment.content,
-      paidAt: payment.paidAt,
-      type: paymentType,
-      category: paymentCategory,
-      taxCategory: taxCategory,
-    });
-  } catch (err: any) {
-    console.error('[Reconciliation] db.insert(payments) failed. InvoiceId:', targetInvoiceId, 'CustomerId:', targetCustomerId, 'Error:', err.message);
-    throw err;
-  }
-
-  // Link payment back to the auto-generated invoice
-  if (autoGeneratedInvoiceId) {
-    try {
-      await db
-        .update(invoices)
-        .set({ paymentId: paymentRecordId })
-        .where(eq(invoices.id, autoGeneratedInvoiceId));
-    } catch (err: any) {
-      console.error('[Reconciliation] Failed to link payment to auto-generated invoice:', err.message);
-      throw err;
-    }
-  }
-
-  // Update pre-existing matched invoice status if matched via rules/parameters
-  if (targetInvoiceId && !autoGeneratedInvoiceId) {
-    try {
-      const matchedInvoice = await db.select().from(invoices).where(eq(invoices.id, targetInvoiceId)).get();
-      if (matchedInvoice) {
-        const paidAmount = payment.amount;
-        const invoiceAmount = matchedInvoice.amount;
-        let status = paidAmount >= invoiceAmount ? 'paid' : 'partially_paid';
-
-        await db
-          .update(invoices)
-          .set({ status, paidAt: payment.paidAt, paymentId: paymentRecordId })
-          .where(eq(invoices.id, targetInvoiceId));
-
-        if (status === 'partially_paid') {
-          const isNowPaid = await checkAndUnionPartialPayments(db, targetInvoiceId);
-          if (isNowPaid) {
-            status = 'paid';
+        const contentUpper = (payment.content || '').toUpperCase();
+        for (const s of activeServices) {
+          if (s.prefix && contentUpper.includes(s.prefix.toUpperCase())) {
+            matchedService = s;
+            break;
           }
         }
 
-        // If pre-existing invoice has a serviceId, activate/extend it upon full payment
-        if (matchedInvoice.serviceId && status === 'paid') {
-          const startDate = matchedInvoice.startDate || payment.paidAt;
-          const expiredAt = matchedInvoice.expiredAt || (startDate + 30 * 24 * 60 * 60 * 1000);
+        // Fallback to customer's configured serviceId
+        if (!matchedService && customerInfo && customerInfo.serviceId) {
+          matchedService = await tx.select().from(services).where(eq(services.id, customerInfo.serviceId)).get();
+        }
 
-          const existingCustomerService = await db
+        // If service is matched and no manual invoice is linked yet, generate an order
+        if (matchedService && !targetInvoiceId) {
+          let startDate = payment.paidAt;
+          const existingCustomerService = await tx
             .select()
             .from(customerServices)
             .where(
               and(
                 eq(customerServices.customerId, targetCustomerId),
-                eq(customerServices.serviceId, matchedInvoice.serviceId)
+                eq(customerServices.serviceId, matchedService.id)
               )
             )
             .get();
 
+          if (existingCustomerService && existingCustomerService.status === 'active' && existingCustomerService.expiredAt > payment.paidAt) {
+            startDate = existingCustomerService.expiredAt;
+          }
+          
+          autoServiceExpiredAt = startDate + matchedService.billingCycle * 24 * 60 * 60 * 1000;
+          
+          // We always initialize matched order with 'pending' status.
+          // The wallet scan reconcileCustomerWallet will process it.
+          autoOrderStatus = 'pending';
+          autoGeneratedOrderId = crypto.randomUUID();
+
+          let orderContent = `Auto webhook thanh toan dich vu ${matchedService.name}`;
+          try {
+            const customTemplateConfig = await tx.select().from(config).where(eq(config.key, 'serviceInvoiceContentTemplate')).limit(1);
+            if (customTemplateConfig.length > 0 && customTemplateConfig[0].value) {
+              orderContent = customTemplateConfig[0].value.replace('{service_name}', matchedService.name);
+            }
+          } catch (configErr) {
+            console.warn('[Reconciliation] Failed to fetch custom template config:', configErr);
+          }
+
+          await tx.insert(orders).values({
+            id: autoGeneratedOrderId,
+            customerId: targetCustomerId,
+            staffId: null, 
+            orderNumber: `ORD-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
+            amount: matchedService.price,
+            content: orderContent,
+            status: autoOrderStatus,
+            serviceId: matchedService.id,
+            paymentId: null, // will link after payment insert
+            startDate,
+            expiredAt: autoServiceExpiredAt,
+            createdAt: Date.now(),
+            paidAt: null,
+          });
+
+          targetOrderId = autoGeneratedOrderId;
+          paymentCategory = 'revenue';
+        }
+      } catch (err) {
+        console.error('[Reconciliation] Failed to auto-match service:', err);
+        throw err;
+      }
+    }
+
+    // Insert payment record
+    const paymentRecordId = crypto.randomUUID();
+    try {
+      await tx.insert(payments).values({
+        id: paymentRecordId,
+        invoiceId: targetInvoiceId,
+        orderId: targetOrderId,
+        customerId: targetCustomerId,
+        amount: payment.amount,
+        transactionId: payment.transactionId,
+        bank: payment.bank || null,
+        accountNumber: payment.accountNumber || null,
+        senderAccount: payment.senderAccount || null,
+        senderName: payment.senderName || null,
+        senderBank: payment.senderBank || null,
+        content: payment.content,
+        paidAt: payment.paidAt,
+        type: paymentType,
+        category: paymentCategory,
+        taxCategory: taxCategory,
+      });
+    } catch (err: any) {
+      console.error('[Reconciliation] db.insert(payments) failed. InvoiceId:', targetInvoiceId, 'CustomerId:', targetCustomerId, 'Error:', err.message);
+      throw err;
+    }
+
+    // Link payment back to the auto-generated order
+    if (autoGeneratedOrderId) {
+      try {
+        await tx
+          .update(orders)
+          .set({ paymentId: paymentRecordId })
+          .where(eq(orders.id, autoGeneratedOrderId));
+      } catch (err: any) {
+        console.error('[Reconciliation] Failed to link payment to auto-generated order:', err.message);
+        throw err;
+      }
+    }
+
+    // Link payment to the pre-existing matched invoice if matched and not paid yet
+    if (targetInvoiceId && !autoGeneratedOrderId) {
+      try {
+        const matchedInvoice = await tx.select().from(invoices).where(eq(invoices.id, targetInvoiceId)).get();
+        if (matchedInvoice && (matchedInvoice.status === 'pending' || matchedInvoice.status === 'partially_paid')) {
+          await tx
+            .update(invoices)
+            .set({ paymentId: paymentRecordId })
+            .where(eq(invoices.id, targetInvoiceId));
+        }
+      } catch (err) {
+        console.error('[Reconciliation] Failed to link payment to invoice:', err);
+        throw err;
+      }
+    }
+
+    // Check if the customer has any outstanding pending or partially paid orders/invoices
+    let hasOutstanding = false;
+    if (targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
+      const outstandingOrders = await tx
+        .select({ id: orders.id })
+        .from(orders)
+        .where(
+          and(
+            eq(orders.customerId, targetCustomerId),
+            sql`${orders.status} IN ('pending', 'partially_paid')`
+          )
+        )
+        .limit(1);
+
+      const outstandingInvoices = await tx
+        .select({ id: invoices.id })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.customerId, targetCustomerId),
+            sql`${invoices.status} IN ('pending', 'partially_paid')`
+          )
+        )
+        .limit(1);
+
+      hasOutstanding = outstandingOrders.length > 0 || outstandingInvoices.length > 0;
+    }
+
+    // Fallback to legacy custom-extension logic if no service was matched and no outstanding items exist
+    if (targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in' && !matchedService && !hasOutstanding) {
+      const matched = await tx
+        .select()
+        .from(customers)
+        .where(eq(customers.id, targetCustomerId));
+      
+      if (matched.length > 0) {
+        const customer = matched[0];
+        const daysToExtend = Math.floor(payment.amount / 100000) * 30;
+        
+        if (daysToExtend > 0) {
+          const now = Date.now();
+          const baseTime = (customer.expiredAt && customer.expiredAt > now) 
+            ? customer.expiredAt 
+            : now;
+          
+          const newExpiredAt = baseTime + daysToExtend * 24 * 60 * 60 * 1000;
+
+          const costToDeduct = Math.floor(payment.amount / 100000) * 100000;
+          await tx
+            .update(customers)
+            .set({ 
+              expiredAt: newExpiredAt,
+              balance: sql`${customers.balance} - ${costToDeduct}`
+            })
+            .where(eq(customers.id, targetCustomerId));
+
+          return {
+            success: true,
+            message: `Successfully reconciled and extended service for customer ${targetCustomerId}`,
+            expiredAt: newExpiredAt,
+          };
+        }
+      }
+    }
+
+    // 4. Trigger wallet scan to pay off any outstanding partially paid orders or invoices
+    if (targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
+      await reconcileCustomerWallet(tx, targetCustomerId, paymentRecordId);
+    }
+
+    // Fetch final customer info and order status
+    let finalExpiredAt = undefined;
+    let isFullyPaid = false;
+    
+    if (targetCustomerId !== 'CUST-ANONYMOUS') {
+      const finalCustomer = await tx.select().from(customers).where(eq(customers.id, targetCustomerId)).get();
+      finalExpiredAt = finalCustomer?.expiredAt || undefined;
+    }
+    
+    if (autoGeneratedOrderId) {
+      const finalOrder = await tx.select().from(orders).where(eq(orders.id, autoGeneratedOrderId)).get();
+      isFullyPaid = finalOrder?.status === 'paid';
+    }
+
+    if (matchedService && autoGeneratedOrderId) {
+      if (isFullyPaid && finalExpiredAt) {
+        return {
+          success: true,
+          message: `Successfully reconciled and extended service ${matchedService.name} for customer ${targetCustomerId}`,
+          expiredAt: finalExpiredAt,
+        };
+      } else {
+        return {
+          success: true,
+          message: `Reconciled underpayment for service ${matchedService.name} (Invoice partially_paid)`,
+        };
+      }
+    }
+
+    return {
+      success: true,
+      message: targetCustomerId === 'CUST-ANONYMOUS'
+        ? 'Payment reconciled under Anonymous Customer fallback'
+        : 'Payment reconciled successfully without service extension',
+    };
+  };
+
+  if (isD1) {
+    return await db.transaction(async (tx: any) => {
+      return await executeReconcile(tx);
+    });
+  } else {
+    return await executeReconcile(db);
+  }
+}
+
+/**
+ * Automatically scans and deducts from customer balance to pay off partially paid orders or invoices.
+ */
+export async function reconcileCustomerWallet(db: any, customerId: string, paymentId?: string): Promise<void> {
+  const customer = await db.select().from(customers).where(eq(customers.id, customerId)).get();
+  console.log('[DEBUG reconcileCustomerWallet start] customerId:', customerId, 'balance:', customer?.balance);
+  if (!customer) return;
+
+  let currentBalance = customer.balance || 0;
+  if (currentBalance <= 0) return;
+
+  // Fetch pending and partially paid orders
+  const partialOrders = await db.select()
+    .from(orders)
+    .where(
+      and(
+        eq(orders.customerId, customerId),
+        sql`${orders.status} IN ('pending', 'partially_paid')`
+      )
+    )
+    .all();
+
+  // Fetch pending and partially paid invoices
+  const partialInvoices = await db.select()
+    .from(invoices)
+    .where(
+      and(
+        eq(invoices.customerId, customerId),
+        sql`${invoices.status} IN ('pending', 'partially_paid')`
+      )
+    )
+    .all();
+
+  // Combine items
+  const items = [
+    ...partialOrders.map((o: any) => ({ ...o, isInvoice: false })),
+    ...partialInvoices.map((i: any) => ({ ...i, isInvoice: true }))
+  ];
+
+  // Sort by createdAt ascending
+  items.sort((a: any, b: any) => (a.createdAt || 0) - (b.createdAt || 0));
+  console.log('[DEBUG reconcileCustomerWallet items] fetched items count:', items.length);
+
+  for (const item of items) {
+    console.log('[DEBUG reconcileCustomerWallet] item:', item.id, 'amount:', item.amount, 'status:', item.status, 'currentBalance:', currentBalance);
+    if (currentBalance <= 0) break;
+
+    // Sum paid amount for this item (only count wallet deductions to prevent double-spending)
+    let sumResult;
+    if (item.isInvoice) {
+      sumResult = await db.select({ total: sql<number>`sum(${payments.amount})` })
+        .from(payments)
+        .where(
+          and(
+            eq(payments.invoiceId, item.id),
+            eq(payments.paymentMethod, 'wallet_deduction')
+          )
+        )
+        .get();
+    } else {
+      sumResult = await db.select({ total: sql<number>`sum(${payments.amount})` })
+        .from(payments)
+        .where(
+          and(
+            eq(payments.orderId, item.id),
+            eq(payments.paymentMethod, 'wallet_deduction')
+          )
+        )
+        .get();
+    }
+
+    const totalPaid = sumResult?.total || 0;
+    const remaining = item.amount - totalPaid;
+    console.log('[DEBUG reconcileCustomerWallet] totalPaid:', totalPaid, 'remaining:', remaining);
+
+    if (remaining <= 0) {
+      if (item.isInvoice) {
+        await db.update(invoices).set({ status: 'paid', paidAt: Date.now() }).where(eq(invoices.id, item.id));
+      } else {
+        await db.update(orders).set({ status: 'paid', paidAt: Date.now() }).where(eq(orders.id, item.id));
+      }
+      continue;
+    }
+
+    if (currentBalance >= remaining) {
+      // Deduct from balance
+      currentBalance -= remaining;
+      await db.update(customers).set({ balance: currentBalance }).where(eq(customers.id, customerId));
+
+      // Update status
+      if (item.isInvoice) {
+        await db.update(invoices).set({ status: 'paid', paidAt: Date.now() }).where(eq(invoices.id, item.id));
+      } else {
+        await db.update(orders).set({ status: 'paid', paidAt: Date.now() }).where(eq(orders.id, item.id));
+      }
+
+      // Insert virtual payment record
+      const virtualPaymentId = crypto.randomUUID();
+      await db.insert(payments).values({
+        id: virtualPaymentId,
+        invoiceId: item.isInvoice ? item.id : null,
+        orderId: item.isInvoice ? null : item.id,
+        customerId: customerId,
+        amount: remaining,
+        transactionId: `WALLET_DED_${item.id}_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`,
+        paymentMethod: 'wallet_deduction',
+        content: `Khau tru vi doi soat cho ${item.isInvoice ? 'hoa don ' + (item.invoiceNumber || '') : 'don hang ' + (item.orderNumber || '')}`,
+        paidAt: Date.now(),
+        type: 'in',
+        category: 'revenue',
+      });
+
+      // Extend service if item has serviceId
+      if (item.serviceId) {
+        const service = await db.select().from(services).where(eq(services.id, item.serviceId)).get();
+        if (service) {
+          let startDate = Date.now();
+          const existingCustomerService = await db.select()
+            .from(customerServices)
+            .where(and(eq(customerServices.customerId, customerId), eq(customerServices.serviceId, service.id)))
+            .get();
+
+          if (existingCustomerService && existingCustomerService.status === 'active' && existingCustomerService.expiredAt > Date.now()) {
+            startDate = existingCustomerService.expiredAt;
+          }
+
+          const newExpiredAt = startDate + service.billingCycle * 24 * 60 * 60 * 1000;
+
           if (existingCustomerService) {
-            await db
-              .update(customerServices)
-              .set({
-                status: 'active',
-                startDate,
-                expiredAt,
-              })
+            await db.update(customerServices)
+              .set({ status: 'active', startDate, expiredAt: newExpiredAt })
               .where(eq(customerServices.id, existingCustomerService.id));
           } else {
             await db.insert(customerServices).values({
               id: crypto.randomUUID(),
-              customerId: targetCustomerId,
-              serviceId: matchedInvoice.serviceId,
+              customerId: customerId,
+              serviceId: service.id,
               status: 'active',
               startDate,
-              expiredAt,
+              expiredAt: newExpiredAt,
               createdAt: Date.now(),
             });
           }
 
-          // Sync max expiredAt to customers.expiredAt
-          const activeServices = await db
-            .select()
+          // Sync max expiredAt to customer
+          const activeServices = await db.select()
             .from(customerServices)
-            .where(
-              and(
-                eq(customerServices.customerId, targetCustomerId),
-                eq(customerServices.status, 'active')
-              )
-            )
+            .where(and(eq(customerServices.customerId, customerId), eq(customerServices.status, 'active')))
             .all();
 
           const maxExpiredAt = activeServices.reduce(
@@ -470,136 +701,21 @@ export async function reconcilePayment(
           );
 
           if (maxExpiredAt > 0) {
-            await db
-              .update(customers)
-              .set({ expiredAt: maxExpiredAt })
-              .where(eq(customers.id, targetCustomerId));
+            await db.update(customers).set({ expiredAt: maxExpiredAt }).where(eq(customers.id, customerId));
           }
         }
       }
-    } catch (err) {
-      console.error('[Reconciliation] Failed to update matched invoice status:', err);
-    }
-  }
-
-  // Handle service activation/extension for auto-matched services
-  if (matchedService && autoGeneratedInvoiceId) {
-    if (autoInvoiceStatus === 'paid' && autoServiceExpiredAt) {
-      try {
-        const existingCustomerService = await db
-          .select()
-          .from(customerServices)
-          .where(
-            and(
-              eq(customerServices.customerId, targetCustomerId),
-              eq(customerServices.serviceId, matchedService.id)
-            )
-          )
-          .get();
-
-        if (existingCustomerService) {
-          await db
-            .update(customerServices)
-            .set({
-              status: 'active',
-              startDate: existingCustomerService.status === 'active' && existingCustomerService.expiredAt > payment.paidAt 
-                ? existingCustomerService.expiredAt 
-                : payment.paidAt,
-              expiredAt: autoServiceExpiredAt,
-            })
-            .where(eq(customerServices.id, existingCustomerService.id));
-        } else {
-          await db.insert(customerServices).values({
-            id: crypto.randomUUID(),
-            customerId: targetCustomerId,
-            serviceId: matchedService.id,
-            status: 'active',
-            startDate: payment.paidAt,
-            expiredAt: autoServiceExpiredAt,
-            createdAt: Date.now(),
-          });
-        }
-
-        // Sync max expiredAt to customers.expiredAt
-        const activeServices = await db
-          .select()
-          .from(customerServices)
-          .where(
-            and(
-              eq(customerServices.customerId, targetCustomerId),
-              eq(customerServices.status, 'active')
-            )
-          )
-          .all();
-
-        const maxExpiredAt = activeServices.reduce(
-          (max: number, current: any) => (current.expiredAt > max ? current.expiredAt : max),
-          0
-        );
-
-        if (maxExpiredAt > 0) {
-          await db
-            .update(customers)
-            .set({ expiredAt: maxExpiredAt })
-            .where(eq(customers.id, targetCustomerId));
-        }
-
-        return {
-          success: true,
-          message: `Successfully reconciled and extended service ${matchedService.name} for customer ${targetCustomerId}`,
-          expiredAt: autoServiceExpiredAt,
-        };
-      } catch (err) {
-        console.error('[Reconciliation] Failed to activate customer service:', err);
-      }
     } else {
-      return {
-        success: true,
-        message: `Reconciled underpayment for service ${matchedService.name} (Invoice partially_paid)`,
-      };
-    }
-  }
-
-  // Fallback to legacy custom-extension logic if no service was matched
-  if (targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in' && !matchedService) {
-    const matched = await db
-      .select()
-      .from(customers)
-      .where(eq(customers.id, targetCustomerId));
-    
-    if (matched.length > 0) {
-      const customer = matched[0];
-      // Calculate extension days: 30 days for every 100,000 VND
-      const daysToExtend = Math.floor(payment.amount / 100000) * 30;
-      
-      if (daysToExtend > 0) {
-        const now = Date.now();
-        const baseTime = (customer.expiredAt && customer.expiredAt > now) 
-          ? customer.expiredAt 
-          : now;
-        
-        const newExpiredAt = baseTime + daysToExtend * 24 * 60 * 60 * 1000;
-
-        await db
-          .update(customers)
-          .set({ expiredAt: newExpiredAt })
-          .where(eq(customers.id, targetCustomerId));
-
-        return {
-          success: true,
-          message: `Successfully reconciled and extended service for customer ${targetCustomerId}`,
-          expiredAt: newExpiredAt,
-        };
+      // If balance is not enough, mark the item as 'partially_paid' if it was 'pending'
+      if (item.status === 'pending') {
+        if (item.isInvoice) {
+          await db.update(invoices).set({ status: 'partially_paid' }).where(eq(invoices.id, item.id));
+        } else {
+          await db.update(orders).set({ status: 'partially_paid' }).where(eq(orders.id, item.id));
+        }
       }
     }
   }
-
-  return {
-    success: true,
-    message: targetCustomerId === 'CUST-ANONYMOUS'
-      ? 'Payment reconciled under Anonymous Customer fallback'
-      : 'Payment reconciled successfully without service extension',
-  };
 }
 
 /**
