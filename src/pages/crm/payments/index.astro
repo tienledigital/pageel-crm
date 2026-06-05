@@ -889,6 +889,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
                           data-amount={tx.amount}
                           data-content={tx.content || ''}
                           data-customer-id={tx.customerId || ''}
+                          data-paid-at={tx.paidAt}
                           style="font-size: 0.7rem; padding: 0.25rem 0.5rem; background-color: rgba(99, 102, 241, 0.1); color: var(--primary); border-color: rgba(99, 102, 241, 0.2);"
                         >
                           ⚡ Late Assoc
@@ -1293,7 +1294,12 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
           <!-- Date Cycle -->
           <div class="grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
             <div class="form-group">
-              <label for="lateAssocStartDate">Start Date *</label>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.25rem;">
+                <label for="lateAssocStartDate" style="margin-bottom: 0;">Start Date *</label>
+                <button type="button" id="btnUseTxDate" class="btn-text" style="font-size: 0.75rem; color: var(--primary); background: none; border: none; padding: 0; cursor: pointer; display: none;">
+                  📅 Dùng ngày GD
+                </button>
+              </div>
               <input type="date" id="lateAssocStartDate" class="form-input" required />
             </div>
             <div class="form-group">
@@ -2175,6 +2181,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         const amount = Number(btn.getAttribute('data-amount')) || 0;
         const content = btn.getAttribute('data-content') || '';
         const customerId = btn.getAttribute('data-customer-id') || '';
+        const paidAt = btn.getAttribute('data-paid-at');
 
         // Reset and populate
         lateAssocForm.reset();
@@ -2192,6 +2199,24 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
           selectLateAssocCustomer('', '');
         }
 
+        // Handle transaction date button display
+        const btnUseTxDate = document.getElementById('btnUseTxDate');
+        if (paidAt) {
+          const txDate = new Date(Number(paidAt));
+          const year = txDate.getFullYear();
+          const month = String(txDate.getMonth() + 1).padStart(2, '0');
+          const day = String(txDate.getDate()).padStart(2, '0');
+          const txDateStr = `${year}-${month}-${day}`;
+          
+          if (btnUseTxDate) {
+            btnUseTxDate.setAttribute('data-date', txDateStr);
+            btnUseTxDate.style.display = 'inline-block';
+            btnUseTxDate.textContent = lang === 'vi' ? '📅 Dùng ngày GD' : '📅 Use Tx Date';
+          }
+        } else {
+          if (btnUseTxDate) btnUseTxDate.style.display = 'none';
+        }
+
         // Set default Start Date to today
         const todayStr = new Date().toISOString().split('T')[0];
         lateAssocStartDate.value = todayStr;
@@ -2200,6 +2225,18 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         lateAssocModal.style.display = 'flex';
       });
     });
+
+    // Handle Use Tx Date click
+    const btnUseTxDate = document.getElementById('btnUseTxDate');
+    if (btnUseTxDate) {
+      btnUseTxDate.addEventListener('click', () => {
+        const txDateStr = btnUseTxDate.getAttribute('data-date');
+        if (txDateStr) {
+          lateAssocStartDate.value = txDateStr;
+          lateAssocStartDate.dispatchEvent(new Event('change'));
+        }
+      });
+    }
 
     // Service select change -> auto calculate End Date and autofill price
     lateAssocServiceSelect.addEventListener('change', () => {
