@@ -9,6 +9,13 @@ const db = getDb(env);
 const lang = Astro.locals.lang || 'vi';
 const user = Astro.locals.user;
 
+// Fetch list of customers for edit modal
+const customersList = await db.select({
+  id: customers.id,
+  fullName: customers.fullName,
+  phone: customers.phone,
+}).from(customers).all();
+
 // 1. Parse query parameters
 const url = new URL(Astro.request.url);
 const search = url.searchParams.get('search') || '';
@@ -479,7 +486,7 @@ function formatDate(timestamp: number | null) {
       letter-spacing: 0.5px;
     }
 
-    .form-input {
+    .form-select, .form-input {
       width: 100%;
       background-color: var(--bg-hover);
       border: 1px solid var(--border-color);
@@ -491,7 +498,7 @@ function formatDate(timestamp: number | null) {
       transition: border-color 0.2s;
     }
 
-    .form-input:focus {
+    .form-select:focus, .form-input:focus {
       border-color: var(--primary);
     }
 
@@ -686,12 +693,32 @@ function formatDate(timestamp: number | null) {
                       {lang === 'vi' ? 'Thanh toán QR' : 'Pay QR'}
                     </a>
                     {user && (user.role === 'admin' || user.role === 'accountant') && (
-                      <button class="btn-action edit-tax-btn" data-id={invoice.id} data-number={invoice.invoiceNumber} data-tax={invoice.taxInvoiceNumber || ''}>
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px;">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
-                        </svg>
-                        {lang === 'vi' ? 'HĐ Thuế' : 'Tax HĐ'}
-                      </button>
+                      <>
+                        <button class="btn-action edit-tax-btn" data-id={invoice.id} data-number={invoice.invoiceNumber} data-tax={invoice.taxInvoiceNumber || ''}>
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px;">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                          </svg>
+                          {lang === 'vi' ? 'HĐ Thuế' : 'Tax HĐ'}
+                        </button>
+                        <button 
+                          class="btn-action edit-invoice-btn" 
+                          data-id={invoice.id} 
+                          data-number={invoice.invoiceNumber} 
+                          data-customer-id={invoice.customerId || ''} 
+                          data-amount={invoice.amount} 
+                          data-content={invoice.content}
+                        >
+                          ✏️ {lang === 'vi' ? 'Sửa' : 'Edit'}
+                        </button>
+                        <button 
+                          class="btn-action delete-invoice-btn" 
+                          data-id={invoice.id} 
+                          data-number={invoice.invoiceNumber} 
+                          style="color: var(--error);"
+                        >
+                          🗑️ {lang === 'vi' ? 'Xóa' : 'Delete'}
+                        </button>
+                      </>
                     )}
                   </div>
                 </td>
@@ -768,6 +795,29 @@ function formatDate(timestamp: number | null) {
                 </button>
               )}
             </div>
+            {user && (user.role === 'admin' || user.role === 'accountant') && (
+              <div style="display: flex; gap: 0.5rem; width: 100%; margin-top: 0.25rem;">
+                <button 
+                  class="btn-action edit-invoice-btn" 
+                  data-id={invoice.id} 
+                  data-number={invoice.invoiceNumber} 
+                  data-customer-id={invoice.customerId || ''} 
+                  data-amount={invoice.amount} 
+                  data-content={invoice.content} 
+                  style="flex: 1; justify-content: center;"
+                >
+                  ✏️ {lang === 'vi' ? 'Sửa' : 'Edit'}
+                </button>
+                <button 
+                  class="btn-action delete-invoice-btn" 
+                  data-id={invoice.id} 
+                  data-number={invoice.invoiceNumber} 
+                  style="flex: 1; justify-content: center; color: var(--error);"
+                >
+                  🗑️ {lang === 'vi' ? 'Xóa' : 'Delete'}
+                </button>
+              </div>
+            )}
           </div>
         ))
       )}
@@ -802,6 +852,50 @@ function formatDate(timestamp: number | null) {
       </div>
     </div>
   </div>
+
+  <!-- Edit Invoice Modal -->
+  <div class="modal-backdrop" id="editInvoiceModal">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <h3>{lang === 'vi' ? 'Chỉnh sửa hóa đơn' : 'Edit Invoice'} <span id="editInvoiceNumber" class="mono"></span></h3>
+        <button class="modal-close" id="invoiceModalCloseBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="editInvoiceForm" style="display: flex; flex-direction: column;">
+          <input type="hidden" id="editInvoiceId" />
+          
+          <div class="form-group">
+            <label for="editInvoiceCustomer">{lang === 'vi' ? 'Khách hàng' : 'Customer'}</label>
+            <select id="editInvoiceCustomer" class="form-select" required>
+              <option value="">{lang === 'vi' ? '-- Chọn khách hàng --' : '-- Select Customer --'}</option>
+              {customersList.map((cust: any) => (
+                <option value={cust.id}>{cust.fullName} ({cust.phone})</option>
+              ))}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="editInvoiceAmount">{lang === 'vi' ? 'Số tiền (VND)' : 'Amount (VND)'}</label>
+            <input type="number" id="editInvoiceAmount" class="form-input" required min="0" />
+          </div>
+
+          <div class="form-group">
+            <label for="editInvoiceContent">{lang === 'vi' ? 'Mô tả / Nội dung' : 'Description'}</label>
+            <input type="text" id="editInvoiceContent" class="form-input" required />
+          </div>
+
+          <div class="modal-footer" style="margin-top: 1.5rem;">
+            <button type="button" class="btn-cancel" id="invoiceModalCancelBtn">{lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}</button>
+            <button type="submit" class="btn-save">{lang === 'vi' ? 'Cập nhật' : 'Update'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script define:vars={{ lang }}>
+    window.CRM_LANG = lang;
+  </script>
 
   <script is:inline>
     // Modal elements
@@ -861,6 +955,108 @@ function formatDate(timestamp: number | null) {
         } catch (err) {
           console.error(err);
           alert('Network error, failed to update tax invoice number');
+        }
+      });
+    }
+
+    // Edit Invoice Modal Logic
+    const editInvoiceModal = document.getElementById('editInvoiceModal');
+    const invoiceModalCloseBtn = document.getElementById('invoiceModalCloseBtn');
+    const invoiceModalCancelBtn = document.getElementById('invoiceModalCancelBtn');
+    const editInvoiceForm = document.getElementById('editInvoiceForm');
+    const editInvoiceIdInput = document.getElementById('editInvoiceId');
+    const editInvoiceNumberSpan = document.getElementById('editInvoiceNumber');
+    const editInvoiceCustomerSelect = document.getElementById('editInvoiceCustomer');
+    const editInvoiceAmountInput = document.getElementById('editInvoiceAmount');
+    const editInvoiceContentInput = document.getElementById('editInvoiceContent');
+
+    function closeInvoiceModal() {
+      if (editInvoiceModal) editInvoiceModal.style.display = 'none';
+    }
+
+    if (invoiceModalCloseBtn) invoiceModalCloseBtn.addEventListener('click', closeInvoiceModal);
+    if (invoiceModalCancelBtn) invoiceModalCancelBtn.addEventListener('click', closeInvoiceModal);
+
+    window.addEventListener('click', (e) => {
+      if (e.target === editInvoiceModal) closeInvoiceModal();
+    });
+
+    document.addEventListener('click', async (e) => {
+      // Handle Edit Invoice Button Click
+      const editBtn = e.target.closest('.edit-invoice-btn');
+      if (editBtn) {
+        const id = editBtn.dataset.id;
+        const number = editBtn.dataset.number;
+        const customerId = editBtn.dataset.customerId;
+        const amount = editBtn.dataset.amount;
+        const content = editBtn.dataset.content;
+
+        editInvoiceIdInput.value = id;
+        editInvoiceNumberSpan.textContent = `(${number})`;
+        editInvoiceCustomerSelect.value = customerId;
+        editInvoiceAmountInput.value = amount;
+        editInvoiceContentInput.value = content;
+        
+        editInvoiceModal.style.display = 'flex';
+      }
+
+      // Handle Delete Invoice Button Click
+      const deleteBtn = e.target.closest('.delete-invoice-btn');
+      if (deleteBtn) {
+        const id = deleteBtn.dataset.id;
+        const number = deleteBtn.dataset.number;
+        const clientLang = window.CRM_LANG || 'vi';
+        
+        const confirmMsg = clientLang === 'vi' 
+          ? `Bạn có chắc chắn muốn xóa hóa đơn ${number}? Hành động này không thể hoàn tác.`
+          : `Are you sure you want to delete invoice ${number}? This action cannot be undone.`;
+          
+        if (confirm(confirmMsg)) {
+          try {
+            const res = await fetch(`/api/crm/invoices/${id}`, {
+              method: 'DELETE'
+            });
+            
+            const data = await res.json();
+            if (res.ok && data.success) {
+              window.location.reload();
+            } else {
+              alert(data.error || 'Failed to delete invoice');
+            }
+          } catch (err) {
+            console.error(err);
+            alert(clientLang === 'vi' ? 'Lỗi kết nối khi xóa hóa đơn.' : 'Network error, failed to delete invoice.');
+          }
+        }
+      }
+    });
+
+    if (editInvoiceForm) {
+      editInvoiceForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = editInvoiceIdInput.value;
+        const customerId = editInvoiceCustomerSelect.value;
+        const amount = Number(editInvoiceAmountInput.value);
+        const content = editInvoiceContentInput.value.trim();
+        const clientLang = window.CRM_LANG || 'vi';
+
+        try {
+          const res = await fetch(`/api/crm/invoices/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ customerId, amount, content })
+          });
+
+          if (res.ok) {
+            closeInvoiceModal();
+            window.location.reload();
+          } else {
+            const data = await res.json();
+            alert((data.error || 'Failed to update invoice'));
+          }
+        } catch (err) {
+          console.error(err);
+          alert(clientLang === 'vi' ? 'Lỗi kết nối khi cập nhật hóa đơn.' : 'Network error, failed to update invoice');
         }
       });
     }
