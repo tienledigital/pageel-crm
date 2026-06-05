@@ -769,18 +769,47 @@ if (invoiceId) {
 
         const price = selectedOption.getAttribute('data-price') || '';
         const prefix = selectedOption.getAttribute('data-prefix') || '';
+        const prefixUpper = prefix.toUpperCase();
+
+        // Smart Service Auto-fill rules
+        let calculatedName = prefix;
+        if (prefixUpper.startsWith('FB ')) {
+          calculatedName = 'TT DV FB';
+        } else if (prefixUpper.startsWith('QTW ')) {
+          calculatedName = 'TT DV QTW';
+        } else if (prefixUpper.startsWith('TOOL ')) {
+          calculatedName = 'TT TOOL';
+        }
+
+        let calculatedPeriod = 'none';
+        const normalizedPrefix = prefixUpper.replace('QTW', '').replace('TOOL', '');
+        if (normalizedPrefix.includes('THANG') || normalizedPrefix.includes('MONTH') || normalizedPrefix.includes('T')) {
+          calculatedPeriod = 'month';
+        } else if (normalizedPrefix.includes('NAM') || normalizedPrefix.includes('YEAR') || normalizedPrefix.includes('N')) {
+          calculatedPeriod = 'year';
+        }
 
         // Update serviceName and input
-        serviceName = prefix;
-        serviceInput.value = prefix;
+        serviceName = calculatedName;
+        serviceInput.value = calculatedName;
 
         // Update amount and input
         amount = Number(price) || 0;
         amountInput.value = price;
 
+        // Update period UI
+        period = calculatedPeriod;
+        periodButtons.forEach(btn => {
+          if (btn.getAttribute('data-value') === period) {
+            btn.classList.add('active');
+          } else {
+            btn.classList.remove('active');
+          }
+        });
+
         // Reset quick services buttons active state
         quickServices.forEach(btn => {
-          if (btn.getAttribute('data-value') === prefix) {
+          if (btn.getAttribute('data-value') === calculatedName || (calculatedName.startsWith('TT DV ') && btn.getAttribute('data-value') === calculatedName.replace('TT ', ''))) {
             btn.classList.add('active');
           } else {
             btn.classList.remove('active');
@@ -928,7 +957,11 @@ if (invoiceId) {
     downloadBtn.addEventListener('click', async () => {
       if (!qrUrl) return;
       try {
-        const response = await fetch(qrUrl);
+        const proxyUrl = `/api/crm/qrcode/download?url=${encodeURIComponent(qrUrl)}`;
+        const response = await fetch(proxyUrl);
+        if (!response.ok) {
+          throw new Error('Proxy returned ' + response.status);
+        }
         const blob = await response.blob();
         const blobUrl = window.URL.createObjectURL(blob);
         
