@@ -181,6 +181,24 @@ describe('Database Reconciliation Integration Tests', () => {
     expect(insertedPayments[0].customerId).toBe('CUST-ANONYMOUS');
   });
 
+  it('should set customerId to null when outgoing payment does not match any rules or customers', async () => {
+    const payment = {
+      transactionId: 'TX_OUT_ANON',
+      amount: 200000,
+      content: 'Rut tien mat ATM',
+      bank: 'Techcombank',
+      paidAt: Date.now(),
+      type: 'out',
+    };
+
+    const result = await reconcilePayment(db, payment);
+    expect(result.success).toBe(true);
+
+    const insertedPayments = await db.select().from(payments).where(eq(payments.transactionId, 'TX_OUT_ANON'));
+    expect(insertedPayments[0].customerId).toBeNull();
+  });
+
+
   it('should throw an error on duplicate transaction ID to enforce uniqueness', async () => {
     const payment = {
       transactionId: 'TX_DUP_1',

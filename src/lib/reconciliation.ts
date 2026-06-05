@@ -269,12 +269,16 @@ export async function reconcilePayment(
     }
     console.log('[DEBUG reconcilePayment] resolved targetCustomerId:', targetCustomerId);
 
+    if (paymentType === 'out' && targetCustomerId === 'CUST-ANONYMOUS') {
+      targetCustomerId = null as any;
+    }
+
     if (paymentType === 'out') {
       paymentCategory = 'non_revenue';
     }
 
     // Update customer balance first
-    if (targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
+    if (targetCustomerId && targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
       await tx.update(customers)
         .set({ balance: sql`${customers.balance} + ${payment.amount}` })
         .where(eq(customers.id, targetCustomerId));
@@ -282,7 +286,7 @@ export async function reconcilePayment(
 
     // Load customer info for balance matching
     let customerInfo = null;
-    if (targetCustomerId !== 'CUST-ANONYMOUS') {
+    if (targetCustomerId && targetCustomerId !== 'CUST-ANONYMOUS') {
       customerInfo = await tx.select().from(customers).where(eq(customers.id, targetCustomerId)).get();
     }
 
@@ -291,7 +295,7 @@ export async function reconcilePayment(
     let autoOrderStatus: 'pending' | 'paid' | 'partially_paid' | 'cancelled' = 'paid';
     let autoServiceExpiredAt: number | null = null;
 
-    if (targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
+    if (targetCustomerId && targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
       try {
         const activeServices = await tx
           .select()
@@ -431,7 +435,7 @@ export async function reconcilePayment(
 
     // Check if the customer has any outstanding pending or partially paid orders/invoices
     let hasOutstanding = false;
-    if (targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
+    if (targetCustomerId && targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
       const outstandingOrders = await tx
         .select({ id: orders.id })
         .from(orders)
@@ -458,7 +462,7 @@ export async function reconcilePayment(
     }
 
     // Fallback to legacy custom-extension logic if no service was matched and no outstanding items exist
-    if (targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in' && !matchedService && !hasOutstanding) {
+    if (targetCustomerId && targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in' && !matchedService && !hasOutstanding) {
       const matched = await tx
         .select()
         .from(customers)
@@ -495,7 +499,7 @@ export async function reconcilePayment(
     }
 
     // 4. Trigger wallet scan to pay off any outstanding partially paid orders or invoices
-    if (targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
+    if (targetCustomerId && targetCustomerId !== 'CUST-ANONYMOUS' && paymentType === 'in') {
       await reconcileCustomerWallet(tx, targetCustomerId, paymentRecordId);
     }
 
@@ -503,7 +507,7 @@ export async function reconcilePayment(
     let finalExpiredAt = undefined;
     let isFullyPaid = false;
     
-    if (targetCustomerId !== 'CUST-ANONYMOUS') {
+    if (targetCustomerId && targetCustomerId !== 'CUST-ANONYMOUS') {
       const finalCustomer = await tx.select().from(customers).where(eq(customers.id, targetCustomerId)).get();
       finalExpiredAt = finalCustomer?.expiredAt || undefined;
     }
@@ -818,7 +822,7 @@ export async function applyRulesToExistingPayments(db: any, rules: any[]): Promi
         }
 
         // If customer changed from anonymous to a real customer, and payment is income, extend expiredAt
-        if (payment.type === 'in' && isAnonymous && targetCustomerId !== 'CUST-ANONYMOUS') {
+        if (payment.type === 'in' && isAnonymous && targetCustomerId && targetCustomerId !== 'CUST-ANONYMOUS') {
           const matchedCustomers = await db
             .select()
             .from(customers)

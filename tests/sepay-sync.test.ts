@@ -155,7 +155,7 @@ describe('SePay API Synchronization Endpoint - Integration Tests', () => {
 
     const p3 = await db.select().from(payments).where(eq(payments.transactionId, '33333'));
     expect(p3.length).toBe(1);
-    expect(p3[0].customerId).toBe('CUST-ANONYMOUS');
+    expect(p3[0].customerId).toBeNull();
     expect(p3[0].amount).toBe(50000);
     expect(p3[0].type).toBe('out');
 
