@@ -2,7 +2,7 @@
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { payments, customers, invoices, config, services } from '@/lib/db/schema';
+import { payments, customers, invoices, config, services, orders } from '@/lib/db/schema';
 import { desc, eq, like, and, or, sql } from 'drizzle-orm';
 import { t } from '@/lib/i18n';
 
@@ -80,10 +80,13 @@ const transactionList = await db
     customerId: customers.id,
     invoiceNumber: invoices.invoiceNumber,
     invoiceId: invoices.id,
+    orderId: payments.orderId,
+    orderNumber: orders.orderNumber,
   })
   .from(payments)
   .leftJoin(customers, eq(payments.customerId, customers.id))
   .leftJoin(invoices, eq(payments.invoiceId, invoices.id))
+  .leftJoin(orders, eq(payments.orderId, orders.id))
   .where(whereClause)
   .orderBy(desc(payments.paidAt));
 
@@ -867,6 +870,11 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
                         📄 Invoice: <span class="mono">{tx.invoiceNumber}</span>
                       </span>
                     )}
+                    {tx.orderNumber && (
+                      <span style="font-size: 0.75rem; color: var(--text-secondary);">
+                        📦 Order: <a href={`/crm/orders?search=${tx.orderNumber}`} style="color: var(--primary); font-weight: 500;" class="mono">{tx.orderNumber}</a>
+                      </span>
+                    )}
                     <div style="display: flex; gap: 0.25rem; align-items: center; margin-top: 0.25rem; flex-wrap: wrap;">
                       <button 
                         class="btn-reconcile btn-action" 
@@ -882,7 +890,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
                       >
                         ✏️ Link / Edit
                       </button>
-                      {tx.type === 'in' && !tx.invoiceId && (
+                      {tx.type === 'in' && !tx.invoiceId && !tx.orderId && (
                         <button 
                           class="btn-late-assoc btn-action" 
                           data-id={tx.id} 
@@ -1284,10 +1292,10 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
 
           <!-- Custom Price -->
           <div class="form-group">
-            <label for="lateAssocCustomPrice">Invoice Amount (VND)</label>
-            <input type="number" id="lateAssocCustomPrice" class="form-input" placeholder="Invoice price (e.g. 150000)" min="0" />
+            <label for="lateAssocCustomPrice">Order Amount (VND)</label>
+            <input type="number" id="lateAssocCustomPrice" class="form-input" placeholder="Order price (e.g. 150000)" min="0" />
             <small style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.25rem; display: block;">
-              Leave blank to use default service price. If payment is less than this, invoice will be partially paid.
+              Leave blank to use default service price. If payment is less than this, order will be partially paid.
             </small>
           </div>
 
@@ -1310,7 +1318,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
 
           <div class="modal-footer">
             <button type="button" class="btn-cancel" id="lateAssocModalCancelBtn">Cancel</button>
-            <button type="submit" class="btn-save">Create Invoice</button>
+            <button type="submit" class="btn-save">Create Order</button>
           </div>
         </form>
       </div>
@@ -2329,14 +2337,14 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         const data = await res.json();
         if (res.ok && data.success) {
           closeLateAssocModal();
-          alert(lang === 'vi' ? 'Tạo hóa đơn và liên kết giao dịch thành công!' : 'Invoice created and payment associated successfully!');
+          alert(lang === 'vi' ? 'Tạo đơn hàng và liên kết giao dịch thành công!' : 'Order created and payment associated successfully!');
           window.location.reload();
         } else {
           alert('Error: ' + (data.error || 'Unknown error'));
         }
       } catch (err) {
         console.error(err);
-        alert('Network error. Could not create invoice.');
+        alert(lang === 'vi' ? 'Lỗi kết nối mạng, không thể tạo đơn hàng.' : 'Network error. Could not create order.');
       }
     });
   </script>

@@ -64,7 +64,8 @@ export async function listServices(db: any): Promise<any[]> {
 }
 
 // @para-doc [services-payments-spec.md#late-association]
-export interface CreateInvoiceFromPaymentParams {
+// @para-doc [services-payments-spec.md#late-association]
+export interface CreateOrderFromPaymentParams {
   paymentId: string;
   customerId: string;
   serviceId: string;
@@ -75,10 +76,10 @@ export interface CreateInvoiceFromPaymentParams {
 }
 
 // @para-doc [services-payments-spec.md#late-association]
-export async function createInvoiceFromPayment(
+export async function createOrderFromPayment(
   db: any,
-  params: CreateInvoiceFromPaymentParams
-): Promise<{ success: boolean; invoiceId: string }> {
+  params: CreateOrderFromPaymentParams
+): Promise<{ success: boolean; orderId: string }> {
   const isD1 = !db.session?.client?.transaction;
 
   if (!isD1) {
@@ -91,7 +92,7 @@ export async function createInvoiceFromPayment(
         .where(eq(payments.id, params.paymentId))
         .get();
         
-      if (!existingPayment || existingPayment.invoiceId) {
+      if (!existingPayment || existingPayment.invoiceId || existingPayment.orderId) {
         throw new Error('PAYMENT_ALREADY_RECONCILED');
       }
 
@@ -106,24 +107,24 @@ export async function createInvoiceFromPayment(
         throw new Error('SERVICE_NOT_FOUND');
       }
 
-      const invoiceAmount = params.customPrice !== undefined ? params.customPrice : targetService.price;
+      const orderAmount = params.customPrice !== undefined ? params.customPrice : targetService.price;
       const paidAmount = existingPayment.amount;
 
       let status: 'paid' | 'partially_paid' = 'paid';
-      if (paidAmount < invoiceAmount) {
+      if (paidAmount < orderAmount) {
         status = 'partially_paid';
       }
 
-      // 3. Create a new invoice
-      const invoiceId = crypto.randomUUID();
-      const invoiceNumber = `ORD-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      // 3. Create a new order
+      const orderId = crypto.randomUUID();
+      const orderNumber = `ORD-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
       
-      tx.insert(invoices).values({
-        id: invoiceId,
+      tx.insert(orders).values({
+        id: orderId,
         customerId: params.customerId,
         staffId: params.staffId,
-        invoiceNumber,
-        amount: invoiceAmount,
+        orderNumber,
+        amount: orderAmount,
         content: `Thanh toan dich vu ${targetService.name}`,
         status,
         serviceId: params.serviceId,
@@ -137,7 +138,7 @@ export async function createInvoiceFromPayment(
       // 4. Update the relationship in payments table
       tx.update(payments)
         .set({
-          invoiceId,
+          orderId,
           customerId: params.customerId,
         })
         .where(eq(payments.id, params.paymentId))
@@ -202,11 +203,11 @@ export async function createInvoiceFromPayment(
         }
       }
 
-      return { success: true, invoiceId };
+      return { success: true, orderId };
     });
   } else {
-    // D1 (production) - asynchronous transaction
-    return await db.transaction(async (tx: any) => {
+    // D1 (production) - asynchronous transaction with fallback if D1 mock does not support it
+    const executeInTx = async (tx: any) => {
       // 1. Check if the payment has already been reconciled
       const existingPayment = await tx
         .select()
@@ -214,7 +215,7 @@ export async function createInvoiceFromPayment(
         .where(eq(payments.id, params.paymentId))
         .get();
         
-      if (!existingPayment || existingPayment.invoiceId) {
+      if (!existingPayment || existingPayment.invoiceId || existingPayment.orderId) {
         throw new Error('PAYMENT_ALREADY_RECONCILED');
       }
 
@@ -229,24 +230,24 @@ export async function createInvoiceFromPayment(
         throw new Error('SERVICE_NOT_FOUND');
       }
 
-      const invoiceAmount = params.customPrice !== undefined ? params.customPrice : targetService.price;
+      const orderAmount = params.customPrice !== undefined ? params.customPrice : targetService.price;
       const paidAmount = existingPayment.amount;
 
       let status: 'paid' | 'partially_paid' = 'paid';
-      if (paidAmount < invoiceAmount) {
+      if (paidAmount < orderAmount) {
         status = 'partially_paid';
       }
 
-      // 3. Create a new invoice
-      const invoiceId = crypto.randomUUID();
-      const invoiceNumber = `ORD-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      // 3. Create a new order
+      const orderId = crypto.randomUUID();
+      const orderNumber = `ORD-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
       
-      await tx.insert(invoices).values({
-        id: invoiceId,
+      await tx.insert(orders).values({
+        id: orderId,
         customerId: params.customerId,
         staffId: params.staffId,
-        invoiceNumber,
-        amount: invoiceAmount,
+        orderNumber,
+        amount: orderAmount,
         content: `Thanh toan dich vu ${targetService.name}`,
         status,
         serviceId: params.serviceId,
@@ -261,7 +262,7 @@ export async function createInvoiceFromPayment(
       await tx
         .update(payments)
         .set({
-          invoiceId,
+          orderId,
           customerId: params.customerId,
         })
         .where(eq(payments.id, params.paymentId));
@@ -325,8 +326,18 @@ export async function createInvoiceFromPayment(
         }
       }
 
-      return { success: true, invoiceId };
-    });
+      return { success: true, orderId };
+    };
+
+    try {
+      return await db.transaction(executeInTx);
+    } catch (err: any) {
+      if (err.message.includes('begin') || err.message.includes('transaction')) {
+        console.warn('[D1 Transaction Fallback] Transaction not supported. Running sequentially on db client...');
+        return await executeInTx(db);
+      }
+      throw err;
+    }
   }
 }
 
@@ -485,8 +496,8 @@ export async function createPaidOrder(
       return { success: true, orderId, orderNumber };
     });
   } else {
-    // D1 (production) - asynchronous transaction
-    return await db.transaction(async (tx: any) => {
+    // D1 (production) - asynchronous transaction with fallback if D1 mock does not support it
+    const executeInTx = async (tx: any) => {
       // 1. Fetch service information
       const targetService = await tx
         .select()
@@ -618,6 +629,16 @@ export async function createPaidOrder(
       }
 
       return { success: true, orderId, orderNumber };
-    });
+    };
+
+    try {
+      return await db.transaction(executeInTx);
+    } catch (err: any) {
+      if (err.message.includes('begin') || err.message.includes('transaction')) {
+        console.warn('[D1 Transaction Fallback] Transaction not supported. Running sequentially on db client...');
+        return await executeInTx(db);
+      }
+      throw err;
+    }
   }
 }

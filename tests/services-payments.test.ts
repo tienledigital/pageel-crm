@@ -8,9 +8,9 @@ import {
   getService,
   updateService,
   listServices,
-  createInvoiceFromPayment
+  createOrderFromPayment
 } from '@/lib/services/serviceManager';
-import { customers, staff, payments, invoices, customerServices, services, users } from '@/lib/db/schema';
+import { customers, staff, payments, invoices, customerServices, services, users, orders } from '@/lib/db/schema';
 import { createSessionCookie } from '@/lib/auth';
 import { POST as createInvoiceHandler } from '@/pages/api/crm/payments/create-invoice';
 import { GET as getServicesHandler, POST as createServiceHandler } from '@/pages/api/crm/services/index';
@@ -93,7 +93,7 @@ describe('Late Association & Underpayment Logic', () => {
     await db.insert(staff).values(TEST_STAFF);
   });
 
-  it('test_late_association_full_payment: should mark invoice paid and activate customer service', async () => {
+  it('test_late_association_full_payment: should mark order paid and activate customer service', async () => {
     const db = getDb();
 
     // 1. Create a service
@@ -119,7 +119,7 @@ describe('Late Association & Underpayment Logic', () => {
     const startDate = Date.now();
     const expiredAt = startDate + 30 * 24 * 60 * 60 * 1000;
     
-    const result = await createInvoiceFromPayment(db, {
+    const result = await createOrderFromPayment(db, {
       paymentId,
       customerId: TEST_CUSTOMER.id,
       serviceId: service.id,
@@ -129,20 +129,20 @@ describe('Late Association & Underpayment Logic', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.invoiceId).toBeDefined();
+    expect(result.orderId).toBeDefined();
 
-    // 4. Verify invoice is paid
-    const invoice = await db.select().from(invoices).where(eq(invoices.id, result.invoiceId)).get();
-    expect(invoice).toBeDefined();
-    expect(invoice.status).toBe('paid');
-    expect(invoice.paymentId).toBe(paymentId);
-    expect(invoice.serviceId).toBe(service.id);
-    expect(invoice.startDate).toBe(startDate);
-    expect(invoice.expiredAt).toBe(expiredAt);
+    // 4. Verify order is paid
+    const order = await db.select().from(orders).where(eq(orders.id, result.orderId)).get();
+    expect(order).toBeDefined();
+    expect(order.status).toBe('paid');
+    expect(order.paymentId).toBe(paymentId);
+    expect(order.serviceId).toBe(service.id);
+    expect(order.startDate).toBe(startDate);
+    expect(order.expiredAt).toBe(expiredAt);
 
     // 5. Verify payment is linked
     const payment = await db.select().from(payments).where(eq(payments.id, paymentId)).get();
-    expect(payment.invoiceId).toBe(result.invoiceId);
+    expect(payment.orderId).toBe(result.orderId);
     expect(payment.customerId).toBe(TEST_CUSTOMER.id);
 
     // 6. Verify customer service is active
@@ -161,7 +161,7 @@ describe('Late Association & Underpayment Logic', () => {
     expect(customer.expiredAt).toBe(expiredAt);
   });
 
-  it('test_late_association_underpayment: should mark invoice partially_paid and NOT activate customer service', async () => {
+  it('test_late_association_underpayment: should mark order partially_paid and NOT activate customer service', async () => {
     const db = getDb();
 
     // 1. Create a service
@@ -187,7 +187,7 @@ describe('Late Association & Underpayment Logic', () => {
     const startDate = Date.now();
     const expiredAt = startDate + 30 * 24 * 60 * 60 * 1000;
     
-    const result = await createInvoiceFromPayment(db, {
+    const result = await createOrderFromPayment(db, {
       paymentId,
       customerId: TEST_CUSTOMER.id,
       serviceId: service.id,
@@ -198,9 +198,9 @@ describe('Late Association & Underpayment Logic', () => {
 
     expect(result.success).toBe(true);
 
-    // 4. Verify invoice is partially_paid
-    const invoice = await db.select().from(invoices).where(eq(invoices.id, result.invoiceId)).get();
-    expect(invoice.status).toBe('partially_paid');
+    // 4. Verify order is partially_paid
+    const order = await db.select().from(orders).where(eq(orders.id, result.orderId)).get();
+    expect(order.status).toBe('partially_paid');
 
     // 5. Verify customer service is NOT created or active for this service
     const custService = await db
@@ -222,13 +222,13 @@ describe('Late Association & Underpayment Logic', () => {
       prefix: 'VPNBACKUP'
     });
 
-    // 2. Create a payment that is ALREADY reconciled (invoiceId is set)
+    // 2. Create a payment that is ALREADY reconciled (orderId is set)
     const paymentId = 'PAY-IDEMP-1';
-    await db.insert(invoices).values({
-      id: 'SOME-EXISTING-INVOICE',
-      invoiceNumber: 'INV-EXISTING-1',
+    await db.insert(orders).values({
+      id: 'SOME-EXISTING-ORDER',
+      orderNumber: 'ORD-EXISTING-1',
       amount: 100000,
-      content: 'Existing invoice',
+      content: 'Existing order',
       status: 'paid',
       customerId: TEST_CUSTOMER.id,
       staffId: TEST_STAFF.id
@@ -241,7 +241,7 @@ describe('Late Association & Underpayment Logic', () => {
       paidAt: Date.now(),
       content: 'CUST-101 - NGUYEN VAN A',
       type: 'in',
-      invoiceId: 'SOME-EXISTING-INVOICE'
+      orderId: 'SOME-EXISTING-ORDER'
     });
 
     // 3. Try to associate and expect an error
@@ -249,7 +249,7 @@ describe('Late Association & Underpayment Logic', () => {
     const expiredAt = startDate + 30 * 24 * 60 * 60 * 1000;
 
     await expect(
-      createInvoiceFromPayment(db, {
+      createOrderFromPayment(db, {
         paymentId,
         customerId: TEST_CUSTOMER.id,
         serviceId: service.id,
@@ -391,12 +391,12 @@ describe('Late Association API Endpoint - Integration Tests', () => {
 
     const data = await response.json();
     expect(data.success).toBe(true);
-    expect(data.invoiceId).toBeDefined();
+    expect(data.orderId).toBeDefined();
 
     // Verify DB
-    const inv = await db.select().from(invoices).where(eq(invoices.id, data.invoiceId)).get();
-    expect(inv.status).toBe('paid');
-    expect(inv.paymentId).toBe(paymentId);
+    const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).get();
+    expect(order.status).toBe('paid');
+    expect(order.paymentId).toBe(paymentId);
   });
 });
 

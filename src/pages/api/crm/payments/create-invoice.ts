@@ -3,7 +3,8 @@ import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
-import { createInvoiceFromPayment } from '@/lib/services/serviceManager';
+import { createOrderFromPayment } from '@/lib/services/serviceManager';
+import { logDebug } from '@/lib/debug-logger';
 import { eq } from 'drizzle-orm';
 import { staff } from '@/lib/db/schema';
 
@@ -51,7 +52,7 @@ export const POST: APIRoute = async (context) => {
     const staffId = staffRecord[0]?.id || null;
 
     // 3. Call serviceManager logic
-    const result = await createInvoiceFromPayment(db, {
+    const result = await createOrderFromPayment(db, {
       paymentId,
       customerId,
       serviceId,
@@ -61,13 +62,26 @@ export const POST: APIRoute = async (context) => {
       customPrice: customPrice !== undefined ? Number(customPrice) : undefined,
     });
 
-    return new Response(JSON.stringify({ success: true, invoiceId: result.invoiceId }), {
+    return new Response(JSON.stringify({ success: true, orderId: result.orderId }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err: any) {
     console.error('[API create-invoice] Error:', err.message);
     const status = (err.message === 'PAYMENT_ALREADY_RECONCILED' || err.message === 'SERVICE_NOT_FOUND') ? 400 : 500;
+    try {
+      const db = getDb(env);
+      await logDebug(db, {
+        level: 'error',
+        endpoint: context.url.pathname,
+        method: context.request.method,
+        statusCode: status,
+        message: err.message,
+        stack: err.stack,
+      });
+    } catch (logErr) {
+      console.error('Failed to write debug log to DB:', logErr);
+    }
     return new Response(JSON.stringify({ error: err.message || 'Internal Server Error' }), {
       status,
       headers: { 'Content-Type': 'application/json' },
