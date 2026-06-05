@@ -33,7 +33,9 @@ const getPaymentDescription = (payment: ExportPayment): string => {
   if (payment.customer) {
     const id = payment.customer.id;
     const name = payment.customer.fullName;
-    const service = payment.invoice ? payment.invoice.content : 'TT GIA HAN';
+    const service = payment.invoice 
+      ? payment.invoice.content 
+      : (payment.serviceName ? payment.serviceName : 'TT GIA HAN');
     return `${id} - ${name} - ${service}`;
   }
   if (payment.invoice) {

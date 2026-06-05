@@ -76,6 +76,28 @@ describe('Excel Generator - generateS1a', () => {
     expect((row13.getCell(4).value as any).result).toBe(200000);
   });
 
+  it('should map description with vietnamese accented service name when customer has a service', async () => {
+    const template = getTemplateBuffer();
+    const paymentsData: ExportPayment[] = [
+      {
+        paidAt: new Date('2026-05-15T10:00:00Z').getTime(),
+        amount: 200000,
+        type: 'in',
+        content: 'Payment 1',
+        customer: { id: '1005', fullName: 'Nguyễn Văn A' },
+        serviceName: 'Hosting gói A'
+      }
+    ];
+
+    const result = await generateS1a(template, paymentsData);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(result);
+    const worksheet = workbook.worksheets[0];
+
+    const row12 = worksheet.getRow(12);
+    expect(row12.getCell(3).value).toBe('1005 - Nguyễn Văn A - Hosting gói A');
+  });
+
   it('should map description correctly for payments with invoices', async () => {
     const template = getTemplateBuffer();
     const paymentsData: ExportPayment[] = [
