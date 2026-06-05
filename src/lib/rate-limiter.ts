@@ -61,8 +61,9 @@ export async function checkRateLimit(
       return { allowed: true, remaining: maxAttempts - 1 };
     }
   } catch (err) {
-    // Fail-open on KV errors
-    console.error('[Rate Limiter Error] KV operation failed:', err);
-    return { allowed: true, remaining: maxAttempts };
+    // Fail-closed on KV errors — block requests when rate limiter is unavailable
+    // to prevent brute-force attacks when KV is down
+    console.error('[Rate Limiter Error] KV operation failed, blocking request:', err);
+    return { allowed: false, remaining: 0, retryAfterSeconds: 60 };
   }
 }

@@ -42,15 +42,15 @@ describe('Rate Limiter Utility', () => {
     expect(res.retryAfterSeconds).toBeGreaterThan(0);
   });
 
-  it('should fail-open if KV throws an error', async () => {
+  it('should fail-closed if KV throws an error (security: prevent brute-force when KV is down)', async () => {
     const buggyKv = {
       get: async () => { throw new Error('KV network timeout'); },
       put: async () => {}
     };
 
     const res = await checkRateLimit(buggyKv as any, '1.2.3.4', '/api/auth/login', 3, 10);
-    expect(res.allowed).toBe(true);
-    expect(res.remaining).toBe(3);
+    expect(res.allowed).toBe(false);
+    expect(res.remaining).toBe(0);
   });
 
   it('should fail-open if KV is not configured (undefined)', async () => {

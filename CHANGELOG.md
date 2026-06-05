@@ -6,6 +6,15 @@ order: 1
 
 All notable changes to this project will be documented in this file.
 
+## [0.10.0] - 2026-06-05
+
+### Added
+- **Automatic Orders and Manual Invoices Separation**: Split auto-generated orders (mã `ORD-` at `/crm/orders`) and manual invoices (mã `PO-` at `/crm/invoices` + taxInvoiceNumber).
+- **Service Packages Integration**: Customers now support `serviceId` (gói dịch vụ chính) and `balance` (ví số dư đối soát). Added "Set Main Service" in QR Tool UI.
+- **Reconciliation Wallet & Shared Wallet logic**: Implemented automatic wallet charging, wallet deduction, FIFO automated wallet scanning for pending/partial payments, and virtual `wallet_deduction` payment insertions.
+- **Bilingual Service Name in Excel S1a**: Automatically join services table to get Vietnamese accented service package name for Excel column C (Diễn giải).
+- **Centralized Role-based Authentication (Astro Middleware)**: Implemented Astro middleware for route checking. Saler only has access to QR Tool and customer update API, while Accountant is restricted from Settings.
+
 ## [0.9.1] - 2026-06-03
 
 ### Added
