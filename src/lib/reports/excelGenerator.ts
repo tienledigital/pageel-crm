@@ -16,6 +16,7 @@ export interface ExportPayment {
     invoiceNumber: string;
     content: string;
   } | null;
+  serviceName?: string | null;
 }
 
 // @para-doc [tax-reporting-spec.md#sanitize-formula]
