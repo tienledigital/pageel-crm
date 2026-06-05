@@ -2,7 +2,8 @@
   "sidebar": {
     "dashboard": "Tổng quan",
     "customers": "Khách hàng",
-    "invoices": "Đơn hàng",
+    "orders": "Đơn hàng",
+    "invoices": "Hóa đơn",
     "payments": "Giao dịch",
     "qr_tool": "QR Tool",
     "services": "Dịch vụ",

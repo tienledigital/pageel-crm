@@ -203,6 +203,12 @@ export async function verifySessionCookie(cookieValue: string, secret: string): 
     const payloadStr = base64urlDecode(payloadBase64);
     const payload = JSON.parse(payloadStr) as SessionPayload;
 
+    // TTL check: reject sessions older than 7 days (must match cookie maxAge)
+    const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+    if (payload.createdAt && (Date.now() - payload.createdAt) > SESSION_TTL_MS) {
+      return null;
+    }
+
     return payload;
   } catch (e) {
     return null;

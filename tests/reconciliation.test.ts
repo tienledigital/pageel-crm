@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getDb } from '@/lib/db';
 import { customers, payments, users, staff } from '@/lib/db/schema';
+import * as schema from '@/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { eq } from 'drizzle-orm';
 import path from 'path';
@@ -11,6 +12,14 @@ const WEBHOOK_SECRET = 'sepay-webhook-secret-12345';
 process.env.SEPAY_WEBHOOK_SECRET = WEBHOOK_SECRET;
 
 describe('Sepay Reconciliation Unit Tests', () => {
+  describe('Schema Check (TDD)', () => {
+    it('should have orders table, taxInvoiceNumber in invoices, and orderId in payments', () => {
+      expect((schema as any).orders).toBeDefined();
+      expect((schema as any).invoices.taxInvoiceNumber).toBeDefined();
+      expect((schema as any).payments.orderId).toBeDefined();
+    });
+  });
+
   describe('parseCustomerIdFromMemo', () => {
     it('should parse legacy ID format like "AG1002 - Gia han dich vu"', () => {
       const memo = 'AG1002 - Gia han dich vu';
@@ -49,9 +58,12 @@ describe('Database Reconciliation Integration Tests', () => {
     migrate(db, { migrationsFolder: path.join(__dirname, '../drizzle') });
 
     // Reset DB state
-    const { customerServices: csTable, services: sTable, invoices: iTable } = await import('@/lib/db/schema');
+    const { customerServices: csTable, services: sTable, invoices: iTable, auditLogs: auditLogsTable, orders: ordersTable } = await import('@/lib/db/schema');
     await db.update(iTable).set({ paymentId: null });
-    await db.update(payments).set({ invoiceId: null });
+    await db.update(ordersTable).set({ paymentId: null });
+    await db.update(payments).set({ invoiceId: null, orderId: null });
+    await db.delete(auditLogsTable);
+    await db.delete(ordersTable);
     await db.delete(csTable);
     await db.delete(payments);
     await db.delete(iTable);
@@ -185,9 +197,9 @@ describe('Database Reconciliation Integration Tests', () => {
     await expect(reconcilePayment(db, payment)).rejects.toThrow();
   });
 
-  it('should automatically match a service by prefix, generate invoice, and activate customer service', async () => {
+  it('should automatically match a service by prefix, generate order, and activate customer service', async () => {
     // 1. Create a service in the DB first
-    const { services: servicesTable, customerServices: customerServicesTable, invoices: invoicesTable } = await import('@/lib/db/schema');
+    const { services: servicesTable, customerServices: customerServicesTable, orders: ordersTable } = await import('@/lib/db/schema');
     const serviceId = 'srv-hosting-1';
     await db.insert(servicesTable).values({
       id: serviceId,
@@ -211,15 +223,15 @@ describe('Database Reconciliation Integration Tests', () => {
     const result = await reconcilePayment(db, payment);
     expect(result.success).toBe(true);
 
-    // 3. Verify an invoice was generated automatically
-    const generatedInvoices = await db.select().from(invoicesTable).where(eq(invoicesTable.serviceId, serviceId)).all();
-    expect(generatedInvoices).toHaveLength(1);
-    const invoice = generatedInvoices[0];
-    expect(invoice.customerId).toBe('1005');
-    expect(invoice.amount).toBe(200000);
-    expect(invoice.status).toBe('paid');
-    expect(invoice.startDate).toBeDefined();
-    expect(invoice.expiredAt).toBeDefined();
+    // 3. Verify an order was generated automatically
+    const generatedOrders = await db.select().from(ordersTable).where(eq(ordersTable.serviceId, serviceId)).all();
+    expect(generatedOrders).toHaveLength(1);
+    const order = generatedOrders[0];
+    expect(order.customerId).toBe('1005');
+    expect(order.amount).toBe(200000);
+    expect(order.status).toBe('paid');
+    expect(order.startDate).toBeDefined();
+    expect(order.expiredAt).toBeDefined();
 
     // 4. Verify customer_services is activated
     const activeCustServices = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
@@ -228,8 +240,8 @@ describe('Database Reconciliation Integration Tests', () => {
     expect(activeCustServices[0].status).toBe('active');
   });
 
-  it('should generate partially_paid invoice and NOT activate customer service if payment is underpaid', async () => {
-    const { services: servicesTable, customerServices: customerServicesTable, invoices: invoicesTable } = await import('@/lib/db/schema');
+  it('should generate partially_paid order and NOT activate customer service if payment is underpaid', async () => {
+    const { services: servicesTable, customerServices: customerServicesTable, orders: ordersTable } = await import('@/lib/db/schema');
     const serviceId = 'srv-hosting-2';
     await db.insert(servicesTable).values({
       id: serviceId,
@@ -259,18 +271,198 @@ describe('Database Reconciliation Integration Tests', () => {
     }
     expect(result.success).toBe(true);
 
-    // Verify invoice is partially_paid
-    const generatedInvoices = await db.select().from(invoicesTable).where(eq(invoicesTable.serviceId, serviceId)).all();
-    expect(generatedInvoices).toHaveLength(1);
-    expect(generatedInvoices[0].status).toBe('partially_paid');
+    // Verify order is partially_paid
+    const generatedOrders = await db.select().from(ordersTable).where(eq(ordersTable.serviceId, serviceId)).all();
+    expect(generatedOrders).toHaveLength(1);
+    expect(generatedOrders[0].status).toBe('partially_paid');
 
     // Verify customer service was NOT activated
     const activeCustServices = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
     expect(activeCustServices).toHaveLength(0);
   });
+
+  describe('Wallet and Overpayment Logic (Phase 3 TDD)', () => {
+    it('should reconcile overpayment by adding remainder to balance and extending service', async () => {
+      const { services: servicesTable, customerServices: customerServicesTable, orders: ordersTable, payments: paymentsTable } = await import('@/lib/db/schema');
+      const serviceId = 'srv-phase3-1';
+      await db.insert(servicesTable).values({
+        id: serviceId,
+        name: 'Phase 3 Service',
+        price: 200000,
+        billingCycle: 30,
+        prefix: 'PHASE3_SRV',
+        status: 'active',
+        createdAt: Date.now()
+      });
+
+      const payment = {
+        transactionId: 'TX_PHASE3_1',
+        amount: 250000,
+        content: '1005 - PHASE3_SRV',
+        bank: 'Techcombank',
+        paidAt: Date.now(),
+      };
+
+      const result = await reconcilePayment(db, payment);
+      expect(result.success).toBe(true);
+
+      // Verify balance is updated with overpayment (50k)
+      const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+      expect(customerInfo.balance).toBe(50000);
+
+      // Verify order is created in orders table and status is paid
+      const generatedOrders = await db.select().from(ordersTable).where(eq(ordersTable.serviceId, serviceId)).all();
+      expect(generatedOrders).toHaveLength(1);
+      expect(generatedOrders[0].status).toBe('paid');
+      expect(generatedOrders[0].amount).toBe(200000);
+
+      // Verify customer service was activated
+      const activeCustServices = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+      expect(activeCustServices).toHaveLength(1);
+      expect(activeCustServices[0].status).toBe('active');
+    });
+
+    it('should reconcile underpayment by adding full amount to balance and not extending service', async () => {
+      const { services: servicesTable, customerServices: customerServicesTable, orders: ordersTable } = await import('@/lib/db/schema');
+      const serviceId = 'srv-phase3-2';
+      await db.insert(servicesTable).values({
+        id: serviceId,
+        name: 'Phase 3 Service 2',
+        price: 200000,
+        billingCycle: 30,
+        prefix: 'PHASE3_SRV2',
+        status: 'active',
+        createdAt: Date.now()
+      });
+
+      const payment = {
+        transactionId: 'TX_PHASE3_2',
+        amount: 150000,
+        content: '1005 - PHASE3_SRV2',
+        bank: 'Techcombank',
+        paidAt: Date.now(),
+      };
+
+      const result = await reconcilePayment(db, payment);
+      expect(result.success).toBe(true);
+
+      // Verify balance has the full payment amount (150k)
+      const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+      expect(customerInfo.balance).toBe(150000);
+
+      // Verify order is created in orders table and status is partially_paid
+      const generatedOrders = await db.select().from(ordersTable).where(eq(ordersTable.serviceId, serviceId)).all();
+      expect(generatedOrders).toHaveLength(1);
+      expect(generatedOrders[0].status).toBe('partially_paid');
+      expect(generatedOrders[0].amount).toBe(200000);
+
+      // Verify customer service was NOT activated
+      const activeCustServices = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+      expect(activeCustServices).toHaveLength(0);
+    });
+
+    it('should automatically pay off partially paid orders using wallet balance when balance is topped up', async () => {
+      const { services: servicesTable, customerServices: customerServicesTable, orders: ordersTable, payments: paymentsTable } = await import('@/lib/db/schema');
+      const serviceId = 'srv-phase3-3';
+      await db.insert(servicesTable).values({
+        id: serviceId,
+        name: 'Phase 3 Service 3',
+        price: 200000,
+        billingCycle: 30,
+        prefix: 'PHASE3_SRV3',
+        status: 'active',
+        createdAt: Date.now()
+      });
+
+      // 1. Initial underpayment: 150k for 200k service
+      const payment1 = {
+        transactionId: 'TX_PHASE3_3_A',
+        amount: 150000,
+        content: '1005 - PHASE3_SRV3',
+        bank: 'Techcombank',
+        paidAt: Date.now(),
+      };
+      await reconcilePayment(db, payment1);
+
+      // 2. Top-up payment: 100k cash / bank transfer (without matching prefix)
+      // This should bring the customer's balance to 150k + 100k = 250k.
+      // 50k should be automatically deducted to pay off the 50k remaining for the partially paid order.
+      // Remainder (200k) should stay in the customer's balance.
+      const payment2 = {
+        transactionId: 'TX_PHASE3_3_B',
+        amount: 100000,
+        content: '1005 - top up balance',
+        bank: 'Cash',
+        paidAt: Date.now(),
+      };
+
+      const result = await reconcilePayment(db, payment2);
+      expect(result.success).toBe(true);
+
+      // Verify balance is now 50k (250k - 200k)
+      const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+      expect(customerInfo.balance).toBe(50000);
+
+      // Verify order is now paid
+      const [order] = await db.select().from(ordersTable).where(eq(ordersTable.serviceId, serviceId)).all();
+      expect(order.status).toBe('paid');
+
+      // Verify service was activated
+      const activeCustServices = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+      expect(activeCustServices).toHaveLength(1);
+      expect(activeCustServices[0].status).toBe('active');
+
+      // Verify virtual payment was created with paymentMethod = 'wallet_deduction'
+      const virtualPayments = await db.select().from(paymentsTable).where(eq(paymentsTable.paymentMethod, 'wallet_deduction')).all();
+      expect(virtualPayments).toHaveLength(1);
+      expect(virtualPayments[0].amount).toBe(200000);
+      expect(virtualPayments[0].orderId).toBe(order.id);
+    });
+  });
 });
 
 describe('Sepay Webhook Endpoint Integration Tests', () => {
+  beforeEach(async () => {
+    process.env.NODE_ENV = 'test';
+    const db = getDb();
+    
+    migrate(db, { migrationsFolder: path.join(__dirname, '../drizzle') });
+
+    const { customerServices: csTable, services: sTable, invoices: iTable, auditLogs: auditLogsTable, orders: ordersTable } = await import('@/lib/db/schema');
+    await db.update(iTable).set({ paymentId: null });
+    await db.update(ordersTable).set({ paymentId: null });
+    await db.update(payments).set({ invoiceId: null, orderId: null });
+    await db.delete(auditLogsTable);
+    await db.delete(ordersTable);
+    await db.delete(csTable);
+    await db.delete(payments);
+    await db.delete(iTable);
+    await db.delete(customers);
+    await db.delete(staff);
+    await db.delete(users);
+    await db.delete(sTable);
+
+    await db.insert(customers).values({
+      id: '1005',
+      fullName: 'Test Customer 1005',
+      phone: '0987654321',
+      expiredAt: 1716195600000,
+    });
+
+    await db.insert(customers).values({
+      id: '1002',
+      fullName: 'Test Customer 1002',
+      phone: '0987654322',
+      expiredAt: null,
+    });
+
+    await db.insert(customers).values({
+      id: 'CUST-ANONYMOUS',
+      fullName: 'Anonymous Customer',
+      phone: '0000000000',
+    });
+  });
+
   it('should return 401 Unauthorized when authorization token is missing or invalid', async () => {
     const mockRequest = new Request('http://localhost/api/webhook/sepay', {
       method: 'POST',
@@ -384,9 +576,9 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
     expect(data2.message).toContain('Duplicate');
   });
 
-  it('should automatically match a service, generate invoice, and activate customer service via webhook', async () => {
+  it('should automatically match a service, generate order, and activate customer service via webhook', async () => {
     const db = getDb();
-    const { services: servicesTable, customerServices: customerServicesTable, invoices: invoicesTable } = await import('@/lib/db/schema');
+    const { services: servicesTable, customerServices: customerServicesTable, orders: ordersTable } = await import('@/lib/db/schema');
     const serviceId = 'srv-hosting-webhook';
     await db.insert(servicesTable).values({
       id: serviceId,
@@ -430,10 +622,10 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
     const response = await webhookHandler(context);
     expect(response.status).toBe(200);
 
-    // Verify invoice is paid
-    const inv = await db.select().from(invoicesTable).where(eq(invoicesTable.serviceId, serviceId)).all();
-    expect(inv).toHaveLength(1);
-    expect(inv[0].status).toBe('paid');
+    // Verify order is paid
+    const ords = await db.select().from(ordersTable).where(eq(ordersTable.serviceId, serviceId)).all();
+    expect(ords).toHaveLength(1);
+    expect(ords[0].status).toBe('paid');
 
     // Verify customer_services is active
     const cs = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
@@ -484,9 +676,9 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
     }
   });
 
-  it('should use custom content template from config when generating service invoice', async () => {
+  it('should use custom content template from config when generating service order', async () => {
     const db = getDb();
-    const { services: servicesTable, invoices: invoicesTable, config: configTable } = await import('@/lib/db/schema');
+    const { services: servicesTable, orders: ordersTable, config: configTable } = await import('@/lib/db/schema');
     const serviceId = 'srv-hosting-custom';
     await db.insert(servicesTable).values({
       id: serviceId,
@@ -516,8 +708,105 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
     const result = await reconcilePayment(db, payment);
     expect(result.success).toBe(true);
 
-    const generatedInvoices = await db.select().from(invoicesTable).where(eq(invoicesTable.serviceId, serviceId)).all();
-    expect(generatedInvoices).toHaveLength(1);
-    expect(generatedInvoices[0].content).toBe('Thanh toan cho dich vu Custom Service Name (Auto matched)');
+    const generatedOrders = await db.select().from(ordersTable).where(eq(ordersTable.serviceId, serviceId)).all();
+    expect(generatedOrders).toHaveLength(1);
+    expect(generatedOrders[0].content).toBe('Thanh toan cho dich vu Custom Service Name (Auto matched)');
+  });
+
+  describe('Invoices and Orders API Tests (TDD)', () => {
+    let adminToken: string;
+    let db: any;
+    const SESSION_SECRET = 'fallback-secret-key-must-be-at-least-32-chars-long';
+    process.env.SESSION_SECRET = SESSION_SECRET;
+
+    function createMockContextForApi(method: string, body?: any, sessionCookie?: string, params?: any) {
+      const request = new Request('http://localhost', {
+        method,
+        body: body ? JSON.stringify(body) : undefined,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const cookiesMap = new Map();
+      if (sessionCookie) {
+        cookiesMap.set('session', { value: sessionCookie });
+      }
+
+      const cookiesObj = {
+        get: (name: string) => cookiesMap.get(name),
+      };
+
+      return {
+        request,
+        url: new URL(request.url),
+        cookies: cookiesObj,
+        params: params || {},
+        clientAddress: '127.0.0.1',
+        locals: {
+          runtime: { env: { SESSION_SECRET } },
+          user: sessionCookie ? { id: 'usr-admin-rec', username: 'adminrec', role: 'admin' } : undefined
+        }
+      } as any;
+    }
+
+    beforeEach(async () => {
+      db = getDb();
+      const { hashPassword, createSessionCookie } = await import('@/lib/auth');
+      const adminPassHash = await hashPassword('adminPassword123');
+      await db.insert(users).values({
+        id: 'usr-admin-rec',
+        username: 'adminrec',
+        passwordHash: adminPassHash,
+        role: 'admin',
+      });
+
+      adminToken = await createSessionCookie({
+        id: 'usr-admin-rec',
+        username: 'adminrec',
+        role: 'admin',
+        createdAt: Date.now(),
+      }, SESSION_SECRET);
+    });
+
+    it('should update taxInvoiceNumber on invoice via PATCH (TDD)', async () => {
+      const { invoices: invoicesTable } = await import('@/lib/db/schema');
+      // Seed a PO invoice
+      await db.insert(invoicesTable).values({
+        id: 'inv-test-po-1',
+        invoiceNumber: 'PO-20260604-0001',
+        amount: 200000,
+        content: 'PO manual content',
+        status: 'pending',
+      });
+
+      const { PATCH: patchTaxNumberHandler } = await import('../src/pages/api/crm/invoices/[id]/tax-number');
+      const context = createMockContextForApi('PATCH', { taxInvoiceNumber: 'VAT-12345' }, adminToken, { id: 'inv-test-po-1' });
+      const response = await patchTaxNumberHandler(context);
+      expect(response.status).toBe(200);
+
+      const [updatedInvoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, 'inv-test-po-1'));
+      expect(updatedInvoice.taxInvoiceNumber).toBe('VAT-12345');
+    });
+
+    it('should list automatic orders via GET (TDD)', async () => {
+      const { orders: ordersTable } = await import('@/lib/db/schema');
+      // Seed an order
+      await db.insert(ordersTable).values({
+        id: 'ord-test-1',
+        orderNumber: 'ORD-20260604-0001',
+        amount: 300000,
+        content: 'ORD auto content',
+        status: 'paid',
+      });
+
+      const { GET: getOrdersHandler } = await import('../src/pages/api/crm/orders/index');
+      const context = createMockContextForApi('GET', undefined, adminToken);
+      const response = await getOrdersHandler(context);
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data).toHaveLength(1);
+      expect(data[0].orderNumber).toBe('ORD-20260604-0001');
+    });
   });
 });

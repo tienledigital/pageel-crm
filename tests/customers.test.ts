@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { getDb } from '../src/lib/db';
-import { users, customers, auditLogs, staff } from '../src/lib/db/schema';
+import { users, customers, auditLogs, staff, services } from '../src/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import path from 'path';
 import { createSessionCookie, hashPassword } from '../src/lib/auth';
@@ -8,6 +8,7 @@ import { eq } from 'drizzle-orm';
 
 // Import target PUT API handler
 import { PUT as putCustomerHandler } from '../src/pages/api/crm/customers/[id]';
+import { POST as postCustomerHandler } from '../src/pages/api/crm/customers/index';
 
 const SESSION_SECRET = 'fallback-secret-key-must-be-at-least-32-chars-long';
 process.env.SESSION_SECRET = SESSION_SECRET;
@@ -52,6 +53,14 @@ describe('CRM Customers API Integration Tests', () => {
   let db: any;
   let adminToken: string;
   let staffToken: string;
+  let salerToken: string;
+
+  describe('Schema Check (TDD)', () => {
+    it('should have serviceId and balance columns defined in customers schema', () => {
+      expect((customers as any).serviceId).toBeDefined();
+      expect((customers as any).balance).toBeDefined();
+    });
+  });
 
   beforeAll(async () => {
     db = getDb();
@@ -63,6 +72,24 @@ describe('CRM Customers API Integration Tests', () => {
     await db.delete(customers);
     await db.delete(staff);
     await db.delete(users);
+    await db.delete(services);
+
+    // Seed Test Services
+    await db.insert(services).values({
+      id: 'srv-test-1',
+      name: 'Service Test 1',
+      price: 100000,
+      prefix: 'SRV1',
+      status: 'active',
+    });
+
+    await db.insert(services).values({
+      id: 'srv-test-2',
+      name: 'Service Test 2',
+      price: 200000,
+      prefix: 'SRV2',
+      status: 'active',
+    });
 
     // Seed Admin User
     const adminPassHash = await hashPassword('adminPassword123');
@@ -104,6 +131,22 @@ describe('CRM Customers API Integration Tests', () => {
       createdAt: Date.now(),
     }, SESSION_SECRET);
 
+    // Seed Saler User
+    const salerPassHash = await hashPassword('salerPassword123');
+    await db.insert(users).values({
+      id: 'usr-saler',
+      username: 'saler1',
+      passwordHash: salerPassHash,
+      role: 'saler',
+    });
+
+    salerToken = await createSessionCookie({
+      id: 'usr-saler',
+      username: 'saler1',
+      role: 'saler',
+      createdAt: Date.now(),
+    }, SESSION_SECRET);
+
     // Seed a test customer
     await db.insert(customers).values({
       id: 'CUST-1',
@@ -111,7 +154,8 @@ describe('CRM Customers API Integration Tests', () => {
       phone: '0901234567',
       email: 'old@example.com',
       address: 'Old Address',
-      notes: 'Old Notes'
+      notes: 'Old Notes',
+      balance: 100000,
     });
   });
 
@@ -184,6 +228,69 @@ describe('CRM Customers API Integration Tests', () => {
       const [updatedCustomer] = await db.select().from(customers).where(eq(customers.id, 'CUST-1'));
       expect(updatedCustomer.fullName).toBe('Staff Updated Name');
       expect(updatedCustomer.phone).toBe('0901112222');
+    });
+
+    it('should update customer serviceId and balance successfully by admin (TDD)', async () => {
+      const context: any = createMockContext('PUT', {
+        fullName: 'Original Name',
+        phone: '0901234567',
+        serviceId: 'srv-test-1',
+        balance: 250000,
+      }, adminToken, { id: 'CUST-1' });
+
+      const response = await putCustomerHandler(context);
+      expect(response.status).toBe(200);
+
+      const [updatedCustomer] = await db.select().from(customers).where(eq(customers.id, 'CUST-1'));
+      expect(updatedCustomer.serviceId).toBe('srv-test-1');
+      expect(updatedCustomer.balance).toBe(250000);
+    });
+
+    it('should reject saler with 403 if they try to update balance (TDD)', async () => {
+      const context: any = createMockContext('PUT', {
+        fullName: 'Original Name',
+        phone: '0901234567',
+        serviceId: 'srv-test-1',
+        balance: 300000, // modified balance from 100000
+      }, salerToken, { id: 'CUST-1' });
+
+      const response = await putCustomerHandler(context);
+      expect(response.status).toBe(403);
+    });
+
+    it('should allow saler to update serviceId and other fields if balance remains unchanged (TDD)', async () => {
+      const context: any = createMockContext('PUT', {
+        fullName: 'Original Name',
+        phone: '0901234567',
+        serviceId: 'srv-test-1',
+        balance: 100000, // unchanged balance
+      }, salerToken, { id: 'CUST-1' });
+
+      const response = await putCustomerHandler(context);
+      expect(response.status).toBe(200);
+
+      const [updatedCustomer] = await db.select().from(customers).where(eq(customers.id, 'CUST-1'));
+      expect(updatedCustomer.serviceId).toBe('srv-test-1');
+    });
+  });
+
+  describe('POST /api/crm/customers', () => {
+    it('should create customer with serviceId and balance successfully by admin (TDD)', async () => {
+      const context: any = createMockContext('POST', {
+        fullName: 'New Customer',
+        phone: '0988888888',
+        serviceId: 'srv-test-2',
+        balance: 50000,
+      }, adminToken);
+
+      const response = await postCustomerHandler(context);
+      expect(response.status).toBe(200);
+      const data = await response.json();
+
+      const [newCustomer] = await db.select().from(customers).where(eq(customers.id, data.customerId));
+      expect(newCustomer).toBeDefined();
+      expect(newCustomer.serviceId).toBe('srv-test-2');
+      expect(newCustomer.balance).toBe(50000);
     });
   });
 });

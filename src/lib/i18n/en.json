@@ -2,7 +2,8 @@
   "sidebar": {
     "dashboard": "Overview",
     "customers": "Customers",
-    "invoices": "Orders",
+    "orders": "Orders",
+    "invoices": "Invoices",
     "payments": "Payments",
     "qr_tool": "QR Tool",
     "services": "Services",

@@ -43,6 +43,15 @@ export async function POST(context: any) {
     });
   }
 
+  // 2.5 SSRF mitigation — validate downloadUrl against allowed domains
+  const { validateRestoreUrl } = await import('@/lib/url-validator');
+  if (!validateRestoreUrl(downloadUrl)) {
+    return new Response(JSON.stringify({ error: 'Invalid download URL: only HTTPS GitHub URLs are allowed' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   // 3. Read configuration from env
   const token = env.GITHUB_BACKUP_TOKEN || process.env.GITHUB_BACKUP_TOKEN;
   if (!token) {

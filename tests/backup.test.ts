@@ -538,7 +538,7 @@ describe('Astro API Endpoint - POST /api/backup/restore', () => {
   it('should return 401 if unauthorized', async () => {
     const request = new Request('http://localhost/api/backup/restore', {
       method: 'POST',
-      body: JSON.stringify({ downloadUrl: 'http://download' })
+      body: JSON.stringify({ downloadUrl: 'https://api.github.com/repos/mock-owner/mock-repo/contents/backup.json' })
     });
     const context: any = {
       request,
@@ -576,7 +576,7 @@ describe('Astro API Endpoint - POST /api/backup/restore', () => {
 
     const request = new Request('http://localhost/api/backup/restore', {
       method: 'POST',
-      body: JSON.stringify({ downloadUrl: 'http://download-backup-url', filename: 'backup-test.json' })
+      body: JSON.stringify({ downloadUrl: 'https://api.github.com/repos/mock-owner/mock-repo/contents/backup-test.json', filename: 'backup-test.json' })
     });
     const context: any = {
       request,

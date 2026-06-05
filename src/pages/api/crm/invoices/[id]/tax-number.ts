@@ -1,14 +1,13 @@
-// @para-doc [api-contracts.md#customer-management]
+// @para-doc [api-contracts.md#invoices-management]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { customers } from '@/lib/db/schema';
+import { invoices } from '@/lib/db/schema';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { eq } from 'drizzle-orm';
 
-// @para-doc [db-schema.md#2-bang-customers-danh-muc-khach-hang]
-export const PUT: APIRoute = async (context) => {
+export const PATCH: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions
     const sessionCookie = context.cookies.get('session')?.value;
@@ -31,7 +30,7 @@ export const PUT: APIRoute = async (context) => {
 
     const id = context.params.id;
     if (!id) {
-      return new Response(JSON.stringify({ error: 'Bad Request: Customer ID is required' }), {
+      return new Response(JSON.stringify({ error: 'Bad Request: Invoice ID is required' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -48,51 +47,25 @@ export const PUT: APIRoute = async (context) => {
       });
     }
 
-    const { fullName, phone, email, idCard, address, taxCode, assignedStaffId, serviceId, balance, notes, expiredAt } = body;
-
-    // Validate required fields
-    if (!fullName || !fullName.trim() || !phone || !phone.trim()) {
-      return new Response(JSON.stringify({ error: 'Full name and Phone are required' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+    const { taxInvoiceNumber } = body;
 
     const db = getDb(env);
 
-    // Check if customer exists
-    const [existingCustomer] = await db.select().from(customers).where(eq(customers.id, id));
-    if (!existingCustomer) {
-      return new Response(JSON.stringify({ error: 'Not Found: Customer does not exist' }), {
+    // Check if invoice exists
+    const [existingInvoice] = await db.select().from(invoices).where(eq(invoices.id, id));
+    if (!existingInvoice) {
+      return new Response(JSON.stringify({ error: 'Not Found: Invoice does not exist' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    // Role checks
-    if (user.role === 'saler' && balance !== undefined && Number(balance) !== existingCustomer.balance) {
-      return new Response(JSON.stringify({ error: 'Forbidden: Saler cannot edit customer balance' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    // 3. Update customer record
-    await db.update(customers)
+    // 3. Update invoice tax invoice number
+    await db.update(invoices)
       .set({
-        fullName: fullName.trim(),
-        phone: phone.trim(),
-        email: email?.trim() || null,
-        idCard: idCard?.trim() || null,
-        address: address?.trim() || null,
-        taxCode: taxCode?.trim() || null,
-        assignedStaffId: assignedStaffId || null,
-        serviceId: serviceId || null,
-        balance: balance !== undefined && balance !== null ? Number(balance) : existingCustomer.balance,
-        notes: notes?.trim() || null,
-        expiredAt: expiredAt ? Number(expiredAt) : null,
+        taxInvoiceNumber: taxInvoiceNumber?.trim() || null,
       })
-      .where(eq(customers.id, id));
+      .where(eq(invoices.id, id));
 
     // 4. Log the audit trail
     const ipAddress = context.clientAddress || 
@@ -103,14 +76,13 @@ export const PUT: APIRoute = async (context) => {
     await logAudit(db, {
       userId: user.id,
       username: user.username,
-      action: 'customer.update',
+      action: 'invoice.update_tax_number',
       target: id,
       detail: { 
         metadata: { 
           status: 'success',
           changes: {
-            fullName: fullName.trim(),
-            phone: phone.trim()
+            taxInvoiceNumber: taxInvoiceNumber?.trim() || null
           }
         } 
       },

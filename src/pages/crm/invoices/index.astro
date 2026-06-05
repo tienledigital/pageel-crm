@@ -7,6 +7,7 @@ import { desc, eq, like, and, or, sql } from 'drizzle-orm';
 
 const db = getDb(env);
 const lang = Astro.locals.lang || 'vi';
+const user = Astro.locals.user;
 
 // 1. Parse query parameters
 const url = new URL(Astro.request.url);
@@ -21,7 +22,8 @@ if (search) {
     or(
       like(invoices.invoiceNumber, `%${search}%`),
       like(invoices.content, `%${search}%`),
-      like(customers.fullName, `%${search}%`)
+      like(customers.fullName, `%${search}%`),
+      like(invoices.taxInvoiceNumber, `%${search}%`)
     )
   );
 }
@@ -40,6 +42,7 @@ const invoiceList = await db
     amount: invoices.amount,
     content: invoices.content,
     status: invoices.status,
+    taxInvoiceNumber: invoices.taxInvoiceNumber,
     createdAt: invoices.createdAt,
     paidAt: invoices.paidAt,
     customerName: customers.fullName,
@@ -97,7 +100,7 @@ function formatDate(timestamp: number | null) {
 }
 ---
 
-<DashboardLayout title={lang === 'vi' ? 'Quản lý Đơn hàng' : 'Orders Management'}>
+<DashboardLayout title={lang === 'vi' ? 'Quản lý Hóa đơn' : 'Invoices Management'}>
   <style>
     .header-container {
       display: flex;
@@ -405,6 +408,131 @@ function formatDate(timestamp: number | null) {
       justify-content: flex-end;
     }
 
+    /* Modal Styles */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-content {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 2rem;
+      width: 100%;
+      max-width: 500px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      animation: scale-up 0.2s ease-out;
+    }
+
+    @keyframes scale-up {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 0.75rem;
+    }
+
+    .modal-header h3 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin: 0;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 1.5rem;
+      cursor: pointer;
+      padding: 0;
+      line-height: 1;
+    }
+
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+      letter-spacing: 0.5px;
+    }
+
+    .form-input {
+      width: 100%;
+      background-color: var(--bg-hover);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      color: var(--text-primary);
+      padding: 0.65rem 0.85rem;
+      font-size: 0.875rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-input:focus {
+      border-color: var(--primary);
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+
+    .btn-cancel {
+      background-color: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-cancel:hover {
+      background-color: var(--bg-hover);
+      color: var(--text-primary);
+    }
+
+    .btn-save {
+      background-color: var(--primary);
+      border: 1px solid var(--primary);
+      color: #fff;
+      padding: 0.65rem 1.25rem;
+      border-radius: 8px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .btn-save:hover {
+      box-shadow: 0 4px 12px rgba(255, 93, 1, 0.25);
+    }
+
     @media (max-width: 768px) {
       .table-responsive {
         display: none;
@@ -418,8 +546,6 @@ function formatDate(timestamp: number | null) {
     }
   </style>
 
-
-
   <!-- Stats Grid -->
   <div class="stats-banner">
     <!-- Total Invoiced -->
@@ -430,9 +556,9 @@ function formatDate(timestamp: number | null) {
         </svg>
       </div>
       <div class="stat-details">
-        <span class="stat-label">{lang === 'vi' ? 'Tổng giá trị đơn hàng' : 'Total Ordered'}</span>
+        <span class="stat-label">{lang === 'vi' ? 'Tổng giá trị hóa đơn' : 'Total Invoiced'}</span>
         <span class="stat-value">{formatVND(totalInvoiced)}</span>
-        <span style="font-size: 0.75rem; color: var(--text-secondary);">{lang === 'vi' ? `Từ ${invoiceList.length} đơn hàng` : `From ${invoiceList.length} orders`}</span>
+        <span style="font-size: 0.75rem; color: var(--text-secondary);">{lang === 'vi' ? `Từ ${invoiceList.length} hóa đơn` : `From ${invoiceList.length} invoices`}</span>
       </div>
     </div>
 
@@ -446,7 +572,7 @@ function formatDate(timestamp: number | null) {
       <div class="stat-details">
         <span class="stat-label">{lang === 'vi' ? 'Đã thu hồi' : 'Total Collected'}</span>
         <span class="stat-value" style="color: var(--success);">{formatVND(totalCollected)}</span>
-        <span style="font-size: 0.75rem; color: var(--text-secondary);">{lang === 'vi' ? `${countPaid} đơn hàng đã thanh toán` : `${countPaid} paid orders`}</span>
+        <span style="font-size: 0.75rem; color: var(--text-secondary);">{lang === 'vi' ? `${countPaid} hóa đơn đã thanh toán` : `${countPaid} paid invoices`}</span>
       </div>
     </div>
 
@@ -460,7 +586,7 @@ function formatDate(timestamp: number | null) {
       <div class="stat-details">
         <span class="stat-label">{lang === 'vi' ? 'Chưa thanh toán' : 'Outstanding'}</span>
         <span class="stat-value" style="color: #f59e0b;">{formatVND(pendingCollected)}</span>
-        <span style="font-size: 0.75rem; color: var(--text-secondary);">{lang === 'vi' ? `${countPending} đơn hàng chưa thanh toán` : `${countPending} pending orders`}</span>
+        <span style="font-size: 0.75rem; color: var(--text-secondary);">{lang === 'vi' ? `${countPending} hóa đơn chưa thanh toán` : `${countPending} pending invoices`}</span>
       </div>
     </div>
   </div>
@@ -470,7 +596,7 @@ function formatDate(timestamp: number | null) {
     <input 
       type="text" 
       name="search" 
-      placeholder={lang === 'vi' ? 'Tìm kiếm theo mã đơn hàng, nội dung hoặc khách hàng...' : 'Search by order number, content, or customer...'} 
+      placeholder={lang === 'vi' ? 'Tìm kiếm theo mã hóa đơn, nội dung, khách hàng hoặc số HĐ thuế...' : 'Search by invoice number, content, customer, or tax number...'} 
       value={search} 
       class="search-input" 
     />
@@ -480,7 +606,7 @@ function formatDate(timestamp: number | null) {
       <option value="pending" selected={statusFilter === 'pending'}>{lang === 'vi' ? 'Chưa thanh toán (Pending)' : 'Pending'}</option>
       <option value="cancelled" selected={statusFilter === 'cancelled'}>{lang === 'vi' ? 'Đã hủy (Cancelled)' : 'Cancelled'}</option>
     </select>
-    <button type="submit" class="btn-filter">{lang === 'vi' ? 'Lọc đơn hàng' : 'Apply Filters'}</button>
+    <button type="submit" class="btn-filter">{lang === 'vi' ? 'Lọc hóa đơn' : 'Apply Filters'}</button>
     {(search || statusFilter) && (
       <a href="/crm/invoices" class="btn-reset">{lang === 'vi' ? 'Đặt lại' : 'Reset'}</a>
     )}
@@ -493,9 +619,10 @@ function formatDate(timestamp: number | null) {
       <table class="custom-table">
         <thead>
           <tr>
-            <th>{lang === 'vi' ? 'Mã đơn hàng' : 'Order Number'}</th>
+            <th>{lang === 'vi' ? 'Mã hóa đơn' : 'Invoice Number'}</th>
             <th>{lang === 'vi' ? 'Khách hàng' : 'Customer'}</th>
             <th>{lang === 'vi' ? 'Mô tả / Nội dung' : 'Description'}</th>
+            <th>{lang === 'vi' ? 'Số HĐ Thuế' : 'Tax Invoice No'}</th>
             <th>{lang === 'vi' ? 'Số tiền' : 'Amount'}</th>
             <th>{lang === 'vi' ? 'Trạng thái' : 'Status'}</th>
             <th>{lang === 'vi' ? 'Ngày phát hành' : 'Issued Date'}</th>
@@ -505,8 +632,8 @@ function formatDate(timestamp: number | null) {
         <tbody>
           {invoiceList.length === 0 ? (
             <tr>
-              <td colspan="7" style="text-align: center; padding: 3rem; color: var(--text-secondary);">
-                {lang === 'vi' ? 'Không có đơn hàng nào khớp với điều kiện tìm kiếm.' : 'No orders matching the criteria.'}
+              <td colspan="8" style="text-align: center; padding: 3rem; color: var(--text-secondary);">
+                {lang === 'vi' ? 'Không có hóa đơn nào khớp với điều kiện tìm kiếm.' : 'No invoices matching the criteria.'}
               </td>
             </tr>
           ) : (
@@ -533,6 +660,11 @@ function formatDate(timestamp: number | null) {
                   </div>
                 </td>
                 <td>
+                  <span class="mono" style="font-weight: 500; color: var(--text-primary);">
+                    {invoice.taxInvoiceNumber || (lang === 'vi' ? 'Chưa có' : 'None')}
+                  </span>
+                </td>
+                <td>
                   <span style="font-weight: 600; color: var(--text-primary);">{formatVND(invoice.amount)}</span>
                 </td>
                 <td>
@@ -546,12 +678,22 @@ function formatDate(timestamp: number | null) {
                   <span>{formatDate(invoice.createdAt)}</span>
                 </td>
                 <td>
-                  <a href={`/crm/qr-tool?invoiceId=${invoice.id}`} class="btn-action">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px;">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" />
-                    </svg>
-                    {lang === 'vi' ? 'Thanh toán QR' : 'Pay QR'}
-                  </a>
+                  <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <a href={`/crm/qr-tool?invoiceId=${invoice.id}`} class="btn-action">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" />
+                      </svg>
+                      {lang === 'vi' ? 'Thanh toán QR' : 'Pay QR'}
+                    </a>
+                    {user && (user.role === 'admin' || user.role === 'accountant') && (
+                      <button class="btn-action edit-tax-btn" data-id={invoice.id} data-number={invoice.invoiceNumber} data-tax={invoice.taxInvoiceNumber || ''}>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px;">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                        </svg>
+                        {lang === 'vi' ? 'HĐ Thuế' : 'Tax HĐ'}
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))
@@ -564,7 +706,7 @@ function formatDate(timestamp: number | null) {
     <div class="mobile-card-grid">
       {invoiceList.length === 0 ? (
         <div style="text-align: center; padding: 2rem; color: var(--text-secondary);">
-          {lang === 'vi' ? 'Không có đơn hàng nào khớp với điều kiện tìm kiếm.' : 'No orders matching the criteria.'}
+          {lang === 'vi' ? 'Không có hóa đơn nào khớp với điều kiện tìm kiếm.' : 'No invoices matching the criteria.'}
         </div>
       ) : (
         invoiceList.map((invoice: any) => (
@@ -593,6 +735,10 @@ function formatDate(timestamp: number | null) {
                 <span class="mobile-card-value" style="text-align: right;">{invoice.content}</span>
               </div>
               <div class="mobile-card-row">
+                <span class="mobile-card-label">{lang === 'vi' ? 'Số HĐ Thuế' : 'Tax Invoice No'}</span>
+                <span class="mobile-card-value mono">{invoice.taxInvoiceNumber || (lang === 'vi' ? 'Chưa có' : 'None')}</span>
+              </div>
+              <div class="mobile-card-row">
                 <span class="mobile-card-label">{lang === 'vi' ? 'Số tiền' : 'Amount'}</span>
                 <span class="mobile-card-value" style="font-weight: 600; color: var(--text-primary);">{formatVND(invoice.amount)}</span>
               </div>
@@ -606,17 +752,117 @@ function formatDate(timestamp: number | null) {
               </div>
             </div>
 
-            <div class="mobile-card-footer">
-              <a href={`/crm/qr-tool?invoiceId=${invoice.id}`} class="btn-action" style="width: 100%; justify-content: center;">
+            <div class="mobile-card-footer" style="display: flex; gap: 0.5rem; width: 100%;">
+              <a href={`/crm/qr-tool?invoiceId=${invoice.id}`} class="btn-action" style="flex: 1; justify-content: center;">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px;">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" />
                 </svg>
-                {lang === 'vi' ? 'Thanh toán QR' : 'Pay QR'}
+                {lang === 'vi' ? 'Thanh toán' : 'Pay'}
               </a>
+              {user && (user.role === 'admin' || user.role === 'accountant') && (
+                <button class="btn-action edit-tax-btn" data-id={invoice.id} data-number={invoice.invoiceNumber} data-tax={invoice.taxInvoiceNumber || ''} style="flex: 1; justify-content: center;">
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" />
+                  </svg>
+                  {lang === 'vi' ? 'HĐ Thuế' : 'Tax HĐ'}
+                </button>
+              )}
             </div>
           </div>
         ))
       )}
     </div>
   </div>
+
+  <!-- Edit Tax Invoice Modal -->
+  <div class="modal-backdrop" id="editTaxModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>{lang === 'vi' ? 'Cập nhật hóa đơn thuế VAT' : 'Update Tax Invoice Number'}</h3>
+        <button class="modal-close" id="taxModalCloseBtn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="editTaxForm">
+          <input type="hidden" id="taxInvoiceId" />
+          <div class="form-group">
+            <label for="taxInvoiceNumberInput" id="taxModalLabel" style="margin-bottom: 0.5rem; display: block; font-weight: 500; font-size: 0.875rem;"></label>
+            <input 
+              type="text" 
+              id="taxInvoiceNumberInput" 
+              placeholder={lang === 'vi' ? 'Ví dụ: 0001234...' : 'e.g. 0001234...'} 
+              class="form-input"
+            />
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn-cancel" id="taxModalCancelBtn">{lang === 'vi' ? 'Hủy' : 'Cancel'}</button>
+            <button type="submit" class="btn-save">{lang === 'vi' ? 'Cập nhật' : 'Update'}</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script is:inline>
+    // Modal elements
+    const taxModal = document.getElementById('editTaxModal');
+    const taxModalCloseBtn = document.getElementById('taxModalCloseBtn');
+    const taxModalCancelBtn = document.getElementById('taxModalCancelBtn');
+    const editTaxForm = document.getElementById('editTaxForm');
+    const taxInvoiceIdInput = document.getElementById('taxInvoiceId');
+    const taxInvoiceNumberInput = document.getElementById('taxInvoiceNumberInput');
+    const taxModalLabel = document.getElementById('taxModalLabel');
+
+    function closeTaxModal() {
+      if (taxModal) taxModal.style.display = 'none';
+    }
+
+    if (taxModalCloseBtn) taxModalCloseBtn.addEventListener('click', closeTaxModal);
+    if (taxModalCancelBtn) taxModalCancelBtn.addEventListener('click', closeTaxModal);
+
+    window.addEventListener('click', (e) => {
+      if (e.target === taxModal) closeTaxModal();
+    });
+
+    document.addEventListener('click', (e) => {
+      const editBtn = e.target.closest('.edit-tax-btn');
+      if (editBtn) {
+        const id = editBtn.dataset.id;
+        const number = editBtn.dataset.number;
+        const tax = editBtn.dataset.tax;
+
+        taxInvoiceIdInput.value = id;
+        taxInvoiceNumberInput.value = tax;
+        taxModalLabel.textContent = `Số HĐ thuế cho ${number}`;
+        taxModal.style.display = 'flex';
+      }
+    });
+
+    if (editTaxForm) {
+      editTaxForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const id = taxInvoiceIdInput.value;
+        const taxInvoiceNumber = taxInvoiceNumberInput.value.trim();
+
+        try {
+          const res = await fetch(`/api/crm/invoices/${id}/tax-number`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ taxInvoiceNumber })
+          });
+
+          if (res.ok) {
+            closeTaxModal();
+            window.location.reload();
+          } else {
+            const data = await res.json();
+            alert((data.error || 'Failed to update tax invoice number'));
+          }
+        } catch (err) {
+          console.error(err);
+          alert('Network error, failed to update tax invoice number');
+        }
+      });
+    }
+  </script>
 </DashboardLayout>

@@ -43,14 +43,14 @@ describe('Excel Generator - generateS1a', () => {
         amount: 200000,
         type: 'in',
         content: 'Payment 1',
-        customer: { id: '1005', fullName: 'Nguyen Van A' }
+        customer: { id: '1005', fullName: 'Nguyễn Văn A' }
       },
       {
         paidAt: new Date('2026-05-16T10:00:00Z').getTime(),
         amount: 50000,
         type: 'out',
         content: 'Refund 1',
-        customer: { id: '1005', fullName: 'Nguyen Van A' }
+        customer: { id: '1005', fullName: 'Nguyễn Văn A' }
       }
     ];
 
@@ -66,7 +66,7 @@ describe('Excel Generator - generateS1a', () => {
     // Verify row count or row values
     // Incoming payment is at row 12
     const row12 = worksheet.getRow(12);
-    expect(row12.getCell(3).value).toBe('1005 - Nguyen Van A - TT GIA HAN');
+    expect(row12.getCell(3).value).toBe('1005 - Nguyễn Văn A - TT GIA HAN');
     expect(row12.getCell(4).value).toBe(200000);
 
     // Row 13 should be the total row
@@ -74,6 +74,28 @@ describe('Excel Generator - generateS1a', () => {
     expect(row13.getCell(3).value).toBe('Tổng cộng:');
     // Result of formula should be 200000
     expect((row13.getCell(4).value as any).result).toBe(200000);
+  });
+
+  it('should map description with vietnamese accented service name when customer has a service', async () => {
+    const template = getTemplateBuffer();
+    const paymentsData: ExportPayment[] = [
+      {
+        paidAt: new Date('2026-05-15T10:00:00Z').getTime(),
+        amount: 200000,
+        type: 'in',
+        content: 'Payment 1',
+        customer: { id: '1005', fullName: 'Nguyễn Văn A' },
+        serviceName: 'Hosting gói A'
+      }
+    ];
+
+    const result = await generateS1a(template, paymentsData);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(result);
+    const worksheet = workbook.worksheets[0];
+
+    const row12 = worksheet.getRow(12);
+    expect(row12.getCell(3).value).toBe('1005 - Nguyễn Văn A - Hosting gói A');
   });
 
   it('should map description correctly for payments with invoices', async () => {
@@ -95,8 +117,7 @@ describe('Excel Generator - generateS1a', () => {
     const worksheet = workbook.worksheets[0];
 
     const row12 = worksheet.getRow(12);
-    // Lê Văn Tám should be unaccented to Le Van Tam
-    expect(row12.getCell(3).value).toBe('1001 - Le Van Tam - Goi VIP 6 Thang');
+    expect(row12.getCell(3).value).toBe('1001 - Lê Văn Tám - Gói VIP 6 Tháng');
   });
 
   it('should map description correctly for anonymous payments', async () => {
@@ -277,7 +298,7 @@ describe('Export S1a API Endpoint - GET /api/export/s1a', () => {
     
     // Row 12 is payment
     const row12 = worksheet.getRow(12);
-    expect(row12.getCell(3).value).toBe('1005 - Nguyen Van A - Gia han CRM');
+    expect(row12.getCell(3).value).toBe('1005 - Nguyễn Văn A - Gia hạn CRM');
     expect(row12.getCell(4).value).toBe(200000);
   });
 

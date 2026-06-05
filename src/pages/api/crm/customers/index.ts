@@ -29,7 +29,7 @@ export const POST: APIRoute = async (context) => {
 
     // 2. Parse body parameters
     const body = await context.request.json();
-    const { id, fullName, phone, email, idCard, address, taxCode, assignedStaffId, notes, expiredAt } = body;
+    const { id, fullName, phone, email, idCard, address, taxCode, assignedStaffId, serviceId, balance, notes, expiredAt } = body;
 
     if (!fullName || !phone) {
       return new Response(JSON.stringify({ error: 'Full name and Phone are required' }), {
@@ -53,6 +53,8 @@ export const POST: APIRoute = async (context) => {
       address: address?.trim() || null,
       taxCode: taxCode?.trim() || null,
       assignedStaffId: assignedStaffId || null,
+      serviceId: serviceId || null,
+      balance: balance !== undefined && balance !== null ? Number(balance) : 0,
       notes: notes?.trim() || null,
       expiredAt: expiredAt ? Number(expiredAt) : null,
     });

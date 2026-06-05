@@ -1,7 +1,7 @@
 // @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
 import type { APIContext } from 'astro';
 import { getDb } from '@/lib/db';
-import { payments, customers, invoices } from '@/lib/db/schema';
+import { payments, customers, invoices, services } from '@/lib/db/schema';
 import { eq, and, gte, lte, isNotNull } from 'drizzle-orm';
 import { env } from 'cloudflare:workers';
 
@@ -83,10 +83,12 @@ export const GET = async (context: APIContext): Promise<Response> => {
         payment: payments,
         customer: customers,
         invoice: invoices,
+        service: services,
       })
       .from(payments)
       .leftJoin(customers, eq(payments.customerId, customers.id))
       .leftJoin(invoices, eq(payments.invoiceId, invoices.id))
+      .leftJoin(services, eq(customers.serviceId, services.id))
       .where(
         and(
           eq(payments.type, 'in'), // Only incoming payments for S1a
@@ -111,6 +113,7 @@ export const GET = async (context: APIContext): Promise<Response> => {
         invoiceNumber: row.invoice.invoiceNumber,
         content: row.invoice.content,
       } : null,
+      serviceName: row.service ? row.service.name : null,
     }));
 
     const totalAmount = previewPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
