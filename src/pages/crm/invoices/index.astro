@@ -2,7 +2,7 @@
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { invoices, customers, staff } from '@/lib/db/schema';
+import { invoices, customers, staff, payments, orders } from '@/lib/db/schema';
 import { desc, eq, like, and, or, sql } from 'drizzle-orm';
 
 const db = getDb(env);
@@ -30,7 +30,8 @@ if (search) {
       like(invoices.invoiceNumber, `%${search}%`),
       like(invoices.content, `%${search}%`),
       like(customers.fullName, `%${search}%`),
-      like(invoices.taxInvoiceNumber, `%${search}%`)
+      like(invoices.taxInvoiceNumber, `%${search}%`),
+      like(orders.orderNumber, `%${search}%`)
     )
   );
 }
@@ -55,10 +56,13 @@ const invoiceList = await db
     customerName: customers.fullName,
     customerId: customers.id,
     staffName: staff.fullName,
+    orderNumber: orders.orderNumber,
   })
   .from(invoices)
   .leftJoin(customers, eq(invoices.customerId, customers.id))
   .leftJoin(staff, eq(invoices.staffId, staff.id))
+  .leftJoin(payments, eq(payments.invoiceId, invoices.id))
+  .leftJoin(orders, eq(payments.orderId, orders.id))
   .where(whereClause)
   .orderBy(desc(invoices.createdAt));
 
@@ -626,7 +630,8 @@ function formatDate(timestamp: number | null) {
       <table class="custom-table">
         <thead>
           <tr>
-            <th>{lang === 'vi' ? 'Mã hóa đơn' : 'Invoice Number'}</th>
+            <th>{lang === 'vi' ? 'Mã đơn hàng gán qua' : 'Linked Order'}</th>
+            <th>{lang === 'vi' ? 'Mã số hóa đơn' : 'Invoice Number'}</th>
             <th>{lang === 'vi' ? 'Khách hàng' : 'Customer'}</th>
             <th>{lang === 'vi' ? 'Mô tả / Nội dung' : 'Description'}</th>
             <th>{lang === 'vi' ? 'Số HĐ Thuế' : 'Tax Invoice No'}</th>
@@ -639,13 +644,22 @@ function formatDate(timestamp: number | null) {
         <tbody>
           {invoiceList.length === 0 ? (
             <tr>
-              <td colspan="8" style="text-align: center; padding: 3rem; color: var(--text-secondary);">
+              <td colspan="9" style="text-align: center; padding: 3rem; color: var(--text-secondary);">
                 {lang === 'vi' ? 'Không có hóa đơn nào khớp với điều kiện tìm kiếm.' : 'No invoices matching the criteria.'}
               </td>
             </tr>
           ) : (
             invoiceList.map((invoice: any) => (
               <tr>
+                <td>
+                  {invoice.orderNumber ? (
+                    <a href={`/crm/orders?search=${invoice.orderNumber}`} class="mono" style="color: var(--primary); font-weight: 600; text-decoration: none;">
+                      {invoice.orderNumber}
+                    </a>
+                  ) : (
+                    <span style="color: var(--text-secondary);">—</span>
+                  )}
+                </td>
                 <td>
                   <span class="mono" style="font-weight: 600;">{invoice.invoiceNumber}</span>
                 </td>
@@ -740,7 +754,12 @@ function formatDate(timestamp: number | null) {
           <div class="mobile-card">
             <div class="mobile-card-header">
               <div style="display: flex; flex-direction: column; gap: 0.25rem;">
-                <span class="mono" style="font-weight: 600; color: var(--text-primary);">{invoice.invoiceNumber}</span>
+                <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-primary);">
+                  {lang === 'vi' ? 'Đơn hàng' : 'Order'}: <span class="mono">{invoice.orderNumber || '—'}</span>
+                </div>
+                <div style="font-size: 0.75rem; color: var(--text-secondary);">
+                  {lang === 'vi' ? 'Mã số HĐ' : 'Inv No'}: <span class="mono">{invoice.invoiceNumber}</span>
+                </div>
                 {invoice.customerName ? (
                   <a href={`/crm/customers?search=${invoice.customerName}`} style="color: var(--primary); font-weight: 500; font-size: 0.875rem; text-decoration: none;">
                     {invoice.customerName}
