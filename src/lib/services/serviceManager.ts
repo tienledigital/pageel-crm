@@ -1,6 +1,6 @@
 // @para-doc [services-payments-spec.md#project-structure]
 import { eq, and } from 'drizzle-orm';
-import { services, customerServices, invoices, payments, customers } from '@/lib/db/schema';
+import { services, customerServices, invoices, payments, customers, orders } from '@/lib/db/schema';
 
 // @para-doc [services-payments-spec.md#service-helpers]
 export interface CreateServiceParams {
@@ -326,6 +326,298 @@ export async function createInvoiceFromPayment(
       }
 
       return { success: true, invoiceId };
+    });
+  }
+}
+
+// @para-doc [spec-2026-06-05-quick-create-paid-order.md#4-code-style]
+export interface CreatePaidOrderParams {
+  customerId: string;
+  serviceId: string;
+  amount: number;
+  content: string;
+  paidAt: number;
+  startDateFromPayment: boolean;
+  paymentMethod: string;
+  staffId: string;
+}
+
+export async function createPaidOrder(
+  db: any,
+  params: CreatePaidOrderParams
+): Promise<{ success: boolean; orderId: string; orderNumber: string }> {
+  const isD1 = !db.session?.client?.transaction;
+
+  if (!isD1) {
+    // BetterSQLite3 (local / test) - synchronous transaction
+    return db.transaction((tx: any) => {
+      // 1. Fetch service information
+      const targetService = tx
+        .select()
+        .from(services)
+        .where(eq(services.id, params.serviceId))
+        .get();
+
+      if (!targetService) {
+        throw new Error('SERVICE_NOT_FOUND');
+      }
+
+      // 2. Fetch active customer service for sequence calculation
+      const existingCS = tx
+        .select()
+        .from(customerServices)
+        .where(
+          and(
+            eq(customerServices.customerId, params.customerId),
+            eq(customerServices.serviceId, params.serviceId),
+            eq(customerServices.status, 'active')
+          )
+        )
+        .get();
+
+      let startDate = params.paidAt;
+      if (!params.startDateFromPayment && existingCS && existingCS.expiredAt > params.paidAt) {
+        startDate = existingCS.expiredAt;
+      }
+      const expiredAt = startDate + (targetService.billingCycle ?? 30) * 24 * 60 * 60 * 1000;
+
+      // 3. Generate IDs
+      const orderId = crypto.randomUUID();
+      const paymentId = crypto.randomUUID();
+      const orderNumber = `ORD-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const transactionId = `TX-MANUAL-${orderNumber}`;
+
+      // 4. Create order (with paymentId as null first to avoid FOREIGN KEY failure)
+      tx.insert(orders).values({
+        id: orderId,
+        customerId: params.customerId,
+        staffId: params.staffId,
+        orderNumber,
+        amount: params.amount,
+        content: params.content,
+        status: 'paid',
+        serviceId: params.serviceId,
+        paymentId: null,
+        startDate,
+        expiredAt,
+        createdAt: Date.now(),
+        paidAt: params.paidAt,
+      }).run();
+
+      // 5. Create payment
+      tx.insert(payments).values({
+        id: paymentId,
+        orderId,
+        customerId: params.customerId,
+        amount: params.amount,
+        transactionId,
+        paymentMethod: params.paymentMethod,
+        type: 'in',
+        category: 'revenue',
+        content: params.content,
+        paidAt: params.paidAt,
+        createdAt: Date.now(),
+      }).run();
+
+      // 5b. Update order with paymentId
+      tx.update(orders)
+        .set({ paymentId })
+        .where(eq(orders.id, orderId))
+        .run();
+
+      // 6. Update or create customer service
+      const existingCustomerService = tx
+        .select()
+        .from(customerServices)
+        .where(
+          and(
+            eq(customerServices.customerId, params.customerId),
+            eq(customerServices.serviceId, params.serviceId)
+          )
+        )
+        .get();
+
+      if (existingCustomerService) {
+        tx.update(customerServices)
+          .set({
+            status: 'active',
+            startDate,
+            expiredAt,
+          })
+          .where(eq(customerServices.id, existingCustomerService.id))
+          .run();
+      } else {
+        tx.insert(customerServices).values({
+          id: crypto.randomUUID(),
+          customerId: params.customerId,
+          serviceId: params.serviceId,
+          status: 'active',
+          startDate,
+          expiredAt,
+          createdAt: Date.now(),
+        }).run();
+      }
+
+      // 7. Sync max expiredAt to customers table
+      const activeServices = tx
+        .select()
+        .from(customerServices)
+        .where(
+          and(
+            eq(customerServices.customerId, params.customerId),
+            eq(customerServices.status, 'active')
+          )
+        )
+        .all();
+
+      const maxExpiredAt = activeServices.reduce(
+        (max: number, current: any) => (current.expiredAt > max ? current.expiredAt : max),
+        0
+      );
+
+      if (maxExpiredAt > 0) {
+        tx.update(customers)
+          .set({ expiredAt: maxExpiredAt })
+          .where(eq(customers.id, params.customerId))
+          .run();
+      }
+
+      return { success: true, orderId, orderNumber };
+    });
+  } else {
+    // D1 (production) - asynchronous transaction
+    return await db.transaction(async (tx: any) => {
+      // 1. Fetch service information
+      const targetService = await tx
+        .select()
+        .from(services)
+        .where(eq(services.id, params.serviceId))
+        .get();
+
+      if (!targetService) {
+        throw new Error('SERVICE_NOT_FOUND');
+      }
+
+      // 2. Fetch active customer service for sequence calculation
+      const existingCS = await tx
+        .select()
+        .from(customerServices)
+        .where(
+          and(
+            eq(customerServices.customerId, params.customerId),
+            eq(customerServices.serviceId, params.serviceId),
+            eq(customerServices.status, 'active')
+          )
+        )
+        .get();
+
+      let startDate = params.paidAt;
+      if (!params.startDateFromPayment && existingCS && existingCS.expiredAt > params.paidAt) {
+        startDate = existingCS.expiredAt;
+      }
+      const expiredAt = startDate + (targetService.billingCycle ?? 30) * 24 * 60 * 60 * 1000;
+
+      // 3. Generate IDs
+      const orderId = crypto.randomUUID();
+      const paymentId = crypto.randomUUID();
+      const orderNumber = `ORD-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+      const transactionId = `TX-MANUAL-${orderNumber}`;
+
+      // 4. Create order (with paymentId as null first to avoid FOREIGN KEY failure)
+      await tx.insert(orders).values({
+        id: orderId,
+        customerId: params.customerId,
+        staffId: params.staffId,
+        orderNumber,
+        amount: params.amount,
+        content: params.content,
+        status: 'paid',
+        serviceId: params.serviceId,
+        paymentId: null,
+        startDate,
+        expiredAt,
+        createdAt: Date.now(),
+        paidAt: params.paidAt,
+      });
+
+      // 5. Create payment
+      await tx.insert(payments).values({
+        id: paymentId,
+        orderId,
+        customerId: params.customerId,
+        amount: params.amount,
+        transactionId,
+        paymentMethod: params.paymentMethod,
+        type: 'in',
+        category: 'revenue',
+        content: params.content,
+        paidAt: params.paidAt,
+        createdAt: Date.now(),
+      });
+
+      // 5b. Update order with paymentId
+      await tx.update(orders)
+        .set({ paymentId })
+        .where(eq(orders.id, orderId));
+
+      // 6. Update or create customer service
+      const existingCustomerService = await tx
+        .select()
+        .from(customerServices)
+        .where(
+          and(
+            eq(customerServices.customerId, params.customerId),
+            eq(customerServices.serviceId, params.serviceId)
+          )
+        )
+        .get();
+
+      if (existingCustomerService) {
+        await tx
+          .update(customerServices)
+          .set({
+            status: 'active',
+            startDate,
+            expiredAt,
+          })
+          .where(eq(customerServices.id, existingCustomerService.id));
+      } else {
+        await tx.insert(customerServices).values({
+          id: crypto.randomUUID(),
+          customerId: params.customerId,
+          serviceId: params.serviceId,
+          status: 'active',
+          startDate,
+          expiredAt,
+          createdAt: Date.now(),
+        });
+      }
+
+      // 7. Sync max expiredAt to customers table
+      const activeServices = await tx
+        .select()
+        .from(customerServices)
+        .where(
+          and(
+            eq(customerServices.customerId, params.customerId),
+            eq(customerServices.status, 'active')
+          )
+        )
+        .all();
+
+      const maxExpiredAt = activeServices.reduce(
+        (max: number, current: any) => (current.expiredAt > max ? current.expiredAt : max),
+        0
+      );
+
+      if (maxExpiredAt > 0) {
+        await tx
+          .update(customers)
+          .set({ expiredAt: maxExpiredAt })
+          .where(eq(customers.id, params.customerId));
+      }
+
+      return { success: true, orderId, orderNumber };
     });
   }
 }
