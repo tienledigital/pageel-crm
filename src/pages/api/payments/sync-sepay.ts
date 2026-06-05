@@ -2,7 +2,7 @@
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { reconcilePayment } from '@/lib/reconciliation';
-import { config } from '@/lib/db/schema';
+import { config, payments } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { logDebug } from '@/lib/debug-logger';
 
@@ -165,6 +165,19 @@ export async function POST(context: any) {
       };
 
       try {
+        // Check duplicate BEFORE calling reconcilePayment to avoid starting database transactions unnecessarily
+        const existing = await db
+          .select({ id: payments.id })
+          .from(payments)
+          .where(eq(payments.transactionId, resolvedTxId))
+          .limit(1);
+
+        if (existing.length > 0) {
+          duplicates++;
+          txLog.push({ id: resolvedTxId, amount: txAmount, disposition: 'duplicate' });
+          continue;
+        }
+
         await reconcilePayment(db, payment);
         newReconciled++;
         txLog.push({ id: resolvedTxId, amount: txAmount, disposition: 'reconciled' });
