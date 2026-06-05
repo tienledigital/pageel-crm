@@ -24,6 +24,7 @@ const orgLogo = orgLogoConfig[0]?.value || '';
 const url = new URL(Astro.request.url);
 const initialCustomerId = url.searchParams.get('customerId') || '';
 const invoiceId = url.searchParams.get('invoiceId') || '';
+const lang = Astro.locals.lang || 'vi';
 
 let initialInvoice = null;
 if (invoiceId) {
@@ -411,6 +412,7 @@ if (invoiceId) {
               <option 
                 value={c.id} 
                 data-name={c.fullName} 
+                data-customer={JSON.stringify(c)}
                 selected={c.id === initialCustomerId}
               >
                 {c.id} - {c.fullName} ({c.phone})
@@ -429,14 +431,19 @@ if (invoiceId) {
 
         <div class="input-group">
           <span class="input-label">Select Service Catalog</span>
-          <select id="serviceSelect" class="select-input">
-            <option value="" data-price="" data-prefix="">-- Select Service Catalog --</option>
-            {activeServices.map((srv: any) => (
-              <option value={srv.id} data-price={srv.price} data-prefix={srv.prefix}>
-                {srv.name} - {srv.price.toLocaleString()} đ ({srv.prefix})
-              </option>
-            ))}
-          </select>
+          <div style="display: flex; gap: 0.5rem; width: 100%;">
+            <select id="serviceSelect" class="select-input" style="flex: 1;">
+              <option value="" data-price="" data-prefix="">-- Select Service Catalog --</option>
+              {activeServices.map((srv: any) => (
+                <option value={srv.id} data-price={srv.price} data-prefix={srv.prefix}>
+                  {srv.name} - {srv.price.toLocaleString()} đ ({srv.prefix})
+                </option>
+              ))}
+            </select>
+            <button id="btnSetMainService" class="btn-filter" style="padding: 0 1rem; font-size: 0.75rem; white-space: nowrap; font-weight: 600;" disabled type="button">
+              {lang === 'vi' ? 'Đặt gói chính' : 'Set Main'}
+            </button>
+          </div>
         </div>
 
         <div class="input-group">
@@ -686,11 +693,49 @@ if (invoiceId) {
       }
     });
 
+    const btnSetMainService = document.getElementById('btnSetMainService');
+
+    function updateMainServiceBtnState() {
+      if (btnSetMainService) {
+        const hasCustomer = custSelect.value !== '';
+        const hasService = serviceSelect.value !== '';
+        if (hasCustomer && hasService) {
+          btnSetMainService.removeAttribute('disabled');
+        } else {
+          btnSetMainService.setAttribute('disabled', 'true');
+        }
+      }
+    }
+
     // Customer selection change
     custSelect.addEventListener('change', () => {
       selectedCustomerId = custSelect.value;
       const selectedOption = custSelect.options[custSelect.selectedIndex];
       selectedCustomerName = selectedOption.getAttribute('data-name') || '';
+      
+      const custDataStr = selectedOption.getAttribute('data-customer');
+      if (custDataStr) {
+        const customer = JSON.parse(custDataStr);
+        if (customer.serviceId && serviceSelect) {
+          serviceSelect.value = customer.serviceId;
+          serviceSelect.dispatchEvent(new Event('change'));
+        } else if (serviceSelect) {
+          serviceSelect.value = '';
+          serviceInput.value = '';
+          amountInput.value = '';
+          serviceName = '';
+          amount = 0;
+        }
+      } else {
+        if (serviceSelect) {
+          serviceSelect.value = '';
+          serviceInput.value = '';
+          amountInput.value = '';
+          serviceName = '';
+          amount = 0;
+        }
+      }
+      updateMainServiceBtnState();
       updateState();
     });
 
@@ -709,6 +754,7 @@ if (invoiceId) {
           btn.classList.remove('active');
         }
       });
+      updateMainServiceBtnState();
       updateState();
     });
 
@@ -717,6 +763,7 @@ if (invoiceId) {
       serviceSelect.addEventListener('change', () => {
         const selectedOption = serviceSelect.options[serviceSelect.selectedIndex];
         if (!selectedOption || !selectedOption.value) {
+          updateMainServiceBtnState();
           return;
         }
 
@@ -749,7 +796,57 @@ if (invoiceId) {
           }
         });
 
+        updateMainServiceBtnState();
         updateState();
+      });
+    }
+
+    if (btnSetMainService) {
+      btnSetMainService.addEventListener('click', async () => {
+        const selectedOption = custSelect.options[custSelect.selectedIndex];
+        if (!selectedOption || !selectedOption.value) return;
+        const custDataStr = selectedOption.getAttribute('data-customer');
+        if (!custDataStr) return;
+        const customer = JSON.parse(custDataStr);
+        const serviceId = serviceSelect.value;
+
+        if (!serviceId) return;
+
+        btnSetMainService.setAttribute('disabled', 'true');
+        btnSetMainService.textContent = '...';
+
+        try {
+          const res = await fetch(`/api/crm/customers/${customer.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              fullName: customer.fullName,
+              phone: customer.phone,
+              email: customer.email,
+              idCard: customer.idCard,
+              address: customer.address,
+              taxCode: customer.taxCode,
+              assignedStaffId: customer.assignedStaffId,
+              serviceId: serviceId,
+              balance: customer.balance,
+              notes: customer.notes,
+              expiredAt: customer.expiredAt
+            })
+          });
+
+          if (res.ok) {
+            alert(lang === 'vi' ? 'Đặt gói dịch vụ chính thành công!' : 'Successfully set main service package!');
+            window.location.reload();
+          } else {
+            const data = await res.json();
+            alert('Error: ' + (data.error || 'Unknown error'));
+            updateMainServiceBtnState();
+          }
+        } catch (err) {
+          console.error(err);
+          alert('Network error, failed to set main service package.');
+          updateMainServiceBtnState();
+        }
       });
     }
 
@@ -883,7 +980,18 @@ if (invoiceId) {
       updateState();
     } else if (custSelect.value) {
       selectedCustomerId = custSelect.value;
-      selectedCustomerName = custSelect.options[custSelect.selectedIndex].getAttribute('data-name') || '';
+      const selectedOption = custSelect.options[custSelect.selectedIndex];
+      selectedCustomerName = selectedOption.getAttribute('data-name') || '';
+      
+      const custDataStr = selectedOption.getAttribute('data-customer');
+      if (custDataStr) {
+        const customer = JSON.parse(custDataStr);
+        if (customer.serviceId && serviceSelect) {
+          serviceSelect.value = customer.serviceId;
+          serviceSelect.dispatchEvent(new Event('change'));
+        }
+      }
+      updateMainServiceBtnState();
       updateState();
     }
   </script>

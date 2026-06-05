@@ -2,10 +2,12 @@
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { customers, staff } from '@/lib/db/schema';
+import { customers, staff, services } from '@/lib/db/schema';
 import { desc, eq, like, and, or, sql } from 'drizzle-orm';
 
 const db = getDb(env);
+const user = Astro.locals.user;
+const isWritableBalance = user && (user.role === 'admin' || user.role === 'accountant');
 
 // 1. Parse query parameters
 const url = new URL(Astro.request.url);
@@ -43,7 +45,7 @@ if (statusFilter === 'active') {
 
 const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-// Query customers joining with staff to get assigned staff name
+// Query customers joining with staff and services
 const customerList = await db
   .select({
     id: customers.id,
@@ -55,16 +57,27 @@ const customerList = await db
     address: customers.address,
     taxCode: customers.taxCode,
     assignedStaffId: customers.assignedStaffId,
+    serviceId: customers.serviceId,
+    balance: customers.balance,
     notes: customers.notes,
     staffName: staff.fullName,
+    serviceName: services.name,
   })
   .from(customers)
   .leftJoin(staff, eq(customers.assignedStaffId, staff.id))
+  .leftJoin(services, eq(customers.serviceId, services.id))
   .where(whereClause)
   .orderBy(desc(customers.id));
 
 // Query all staff members for the dropdown
 const staffList = await db.select().from(staff).orderBy(staff.fullName);
+
+// Query active services for the dropdown
+const servicesList = await db.select().from(services).where(eq(services.status, 'active')).orderBy(services.name);
+
+function formatVND(amount: number) {
+  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
+}
 
 // Calculate Stats Metrics
 const allCustomers = await db.select({ expiredAt: customers.expiredAt }).from(customers);
@@ -707,7 +720,15 @@ function formatExpiration(timestamp: number | null) {
                     <span style="font-family: monospace;">{customer.idCard || 'N/A'}</span>
                   </td>
                   <td>
-                    <span class={`badge ${serviceStatus.class}`}>{serviceStatus.text}</span>
+                    <div style="display: flex; flex-direction: column; gap: 0.25rem;">
+                      <span class={`badge ${serviceStatus.class}`}>{serviceStatus.text}</span>
+                      <div style="font-size: 0.825rem; font-weight: 500; color: var(--text-primary); margin-top: 0.25rem;">
+                        Gói: <span style="color: var(--primary); font-weight: 600;">{customer.serviceName || 'Chưa đăng ký'}</span>
+                      </div>
+                      <div style="font-size: 0.825rem; color: var(--text-secondary);">
+                        Số dư ví: <strong style="color: var(--success);">{formatVND(customer.balance || 0)}</strong>
+                      </div>
+                    </div>
                   </td>
                   <td>
                     <span style="color: var(--text-secondary);">{customer.staffName || 'Unassigned'}</span>
@@ -767,6 +788,14 @@ function formatExpiration(timestamp: number | null) {
                 <div class="mobile-card-row">
                   <span class="mobile-card-label">CCCD / ID Card</span>
                   <span class="mobile-card-value" style="font-family: monospace;">{customer.idCard || 'N/A'}</span>
+                </div>
+                <div class="mobile-card-row">
+                  <span class="mobile-card-label">Gói dịch vụ</span>
+                  <span class="mobile-card-value" style="font-weight: 600; color: var(--primary);">{customer.serviceName || 'Chưa đăng ký'}</span>
+                </div>
+                <div class="mobile-card-row">
+                  <span class="mobile-card-label">Số dư ví</span>
+                  <span class="mobile-card-value" style="font-weight: 600; color: var(--success);">{formatVND(customer.balance || 0)}</span>
                 </div>
                 <div class="mobile-card-row">
                   <span class="mobile-card-label">Assigned Staff</span>
@@ -845,6 +874,29 @@ function formatExpiration(timestamp: number | null) {
               <input type="date" id="cust_expiredAt" class="form-input" />
             </div>
 
+            <div class="form-group">
+              <label for="cust_serviceId">Gói dịch vụ chính</label>
+              <select id="cust_serviceId" class="form-select">
+                <option value="">-- Chưa đăng ký gói --</option>
+                {servicesList.map((srv: any) => (
+                  <option value={srv.id}>{srv.name} ({formatVND(srv.price)})</option>
+                ))}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="cust_balance">Số dư ví (VND)</label>
+              <input 
+                type="number" 
+                id="cust_balance" 
+                class="form-input" 
+                placeholder="e.g. 0" 
+                min="0" 
+                value="0"
+                disabled={!isWritableBalance}
+              />
+            </div>
+
             <div class="form-group full-width">
               <label for="cust_assignedStaffId">Assigned Staff</label>
               <select id="cust_assignedStaffId" class="form-select">
@@ -916,6 +968,28 @@ function formatExpiration(timestamp: number | null) {
               <input type="date" id="edit_cust_expiredAt" class="form-input" />
             </div>
 
+            <div class="form-group">
+              <label for="edit_cust_serviceId">Gói dịch vụ chính</label>
+              <select id="edit_cust_serviceId" class="form-select">
+                <option value="">-- Chưa đăng ký gói --</option>
+                {servicesList.map((srv: any) => (
+                  <option value={srv.id}>{srv.name} ({formatVND(srv.price)})</option>
+                ))}
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="edit_cust_balance">Số dư ví (VND)</label>
+              <input 
+                type="number" 
+                id="edit_cust_balance" 
+                class="form-input" 
+                placeholder="e.g. 0" 
+                min="0" 
+                disabled={!isWritableBalance}
+              />
+            </div>
+
             <div class="form-group full-width">
               <label for="edit_cust_assignedStaffId">Assigned Staff</label>
               <select id="edit_cust_assignedStaffId" class="form-select">
@@ -983,6 +1057,8 @@ function formatExpiration(timestamp: number | null) {
         document.getElementById('edit_cust_idCard').value = customerData.idCard || '';
         document.getElementById('edit_cust_taxCode').value = customerData.taxCode || '';
         document.getElementById('edit_cust_address').value = customerData.address || '';
+        document.getElementById('edit_cust_serviceId').value = customerData.serviceId || '';
+        document.getElementById('edit_cust_balance').value = customerData.balance || 0;
         document.getElementById('edit_cust_assignedStaffId').value = customerData.assignedStaffId || '';
         document.getElementById('edit_cust_notes').value = customerData.notes || '';
         
@@ -1028,6 +1104,10 @@ function formatExpiration(timestamp: number | null) {
       const expiredAtVal = document.getElementById('cust_expiredAt').value;
       const expiredAt = expiredAtVal ? new Date(expiredAtVal).getTime() : null;
 
+      const serviceId = document.getElementById('cust_serviceId').value || null;
+      const balanceVal = document.getElementById('cust_balance').value;
+      const balance = balanceVal ? parseInt(balanceVal) : 0;
+
       const assignedStaffId = document.getElementById('cust_assignedStaffId').value;
       const notes = document.getElementById('cust_notes').value;
 
@@ -1044,6 +1124,8 @@ function formatExpiration(timestamp: number | null) {
             taxCode,
             address,
             expiredAt,
+            serviceId,
+            balance,
             assignedStaffId,
             notes
           }),
@@ -1077,6 +1159,10 @@ function formatExpiration(timestamp: number | null) {
       const expiredAtVal = document.getElementById('edit_cust_expiredAt').value;
       const expiredAt = expiredAtVal ? new Date(expiredAtVal).getTime() : null;
       
+      const serviceId = document.getElementById('edit_cust_serviceId').value || null;
+      const balanceVal = document.getElementById('edit_cust_balance').value;
+      const balance = balanceVal ? parseInt(balanceVal) : 0;
+      
       const assignedStaffId = document.getElementById('edit_cust_assignedStaffId').value;
       const notes = document.getElementById('edit_cust_notes').value;
       
@@ -1092,6 +1178,8 @@ function formatExpiration(timestamp: number | null) {
             taxCode,
             address,
             expiredAt,
+            serviceId,
+            balance,
             assignedStaffId,
             notes
           }),

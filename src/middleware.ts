@@ -39,6 +39,34 @@ export const onRequest = async (context: APIContext, next: MiddlewareNext) => {
     if (decoded) {
       // Inject user payload into locals for downstream components reuse
       context.locals.user = decoded;
+
+      const role = decoded.role;
+      // Saler restrictions
+      if (role === 'saler') {
+        if ((pathname.startsWith('/crm/') && pathname !== '/crm/qr-tool') || pathname === '/dashboard') {
+          return context.redirect('/crm/qr-tool');
+        }
+        if (pathname.startsWith('/api/crm/') && !pathname.startsWith('/api/crm/customers')) {
+          return new Response(
+            JSON.stringify({ error: 'Forbidden' }),
+            { status: 403, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+
+      // Accountant restrictions
+      if (role === 'accountant') {
+        if (pathname === '/crm/settings' || pathname.startsWith('/crm/settings/')) {
+          return context.redirect('/crm/customers');
+        }
+        if (pathname.startsWith('/api/crm/settings')) {
+          return new Response(
+            JSON.stringify({ error: 'Forbidden' }),
+            { status: 403, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+
       return next();
     }
   }
