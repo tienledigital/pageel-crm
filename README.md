@@ -9,7 +9,7 @@
   <p>Self-hosted financial and invoicing engine tailored for Vietnamese small businesses.</p>
 
   [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-  [![Version](https://img.shields.io/badge/Version-v0.9.1-blue.svg)](CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/Version-v0.10.2-blue.svg)](CHANGELOG.md)
   ![Status](https://img.shields.io/badge/Status-Beta-orange.svg)
   [![Built with Astro](https://img.shields.io/badge/Built%20with-Astro-BC52EE.svg?logo=astro&logoColor=white)](https://astro.build)
 

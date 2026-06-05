@@ -6,6 +6,18 @@ order: 1
 
 All notable changes to this project will be documented in this file.
 
+## [0.10.2] - 2026-06-05
+
+### Added
+- **Late Association Date Selection**: Added option to use the bank transaction date as the Start Date of the service package in Late Association modal, rather than forcing today's date.
+
+### Changed
+- **Late Association Writes to Orders**: Refactored Late Association flow to create a service package order (mã `ORD-` in table `orders`) and link `payments.orderId` instead of creating an invoice. This satisfies the requirement of using Invoices solely for tax declaration while Orders handle active service cycles.
+
+### Fixed
+- **Content-Security-Policy (CSP) Image Loading**: Hardened Content-Security-Policy in middleware by adding `https://img.vietqr.io` to `img-src` directive, allowing browser to load dynamic VietQR code images correctly.
+- **Null Customer ID for Anonymous Outgoing Payments**: Updated reconciliation logic to set `customerId = null` (instead of `'CUST-ANONYMOUS'`) for unmatched outgoing expenses, resolving SQL query crashes on null references.
+
 ## [0.10.0] - 2026-06-05
 
 ### Added
