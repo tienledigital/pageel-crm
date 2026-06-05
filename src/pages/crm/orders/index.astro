@@ -717,18 +717,29 @@ function formatDate(timestamp: number | null) {
                     {lang === 'vi' ? 'Thanh toán QR' : 'Pay QR'}
                   </a>
                   {(user?.role === 'admin' || user?.role === 'accountant') && (
-                    <button 
-                      type="button" 
-                      class="btn-action btn-edit-order" 
-                      data-id={order.id}
-                      data-service-id={order.serviceId || ''}
-                      data-amount={order.amount}
-                      data-start-date={order.startDate || ''}
-                      data-expired-at={order.expiredAt || ''}
-                      data-number={order.orderNumber}
-                    >
-                      ✏️ {lang === 'vi' ? 'Sửa' : 'Edit'}
-                    </button>
+                    <>
+                      <button 
+                        type="button" 
+                        class="btn-action btn-edit-order" 
+                        data-id={order.id}
+                        data-service-id={order.serviceId || ''}
+                        data-amount={order.amount}
+                        data-start-date={order.startDate || ''}
+                        data-expired-at={order.expiredAt || ''}
+                        data-number={order.orderNumber}
+                      >
+                        ✏️ {lang === 'vi' ? 'Sửa' : 'Edit'}
+                      </button>
+                      <button 
+                        type="button" 
+                        class="btn-action btn-delete-order" 
+                        data-id={order.id}
+                        data-number={order.orderNumber}
+                        style="color: var(--error);"
+                      >
+                        🗑️ {lang === 'vi' ? 'Xóa' : 'Delete'}
+                      </button>
+                    </>
                   )}
                 </td>
               </tr>
@@ -799,19 +810,30 @@ function formatDate(timestamp: number | null) {
                 {lang === 'vi' ? 'Thanh toán' : 'Pay'}
               </a>
               {(user?.role === 'admin' || user?.role === 'accountant') && (
-                <button 
-                  type="button" 
-                  class="btn-action btn-edit-order" 
-                  data-id={order.id}
-                  data-service-id={order.serviceId || ''}
-                  data-amount={order.amount}
-                  data-start-date={order.startDate || ''}
-                  data-expired-at={order.expiredAt || ''}
-                  data-number={order.orderNumber}
-                  style="flex: 1; justify-content: center;"
-                >
-                  ✏️ {lang === 'vi' ? 'Sửa' : 'Edit'}
-                </button>
+                <div style="display: flex; gap: 0.5rem; width: 100%; margin-top: 0.25rem;">
+                  <button 
+                    type="button" 
+                    class="btn-action btn-edit-order" 
+                    data-id={order.id}
+                    data-service-id={order.serviceId || ''}
+                    data-amount={order.amount}
+                    data-start-date={order.startDate || ''}
+                    data-expired-at={order.expiredAt || ''}
+                    data-number={order.orderNumber}
+                    style="flex: 1; justify-content: center;"
+                  >
+                    ✏️ {lang === 'vi' ? 'Sửa' : 'Edit'}
+                  </button>
+                  <button 
+                    type="button" 
+                    class="btn-action btn-delete-order" 
+                    data-id={order.id}
+                    data-number={order.orderNumber}
+                    style="flex: 1; justify-content: center; color: var(--error);"
+                  >
+                    🗑️ {lang === 'vi' ? 'Xóa' : 'Delete'}
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -928,6 +950,10 @@ function formatDate(timestamp: number | null) {
       </form>
     </div>
   </div>
+
+  <script define:vars={{ lang }}>
+    window.CRM_LANG = lang;
+  </script>
 
   <script is:inline>
     // Quick Create Order Modal Logic
@@ -1195,5 +1221,37 @@ function formatDate(timestamp: number | null) {
         }
       });
     }
+
+    // Handle Delete Order Button Click
+    document.addEventListener('click', async (e) => {
+      const deleteBtn = e.target.closest('.btn-delete-order');
+      if (deleteBtn) {
+        const id = deleteBtn.getAttribute('data-id');
+        const number = deleteBtn.getAttribute('data-number');
+        const clientLang = window.CRM_LANG || 'vi';
+        
+        const confirmMsg = clientLang === 'vi' 
+          ? `Bạn có chắc chắn muốn xóa đơn hàng ${number}? Hành động này sẽ giải phóng giao dịch ngân hàng liên kết và tính toán lại thời hạn dịch vụ của khách hàng.`
+          : `Are you sure you want to delete order ${number}? This action will unlink the associated bank transaction and recalculate the customer's service expiration date.`;
+          
+        if (confirm(confirmMsg)) {
+          try {
+            const res = await fetch(`/api/crm/orders?id=${id}`, {
+              method: 'DELETE'
+            });
+            
+            const data = await res.json();
+            if (res.ok && data.success) {
+              window.location.reload();
+            } else {
+              alert(data.error || 'Failed to delete order');
+            }
+          } catch (err) {
+            console.error(err);
+            alert(clientLang === 'vi' ? 'Lỗi kết nối khi xóa đơn hàng.' : 'Network error, failed to delete order.');
+          }
+        }
+      }
+    });
   </script>
 </DashboardLayout>

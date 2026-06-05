@@ -2,7 +2,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { orders, staff } from '@/lib/db/schema';
+import { orders, staff, payments } from '@/lib/db/schema';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { desc, eq } from 'drizzle-orm';
 import { createPaidOrder, syncCustomerServices } from '@/lib/services/serviceManager';
@@ -179,6 +179,77 @@ export const PUT: APIRoute = async (context) => {
       .where(eq(orders.id, orderId));
 
     // 5. Run recalculation engine
+    if (existingOrder.customerId) {
+      await syncCustomerServices(db, existingOrder.customerId);
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: err.message }) }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+};
+
+export const DELETE: APIRoute = async (context) => {
+  try {
+    // 1. Verify user session and permissions
+    const sessionCookie = context.cookies.get('session')?.value;
+    const secret = getSessionSecret();
+
+    if (!sessionCookie) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: No session cookie' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const user = await verifySessionCookie(sessionCookie, secret);
+    if (!user || (user.role !== 'admin' && user.role !== 'accountant')) {
+      return new Response(JSON.stringify({ error: 'Forbidden: Insufficient permissions' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // 2. Parse request query params
+    const id = context.url.searchParams.get('id');
+    if (!id) {
+      return new Response(JSON.stringify({ error: 'Bad Request: Order ID is required' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const db = getDb(env);
+
+    // Get order to check existence
+    const existingOrder = await db.select().from(orders).where(eq(orders.id, id)).get();
+    if (!existingOrder) {
+      return new Response(JSON.stringify({ error: 'Order not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // 3. Unlink payments associated with this order
+    await db
+      .update(payments)
+      .set({
+        orderId: null,
+        customerId: null,
+        category: 'non_revenue',
+      })
+      .where(eq(payments.orderId, id));
+
+    // 4. Delete the order
+    await db.delete(orders).where(eq(orders.id, id));
+
+    // 5. Run recalculation engine for customer services
     if (existingOrder.customerId) {
       await syncCustomerServices(db, existingOrder.customerId);
     }

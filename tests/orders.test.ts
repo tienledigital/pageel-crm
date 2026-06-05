@@ -6,7 +6,7 @@ import { eq, and } from 'drizzle-orm';
 import { customers, staff, payments, orders, customerServices, services, users } from '@/lib/db/schema';
 import { createSessionCookie } from '@/lib/auth';
 import { createPaidOrder } from '@/lib/services/serviceManager';
-import { POST as createPaidOrderHandler } from '@/pages/api/crm/orders/index';
+import { POST as createPaidOrderHandler, DELETE as deleteOrderHandler } from '@/pages/api/crm/orders/index';
 
 describe('Quick Create Paid Order Service Logic', () => {
   const TEST_CUSTOMER = {
@@ -320,5 +320,167 @@ describe('Quick Create Paid Order API Endpoint Integration Tests', () => {
     expect(order).toBeDefined();
     expect(order.status).toBe('paid');
     expect(order.staffId).toBe(staffId);
+  });
+});
+
+describe('DELETE: Delete Paid Order API Endpoint Integration Tests', () => {
+  const SESSION_SECRET = 'fallback-secret-key-must-be-at-least-32-chars-long';
+  let adminToken: string;
+  let staffToken: string;
+  let salerToken: string;
+
+  beforeAll(async () => {
+    process.env.SESSION_SECRET = SESSION_SECRET;
+    adminToken = await createSessionCookie({
+      id: 'usr-admin-ord',
+      username: 'adminord',
+      role: 'admin',
+      createdAt: Date.now(),
+    }, SESSION_SECRET);
+
+    staffToken = await createSessionCookie({
+      id: 'usr-accountant-ord',
+      username: 'accountantord',
+      role: 'accountant',
+      createdAt: Date.now(),
+    }, SESSION_SECRET);
+
+    salerToken = await createSessionCookie({
+      id: 'usr-saler-ord',
+      username: 'salerord',
+      role: 'saler',
+      createdAt: Date.now(),
+    }, SESSION_SECRET);
+  });
+
+  function createMockContext(orderId?: string, token?: string) {
+    const cookiesMap = new Map();
+    if (token) {
+      cookiesMap.set('session', { value: token });
+    }
+    const url = new URL('http://localhost/api/crm/orders');
+    if (orderId) {
+      url.searchParams.set('id', orderId);
+    }
+    const request = new Request(url.toString(), {
+      method: 'DELETE',
+    });
+    return {
+      request,
+      url,
+      cookies: cookiesMap,
+      locals: {
+        runtime: { env: { SESSION_SECRET } },
+      },
+    } as any;
+  }
+
+  it('should return 401 Unauthorized if user session cookie is missing', async () => {
+    const context = createMockContext('ORD-123');
+    const response = await deleteOrderHandler(context);
+    expect(response.status).toBe(401);
+  });
+
+  it('should return 403 Forbidden if user role is saler', async () => {
+    const context = createMockContext('ORD-123', salerToken);
+    const response = await deleteOrderHandler(context);
+    expect(response.status).toBe(403);
+  });
+
+  it('should return 400 Bad Request if order ID is missing', async () => {
+    const context = createMockContext(undefined, staffToken);
+    const response = await deleteOrderHandler(context);
+    expect(response.status).toBe(400);
+  });
+
+  it('should successfully delete order, unlink payment and recalculate customer services', async () => {
+    const db = getDb();
+    const customerId = 'CUST-DEL-ORD';
+    const serviceId = 'srv-del-ord';
+    const orderId = 'ORD-DEL-TEST-1';
+    const paymentId = 'PAY-DEL-TEST-1';
+
+    // Seed customer
+    await db.insert(customers).values({
+      id: customerId,
+      fullName: 'Delete Order Cust',
+      phone: '0909999999',
+      expiredAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    });
+
+    // Seed service
+    await db.insert(services).values({
+      id: serviceId,
+      name: 'Del Service',
+      price: 300000,
+      billingCycle: 30,
+      prefix: 'DELSV',
+      status: 'active',
+      createdAt: Date.now(),
+    });
+
+    // Seed order
+    await db.insert(orders).values({
+      id: orderId,
+      customerId,
+      orderNumber: 'ORD-DEL-01',
+      amount: 300000,
+      content: 'Order to delete',
+      status: 'paid',
+      serviceId,
+      startDate: Date.now(),
+      expiredAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    });
+
+    // Seed customer service active record
+    await db.insert(customerServices).values({
+      id: 'cs-del-test-1',
+      customerId,
+      serviceId,
+      status: 'active',
+      startDate: Date.now(),
+      expiredAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      createdAt: Date.now(),
+    });
+
+    // Seed payment linked to order
+    await db.insert(payments).values({
+      id: paymentId,
+      orderId,
+      customerId,
+      amount: 300000,
+      transactionId: 'TX_DEL_ORD_TEST',
+      paymentMethod: 'bank_transfer',
+      type: 'in',
+      category: 'revenue',
+      paidAt: Date.now(),
+    });
+
+    const context = createMockContext(orderId, staffToken);
+    const response = await deleteOrderHandler(context);
+    expect(response.status).toBe(200);
+
+    const data = await response.json();
+    expect(data.success).toBe(true);
+
+    // Verify order is deleted
+    const deletedOrder = await db.select().from(orders).where(eq(orders.id, orderId)).get();
+    expect(deletedOrder).toBeUndefined();
+
+    // Verify payment unlinked
+    const updatedPayment = await db.select().from(payments).where(eq(payments.id, paymentId)).get();
+    expect(updatedPayment.orderId).toBeNull();
+    expect(updatedPayment.customerId).toBeNull();
+    expect(updatedPayment.category).toBe('non_revenue');
+
+    // Verify customer service recalculated (expired or deleted because no paid orders left)
+    const updatedCS = await db.select().from(customerServices).where(
+      and(eq(customerServices.customerId, customerId), eq(customerServices.serviceId, serviceId))
+    ).get();
+    expect(updatedCS.status).toBe('expired');
+
+    // Verify customer expiredAt reset
+    const updatedCust = await db.select().from(customers).where(eq(customers.id, customerId)).get();
+    expect(updatedCust.expiredAt).toBe(0);
   });
 });
