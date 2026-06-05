@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { getDb } from '@/lib/db';
 import { customers, payments, users, staff } from '@/lib/db/schema';
+import * as schema from '@/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { eq } from 'drizzle-orm';
 import path from 'path';
@@ -11,6 +12,14 @@ const WEBHOOK_SECRET = 'sepay-webhook-secret-12345';
 process.env.SEPAY_WEBHOOK_SECRET = WEBHOOK_SECRET;
 
 describe('Sepay Reconciliation Unit Tests', () => {
+  describe('Schema Check (TDD)', () => {
+    it('should have orders table, taxInvoiceNumber in invoices, and orderId in payments', () => {
+      expect((schema as any).orders).toBeDefined();
+      expect((schema as any).invoices.taxInvoiceNumber).toBeDefined();
+      expect((schema as any).payments.orderId).toBeDefined();
+    });
+  });
+
   describe('parseCustomerIdFromMemo', () => {
     it('should parse legacy ID format like "AG1002 - Gia han dich vu"', () => {
       const memo = 'AG1002 - Gia han dich vu';
@@ -49,9 +58,11 @@ describe('Database Reconciliation Integration Tests', () => {
     migrate(db, { migrationsFolder: path.join(__dirname, '../drizzle') });
 
     // Reset DB state
-    const { customerServices: csTable, services: sTable, invoices: iTable } = await import('@/lib/db/schema');
+    const { customerServices: csTable, services: sTable, invoices: iTable, auditLogs: auditLogsTable, orders: ordersTable } = await import('@/lib/db/schema');
     await db.update(iTable).set({ paymentId: null });
     await db.update(payments).set({ invoiceId: null });
+    await db.delete(auditLogsTable);
+    await db.delete(ordersTable);
     await db.delete(csTable);
     await db.delete(payments);
     await db.delete(iTable);
@@ -271,6 +282,46 @@ describe('Database Reconciliation Integration Tests', () => {
 });
 
 describe('Sepay Webhook Endpoint Integration Tests', () => {
+  beforeEach(async () => {
+    process.env.NODE_ENV = 'test';
+    const db = getDb();
+    
+    migrate(db, { migrationsFolder: path.join(__dirname, '../drizzle') });
+
+    const { customerServices: csTable, services: sTable, invoices: iTable, auditLogs: auditLogsTable, orders: ordersTable } = await import('@/lib/db/schema');
+    await db.update(iTable).set({ paymentId: null });
+    await db.update(payments).set({ invoiceId: null });
+    await db.delete(auditLogsTable);
+    await db.delete(ordersTable);
+    await db.delete(csTable);
+    await db.delete(payments);
+    await db.delete(iTable);
+    await db.delete(customers);
+    await db.delete(staff);
+    await db.delete(users);
+    await db.delete(sTable);
+
+    await db.insert(customers).values({
+      id: '1005',
+      fullName: 'Test Customer 1005',
+      phone: '0987654321',
+      expiredAt: 1716195600000,
+    });
+
+    await db.insert(customers).values({
+      id: '1002',
+      fullName: 'Test Customer 1002',
+      phone: '0987654322',
+      expiredAt: null,
+    });
+
+    await db.insert(customers).values({
+      id: 'CUST-ANONYMOUS',
+      fullName: 'Anonymous Customer',
+      phone: '0000000000',
+    });
+  });
+
   it('should return 401 Unauthorized when authorization token is missing or invalid', async () => {
     const mockRequest = new Request('http://localhost/api/webhook/sepay', {
       method: 'POST',
@@ -519,5 +570,102 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
     const generatedInvoices = await db.select().from(invoicesTable).where(eq(invoicesTable.serviceId, serviceId)).all();
     expect(generatedInvoices).toHaveLength(1);
     expect(generatedInvoices[0].content).toBe('Thanh toan cho dich vu Custom Service Name (Auto matched)');
+  });
+
+  describe('Invoices and Orders API Tests (TDD)', () => {
+    let adminToken: string;
+    let db: any;
+    const SESSION_SECRET = 'fallback-secret-key-must-be-at-least-32-chars-long';
+    process.env.SESSION_SECRET = SESSION_SECRET;
+
+    function createMockContextForApi(method: string, body?: any, sessionCookie?: string, params?: any) {
+      const request = new Request('http://localhost', {
+        method,
+        body: body ? JSON.stringify(body) : undefined,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const cookiesMap = new Map();
+      if (sessionCookie) {
+        cookiesMap.set('session', { value: sessionCookie });
+      }
+
+      const cookiesObj = {
+        get: (name: string) => cookiesMap.get(name),
+      };
+
+      return {
+        request,
+        url: new URL(request.url),
+        cookies: cookiesObj,
+        params: params || {},
+        clientAddress: '127.0.0.1',
+        locals: {
+          runtime: { env: { SESSION_SECRET } },
+          user: sessionCookie ? { id: 'usr-admin-rec', username: 'adminrec', role: 'admin' } : undefined
+        }
+      } as any;
+    }
+
+    beforeEach(async () => {
+      db = getDb();
+      const { hashPassword, createSessionCookie } = await import('@/lib/auth');
+      const adminPassHash = await hashPassword('adminPassword123');
+      await db.insert(users).values({
+        id: 'usr-admin-rec',
+        username: 'adminrec',
+        passwordHash: adminPassHash,
+        role: 'admin',
+      });
+
+      adminToken = await createSessionCookie({
+        id: 'usr-admin-rec',
+        username: 'adminrec',
+        role: 'admin',
+        createdAt: Date.now(),
+      }, SESSION_SECRET);
+    });
+
+    it('should update taxInvoiceNumber on invoice via PATCH (TDD)', async () => {
+      const { invoices: invoicesTable } = await import('@/lib/db/schema');
+      // Seed a PO invoice
+      await db.insert(invoicesTable).values({
+        id: 'inv-test-po-1',
+        invoiceNumber: 'PO-20260604-0001',
+        amount: 200000,
+        content: 'PO manual content',
+        status: 'pending',
+      });
+
+      const { PATCH: patchTaxNumberHandler } = await import('../src/pages/api/crm/invoices/[id]/tax-number');
+      const context = createMockContextForApi('PATCH', { taxInvoiceNumber: 'VAT-12345' }, adminToken, { id: 'inv-test-po-1' });
+      const response = await patchTaxNumberHandler(context);
+      expect(response.status).toBe(200);
+
+      const [updatedInvoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, 'inv-test-po-1'));
+      expect(updatedInvoice.taxInvoiceNumber).toBe('VAT-12345');
+    });
+
+    it('should list automatic orders via GET (TDD)', async () => {
+      const { orders: ordersTable } = await import('@/lib/db/schema');
+      // Seed an order
+      await db.insert(ordersTable).values({
+        id: 'ord-test-1',
+        orderNumber: 'ORD-20260604-0001',
+        amount: 300000,
+        content: 'ORD auto content',
+        status: 'paid',
+      });
+
+      const { GET: getOrdersHandler } = await import('../src/pages/api/crm/orders/index');
+      const context = createMockContextForApi('GET', undefined, adminToken);
+      const response = await getOrdersHandler(context);
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data).toHaveLength(1);
+      expect(data[0].orderNumber).toBe('ORD-20260604-0001');
+    });
   });
 });

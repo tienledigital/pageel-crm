@@ -57,6 +57,13 @@
       "when": 1780623308022,
       "tag": "0007_lonely_vapor",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1780623632069,
+      "tag": "0008_outstanding_mongu",
+      "breakpoints": true
     }
   ]
 }
