@@ -21,6 +21,8 @@ export const customers = sqliteTable('customers', {
   idCard: text('id_card'),       // Citizen identity card number
   email: text('email'),         // Email address
   assignedStaffId: text('assigned_staff_id').references(() => staff.id), // Assigned staff member
+  serviceId: text('service_id').references(() => services.id),
+  balance: integer('balance').notNull().default(0),
   notes: text('notes'),
   expiredAt: integer('expired_at'), // Unix timestamp for service expiration (Auto renewal check)
   createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`),

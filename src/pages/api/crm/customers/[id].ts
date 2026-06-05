@@ -48,7 +48,7 @@ export const PUT: APIRoute = async (context) => {
       });
     }
 
-    const { fullName, phone, email, idCard, address, taxCode, assignedStaffId, notes, expiredAt } = body;
+    const { fullName, phone, email, idCard, address, taxCode, assignedStaffId, serviceId, balance, notes, expiredAt } = body;
 
     // Validate required fields
     if (!fullName || !fullName.trim() || !phone || !phone.trim()) {
@@ -69,6 +69,14 @@ export const PUT: APIRoute = async (context) => {
       });
     }
 
+    // Role checks
+    if (user.role === 'saler' && balance !== undefined && Number(balance) !== existingCustomer.balance) {
+      return new Response(JSON.stringify({ error: 'Forbidden: Saler cannot edit customer balance' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     // 3. Update customer record
     await db.update(customers)
       .set({
@@ -79,6 +87,8 @@ export const PUT: APIRoute = async (context) => {
         address: address?.trim() || null,
         taxCode: taxCode?.trim() || null,
         assignedStaffId: assignedStaffId || null,
+        serviceId: serviceId || null,
+        balance: balance !== undefined && balance !== null ? Number(balance) : existingCustomer.balance,
         notes: notes?.trim() || null,
         expiredAt: expiredAt ? Number(expiredAt) : null,
       })
