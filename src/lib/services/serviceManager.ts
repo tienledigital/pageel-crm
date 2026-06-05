@@ -642,3 +642,116 @@ export async function createPaidOrder(
     }
   }
 }
+
+export async function syncCustomerServices(db: any, customerId: string): Promise<void> {
+  // 1. Get all paid orders for the customer
+  const paidOrders = await db
+    .select()
+    .from(orders)
+    .where(and(eq(orders.customerId, customerId), eq(orders.status, 'paid')))
+    .all();
+
+  // Sort by startDate ascending
+  paidOrders.sort((a: any, b: any) => (a.startDate ?? 0) - (b.startDate ?? 0));
+
+  // Group orders by serviceId
+  const ordersByService: Record<string, typeof paidOrders> = {};
+  for (const order of paidOrders) {
+    if (!order.serviceId) continue;
+    if (!ordersByService[order.serviceId]) {
+      ordersByService[order.serviceId] = [];
+    }
+    ordersByService[order.serviceId].push(order);
+  }
+
+  // Get current customerServices from DB
+  const currentCSList = await db
+    .select()
+    .from(customerServices)
+    .where(eq(customerServices.customerId, customerId))
+    .all();
+
+  const processedServices = new Set<string>();
+
+  // Process services with paid orders
+  for (const serviceId of Object.keys(ordersByService)) {
+    processedServices.add(serviceId);
+    const serviceOrders = ordersByService[serviceId];
+
+    // Calculate continuous service dates
+    let startDate = serviceOrders[0].startDate ?? Date.now();
+    let expiredAt = 0;
+
+    for (const order of serviceOrders) {
+      const orderStart = order.startDate ?? Date.now();
+      const orderEnd = order.expiredAt ?? orderStart;
+      const duration = orderEnd - orderStart;
+
+      if (expiredAt === 0) {
+        expiredAt = orderEnd;
+      } else if (orderStart >= expiredAt) {
+        // Gap in service, reset end date to this order's end date
+        expiredAt = orderEnd;
+      } else {
+        // Overlap, extend expiration date
+        expiredAt = expiredAt + duration;
+      }
+    }
+
+    // Check if customer service already exists
+    const existingCS = currentCSList.find((cs: any) => cs.serviceId === serviceId);
+
+    if (existingCS) {
+      await db
+        .update(customerServices)
+        .set({
+          status: 'active',
+          startDate,
+          expiredAt,
+        })
+        .where(eq(customerServices.id, existingCS.id));
+    } else {
+      await db.insert(customerServices).values({
+        id: crypto.randomUUID(),
+        customerId,
+        serviceId,
+        status: 'active',
+        startDate,
+        expiredAt,
+        createdAt: Date.now(),
+      });
+    }
+  }
+
+  // Process services that no longer have paid orders
+  for (const cs of currentCSList) {
+    if (!processedServices.has(cs.serviceId)) {
+      await db
+        .update(customerServices)
+        .set({
+          status: 'expired',
+          expiredAt: 0,
+        })
+        .where(eq(customerServices.id, cs.id));
+    }
+  }
+
+  // Recalculate maxExpiredAt for active customer services
+  const updatedCSList = await db
+    .select()
+    .from(customerServices)
+    .where(and(eq(customerServices.customerId, customerId), eq(customerServices.status, 'active')))
+    .all();
+
+  const maxExpiredAt = updatedCSList.reduce(
+    (max: number, current: any) => (current.expiredAt > max ? current.expiredAt : max),
+    0
+  );
+
+  // Update customers.expiredAt
+  await db
+    .update(customers)
+    .set({ expiredAt: maxExpiredAt })
+    .where(eq(customers.id, customerId));
+}
+

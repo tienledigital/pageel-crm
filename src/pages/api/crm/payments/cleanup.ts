@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db';
 import { payments, invoices, config } from '@/lib/db/schema';
 import { eq, ne, and, isNotNull } from 'drizzle-orm';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
+import { logDebug } from '@/lib/debug-logger';
 
 // @para-doc [api-contracts.md#103-don-dep-giao-dich-ngan-hang-khong-khop-so-tai-khoan-mac-dinh]
 export const POST: APIRoute = async (context) => {
@@ -90,6 +91,20 @@ export const POST: APIRoute = async (context) => {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err: any) {
+    console.error('[API cleanup] Error:', err.message);
+    try {
+      const db = getDb(env);
+      await logDebug(db, {
+        level: 'error',
+        endpoint: context.url.pathname,
+        method: context.request.method,
+        statusCode: 500,
+        message: err.message,
+        stack: err.stack,
+      });
+    } catch (logErr) {
+      console.error('Failed to write debug log to DB:', logErr);
+    }
     return new Response(JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: err.message }) }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

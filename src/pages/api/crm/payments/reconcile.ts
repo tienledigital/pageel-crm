@@ -2,9 +2,11 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { payments, invoices } from '@/lib/db/schema';
+import { payments, invoices, orders } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
+import { syncCustomerServices } from '@/lib/services/serviceManager';
+import { logDebug } from '@/lib/debug-logger';
 
 // @para-doc [operations-guide.md#4-doi-soat--gan-go-hoa-don-bang-tay-manual-reconciliations]
 export const POST: APIRoute = async (context) => {
@@ -30,7 +32,7 @@ export const POST: APIRoute = async (context) => {
 
     // 2. Parse body parameters
     const body = await context.request.json();
-    const { paymentId, customerId, invoiceId, category, taxCategory } = body;
+    const { paymentId, customerId, invoiceId, category, taxCategory, unlinkOrder } = body;
 
     if (!paymentId) {
       return new Response(JSON.stringify({ error: 'Payment ID is required' }), {
@@ -50,6 +52,37 @@ export const POST: APIRoute = async (context) => {
       });
     }
     const currentPayment = existingPayments[0];
+
+    // Handle order unlinking
+    if (unlinkOrder) {
+      const orderId = currentPayment.orderId;
+      const paymentCustId = currentPayment.customerId;
+
+      // Revert payment linkage
+      await db
+        .update(payments)
+        .set({
+          orderId: null,
+          customerId: null,
+          category: 'non_revenue'
+        })
+        .where(eq(payments.id, paymentId));
+
+      // Delete the corresponding order if exists
+      if (orderId) {
+        await db.delete(orders).where(eq(orders.id, orderId));
+      }
+
+      // Sync customer services
+      if (paymentCustId) {
+        await syncCustomerServices(db, paymentCustId);
+      }
+
+      return new Response(JSON.stringify({ success: true, message: 'Order unlinked successfully' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
     // If the payment was previously linked to an invoice, we might want to revert that invoice to 'pending'
     // if the user is unlinking it or linking to a different invoice.
@@ -88,6 +121,20 @@ export const POST: APIRoute = async (context) => {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err: any) {
+    console.error('[API reconcile] Error:', err.message);
+    try {
+      const db = getDb(env);
+      await logDebug(db, {
+        level: 'error',
+        endpoint: context.url.pathname,
+        method: context.request.method,
+        statusCode: 500,
+        message: err.message,
+        stack: err.stack,
+      });
+    } catch (logErr) {
+      console.error('Failed to write debug log to DB:', logErr);
+    }
     return new Response(JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: err.message }) }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
@@ -156,6 +203,20 @@ export const DELETE: APIRoute = async (context) => {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err: any) {
+    console.error('[API reconcile delete] Error:', err.message);
+    try {
+      const db = getDb(env);
+      await logDebug(db, {
+        level: 'error',
+        endpoint: context.url.pathname,
+        method: context.request.method,
+        statusCode: 500,
+        message: err.message,
+        stack: err.stack,
+      });
+    } catch (logErr) {
+      console.error('Failed to write debug log to DB:', logErr);
+    }
     return new Response(JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: err.message }) }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

@@ -886,6 +886,8 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
                         data-category={tx.category || ''}
                         data-tax-category={tx.taxCategory || ''}
                         data-type={tx.type || ''}
+                        data-order-id={tx.orderId || ''}
+                        data-order-number={tx.orderNumber || ''}
                         style="font-size: 0.7rem; padding: 0.25rem 0.5rem;"
                       >
                         ✏️ Link / Edit
@@ -1167,6 +1169,15 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
             <span class="tx-info-label">{t('payments.description', lang)}</span>
             <span class="tx-info-val" id="modalTxContent" style="font-size: 0.8rem; word-break: break-all;">Transfer info</span>
           </div>
+          <div class="tx-info-row" id="modalLinkedOrderRow" style="display: none;">
+            <span class="tx-info-label">{lang === 'vi' ? 'Đơn hàng liên kết' : 'Linked Order'}</span>
+            <span class="tx-info-val" style="font-weight: 600;">
+              <span id="modalLinkedOrderVal" class="mono"></span>
+              <button type="button" id="btnConfirmUnlinkOrder" style="font-size: 0.75rem; color: var(--error); background: none; border: none; padding: 0; margin-left: 0.5rem; cursor: pointer; text-decoration: underline;">
+                {lang === 'vi' ? 'Gỡ liên kết Đơn hàng' : 'Unlink Order'}
+              </button>
+            </span>
+          </div>
         </div>
 
         <form id="reconcileForm">
@@ -1443,12 +1454,26 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         const category = btn.getAttribute('data-category') || 'non_revenue';
         const taxCategory = btn.getAttribute('data-tax-category') || '';
         const flowType = btn.getAttribute('data-type') || 'in';
+        const orderId = btn.getAttribute('data-order-id');
+        const orderNumber = btn.getAttribute('data-order-number');
 
         // Populate transaction info
         modalPaymentId.value = id;
         modalTxId.textContent = id;
         modalTxAmount.textContent = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(amount);
         modalTxContent.textContent = content || 'No content description';
+
+        // Show linked order if exists
+        const modalLinkedOrderRow = document.getElementById('modalLinkedOrderRow');
+        const modalLinkedOrderVal = document.getElementById('modalLinkedOrderVal');
+        if (modalLinkedOrderRow && modalLinkedOrderVal) {
+          if (orderId && orderNumber) {
+            modalLinkedOrderVal.textContent = orderNumber;
+            modalLinkedOrderRow.style.display = 'flex';
+          } else {
+            modalLinkedOrderRow.style.display = 'none';
+          }
+        }
 
         // Set category select behavior
         if (modalCategorySelect) {
@@ -2207,7 +2232,8 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
           selectLateAssocCustomer('', '');
         }
 
-        // Handle transaction date button display
+        // Handle transaction date button display and set default Start Date
+        let defaultStartDate = new Date().toISOString().split('T')[0];
         const btnUseTxDate = document.getElementById('btnUseTxDate');
         if (paidAt) {
           const txDate = new Date(Number(paidAt));
@@ -2215,6 +2241,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
           const month = String(txDate.getMonth() + 1).padStart(2, '0');
           const day = String(txDate.getDate()).padStart(2, '0');
           const txDateStr = `${year}-${month}-${day}`;
+          defaultStartDate = txDateStr;
           
           if (btnUseTxDate) {
             btnUseTxDate.setAttribute('data-date', txDateStr);
@@ -2225,9 +2252,8 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
           if (btnUseTxDate) btnUseTxDate.style.display = 'none';
         }
 
-        // Set default Start Date to today
-        const todayStr = new Date().toISOString().split('T')[0];
-        lateAssocStartDate.value = todayStr;
+        // Set default Start Date
+        lateAssocStartDate.value = defaultStartDate;
         lateAssocExpiredAt.value = '';
 
         lateAssocModal.style.display = 'flex';
@@ -2242,6 +2268,43 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         if (txDateStr) {
           lateAssocStartDate.value = txDateStr;
           lateAssocStartDate.dispatchEvent(new Event('change'));
+        }
+      });
+    }
+
+    // Confirm unlink order handler
+    const btnConfirmUnlinkOrder = document.getElementById('btnConfirmUnlinkOrder');
+    if (btnConfirmUnlinkOrder) {
+      btnConfirmUnlinkOrder.addEventListener('click', async () => {
+        const paymentId = modalPaymentId.value;
+        if (!paymentId) return;
+
+        const confirmMsg = lang === 'vi' 
+          ? 'Bạn có chắc chắn muốn gỡ liên kết đơn hàng này? Đơn hàng tự động tương ứng sẽ bị XÓA hoàn toàn khỏi hệ thống.'
+          : 'Are you sure you want to unlink this order? The corresponding automated order will be DELETED permanently from the database.';
+        
+        if (!confirm(confirmMsg)) return;
+
+        try {
+          btnConfirmUnlinkOrder.disabled = true;
+          const res = await fetch('/api/crm/payments/reconcile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paymentId, unlinkOrder: true })
+          });
+
+          const data = await res.json();
+          if (res.ok && data.success) {
+            alert(lang === 'vi' ? 'Gỡ liên kết thành công!' : 'Unlinked successfully!');
+            window.location.reload();
+          } else {
+            alert(data.error || 'Failed to unlink order');
+          }
+        } catch (e) {
+          console.error(e);
+          alert('An error occurred while unlinking order');
+        } finally {
+          btnConfirmUnlinkOrder.disabled = false;
         }
       });
     }

@@ -5,7 +5,7 @@ import { getDb } from '@/lib/db';
 import { orders, staff } from '@/lib/db/schema';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { desc, eq } from 'drizzle-orm';
-import { createPaidOrder } from '@/lib/services/serviceManager';
+import { createPaidOrder, syncCustomerServices } from '@/lib/services/serviceManager';
 
 export const GET: APIRoute = async (context) => {
   try {
@@ -122,3 +122,76 @@ export const POST: APIRoute = async (context) => {
     });
   }
 };
+
+export const PUT: APIRoute = async (context) => {
+  try {
+    // 1. Verify user session and permissions
+    const sessionCookie = context.cookies.get('session')?.value;
+    const secret = getSessionSecret();
+    
+    if (!sessionCookie) {
+      return new Response(JSON.stringify({ error: 'Unauthorized: No session cookie' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const user = await verifySessionCookie(sessionCookie, secret);
+    if (!user || (user.role !== 'admin' && user.role !== 'accountant')) {
+      return new Response(JSON.stringify({ error: 'Forbidden: Insufficient permissions' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // 2. Parse request body
+    const body = await context.request.json().catch(() => ({}));
+    const { orderId, serviceId, amount, startDate, expiredAt } = body;
+
+    // 3. Validation
+    if (!orderId || !serviceId || amount === undefined || !startDate || !expiredAt) {
+      return new Response(JSON.stringify({ error: 'Bad Request: Missing required parameters' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const db = getDb(env);
+
+    // Get order to find customerId
+    const existingOrder = await db.select().from(orders).where(eq(orders.id, orderId)).get();
+    if (!existingOrder) {
+      return new Response(JSON.stringify({ error: 'Order not found' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // 4. Update order details
+    await db
+      .update(orders)
+      .set({
+        serviceId,
+        amount: Number(amount),
+        startDate: Number(startDate),
+        expiredAt: Number(expiredAt),
+      })
+      .where(eq(orders.id, orderId));
+
+    // 5. Run recalculation engine
+    if (existingOrder.customerId) {
+      await syncCustomerServices(db, existingOrder.customerId);
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: err.message }) }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+};
+

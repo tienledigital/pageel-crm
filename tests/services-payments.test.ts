@@ -2,13 +2,14 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { getDb } from '@/lib/db';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import path from 'path';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import {
   createService,
   getService,
   updateService,
   listServices,
-  createOrderFromPayment
+  createOrderFromPayment,
+  syncCustomerServices
 } from '@/lib/services/serviceManager';
 import { customers, staff, payments, invoices, customerServices, services, users, orders } from '@/lib/db/schema';
 import { createSessionCookie } from '@/lib/auth';
@@ -552,3 +553,202 @@ describe('Services CRUD API Endpoints - Integration Tests', () => {
     expect(checkDb).toBeUndefined();
   });
 });
+
+describe('Chronological Recalculation Engine (syncCustomerServices)', () => {
+  const TEST_CUST_ID = 'CUST-RECALC-1';
+  let service1Id: string;
+  let service2Id: string;
+  const now = Date.now();
+
+  beforeAll(async () => {
+    const db = getDb();
+    
+    // Seed customer
+    await db.insert(customers).values({
+      id: TEST_CUST_ID,
+      fullName: 'Recalculation Customer',
+      phone: '0900000001',
+      expiredAt: 0
+    });
+
+    // Create 2 services
+    const s1 = await createService(db, {
+      name: 'Cloud Hosting A',
+      price: 100000,
+      billingCycle: 30,
+      prefix: 'CHA'
+    });
+    service1Id = s1.id;
+
+    const s2 = await createService(db, {
+      name: 'Cloud Hosting B',
+      price: 200000,
+      billingCycle: 30,
+      prefix: 'CHB'
+    });
+    service2Id = s2.id;
+  });
+
+  it('should recalculate customerServices correctly when multiple paid orders exist', async () => {
+    const db = getDb();
+
+    // Order 1: paid, from now to now + 30 days
+    const order1Id = 'ORD-RECALC-1';
+    await db.insert(orders).values({
+      id: order1Id,
+      customerId: TEST_CUST_ID,
+      orderNumber: 'ORD-REC-1',
+      amount: 100000,
+      content: 'Cloud Hosting A payment 1',
+      status: 'paid',
+      serviceId: service1Id,
+      startDate: now,
+      expiredAt: now + 30 * 24 * 60 * 60 * 1000,
+      paidAt: now
+    });
+
+    // Order 2: paid, from now + 30 days to now + 60 days
+    const order2Id = 'ORD-RECALC-2';
+    await db.insert(orders).values({
+      id: order2Id,
+      customerId: TEST_CUST_ID,
+      orderNumber: 'ORD-REC-2',
+      amount: 100000,
+      content: 'Cloud Hosting A payment 2',
+      status: 'paid',
+      serviceId: service1Id,
+      startDate: now + 30 * 24 * 60 * 60 * 1000,
+      expiredAt: now + 60 * 24 * 60 * 60 * 1000,
+      paidAt: now
+    });
+
+    // Run recalculation engine
+    await syncCustomerServices(db, TEST_CUST_ID);
+
+    // Verify customerServices
+    const custService = await db
+      .select()
+      .from(customerServices)
+      .where(and(eq(customerServices.customerId, TEST_CUST_ID), eq(customerServices.serviceId, service1Id)))
+      .get();
+    
+    expect(custService).toBeDefined();
+    expect(custService.status).toBe('active');
+    expect(custService.startDate).toBe(now);
+    expect(custService.expiredAt).toBe(now + 60 * 24 * 60 * 60 * 1000);
+
+    // Verify customer.expiredAt
+    const customer = await db.select().from(customers).where(eq(customers.id, TEST_CUST_ID)).get();
+    expect(customer.expiredAt).toBe(now + 60 * 24 * 60 * 60 * 1000);
+  });
+
+  it('should update/expire customerService when orders are deleted', async () => {
+    const db = getDb();
+
+    // Delete order 2
+    await db.delete(orders).where(eq(orders.id, 'ORD-RECALC-2'));
+
+    // Run sync
+    await syncCustomerServices(db, TEST_CUST_ID);
+
+    // Verify customerServices rolled back
+    const custService = await db
+      .select()
+      .from(customerServices)
+      .where(and(eq(customerServices.customerId, TEST_CUST_ID), eq(customerServices.serviceId, service1Id)))
+      .get();
+    
+    expect(custService).toBeDefined();
+    expect(custService.status).toBe('active');
+    expect(custService.startDate).toBe(now);
+    expect(custService.expiredAt).toBe(now + 30 * 24 * 60 * 60 * 1000);
+
+    const customer = await db.select().from(customers).where(eq(customers.id, TEST_CUST_ID)).get();
+    expect(customer.expiredAt).toBe(now + 30 * 24 * 60 * 60 * 1000);
+
+    // Delete order 1
+    await db.delete(orders).where(eq(orders.id, 'ORD-RECALC-1'));
+
+    // Run sync
+    await syncCustomerServices(db, TEST_CUST_ID);
+
+    // Verify customerServices is expired or deleted
+    const custService2 = await db
+      .select()
+      .from(customerServices)
+      .where(and(eq(customerServices.customerId, TEST_CUST_ID), eq(customerServices.serviceId, service1Id)))
+      .get();
+    
+    expect(custService2.status).toBe('expired');
+
+    const customer2 = await db.select().from(customers).where(eq(customers.id, TEST_CUST_ID)).get();
+    expect(customer2.expiredAt).toBe(0);
+  });
+
+  it('should handle service changes correctly when order is edited', async () => {
+    const db = getDb();
+
+    // Create a paid order for service 1
+    const order3Id = 'ORD-RECALC-3';
+    await db.insert(orders).values({
+      id: order3Id,
+      customerId: TEST_CUST_ID,
+      orderNumber: 'ORD-REC-3',
+      amount: 100000,
+      content: 'Cloud Hosting A payment 3',
+      status: 'paid',
+      serviceId: service1Id,
+      startDate: now,
+      expiredAt: now + 30 * 24 * 60 * 60 * 1000,
+      paidAt: now
+    });
+
+    await syncCustomerServices(db, TEST_CUST_ID);
+
+    // Verify service 1 is active
+    let cs1 = await db
+      .select()
+      .from(customerServices)
+      .where(and(eq(customerServices.customerId, TEST_CUST_ID), eq(customerServices.serviceId, service1Id)))
+      .get();
+    expect(cs1.status).toBe('active');
+
+    // Edit order: change to service 2 and shift dates
+    await db
+      .update(orders)
+      .set({
+        serviceId: service2Id,
+        startDate: now + 10 * 24 * 60 * 60 * 1000,
+        expiredAt: now + 40 * 24 * 60 * 60 * 1000
+      })
+      .where(eq(orders.id, order3Id));
+
+    // Run sync
+    await syncCustomerServices(db, TEST_CUST_ID);
+
+    // Verify service 1 is expired (no orders left)
+    cs1 = await db
+      .select()
+      .from(customerServices)
+      .where(and(eq(customerServices.customerId, TEST_CUST_ID), eq(customerServices.serviceId, service1Id)))
+      .get();
+    console.log('DEBUG cs1 after change:', cs1);
+
+    expect(cs1.status).toBe('expired');
+
+    // Verify service 2 is active
+    const cs2 = await db
+      .select()
+      .from(customerServices)
+      .where(and(eq(customerServices.customerId, TEST_CUST_ID), eq(customerServices.serviceId, service2Id)))
+      .get();
+    expect(cs2).toBeDefined();
+    expect(cs2.status).toBe('active');
+    expect(cs2.startDate).toBe(now + 10 * 24 * 60 * 60 * 1000);
+    expect(cs2.expiredAt).toBe(now + 40 * 24 * 60 * 60 * 1000);
+
+    const customer = await db.select().from(customers).where(eq(customers.id, TEST_CUST_ID)).get();
+    expect(customer.expiredAt).toBe(now + 40 * 24 * 60 * 60 * 1000);
+  });
+});
+

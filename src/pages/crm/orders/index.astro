@@ -61,6 +61,9 @@ const orderList = await db
     customerName: customers.fullName,
     customerId: customers.id,
     staffName: staff.fullName,
+    serviceId: orders.serviceId,
+    startDate: orders.startDate,
+    expiredAt: orders.expiredAt,
   })
   .from(orders)
   .leftJoin(customers, eq(orders.customerId, customers.id))
@@ -685,6 +688,11 @@ function formatDate(timestamp: number | null) {
                     <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.15rem;">
                       {lang === 'vi' ? 'Nhân sự' : 'Staff'}: {order.staffName || (lang === 'vi' ? 'Hệ thống' : 'System')}
                     </div>
+                    {order.startDate && order.expiredAt && (
+                      <div style="font-size: 0.75rem; color: var(--text-secondary); margin-top: 0.15rem;">
+                        📅 {lang === 'vi' ? 'Thời hạn' : 'Duration'}: <span class="mono">{formatDate(order.startDate)}</span> - <span class="mono">{formatDate(order.expiredAt)}</span>
+                      </div>
+                    )}
                   </div>
                 </td>
                 <td>
@@ -701,13 +709,27 @@ function formatDate(timestamp: number | null) {
                 <td>
                   <span>{formatDate(order.createdAt)}</span>
                 </td>
-                <td>
+                <td style="display: flex; gap: 0.25rem; align-items: center;">
                   <a href={`/crm/qr-tool?orderId=${order.id}`} class="btn-action">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px;">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" />
                     </svg>
                     {lang === 'vi' ? 'Thanh toán QR' : 'Pay QR'}
                   </a>
+                  {(user?.role === 'admin' || user?.role === 'accountant') && (
+                    <button 
+                      type="button" 
+                      class="btn-action btn-edit-order" 
+                      data-id={order.id}
+                      data-service-id={order.serviceId || ''}
+                      data-amount={order.amount}
+                      data-start-date={order.startDate || ''}
+                      data-expired-at={order.expiredAt || ''}
+                      data-number={order.orderNumber}
+                    >
+                      ✏️ {lang === 'vi' ? 'Sửa' : 'Edit'}
+                    </button>
+                  )}
                 </td>
               </tr>
             ))
@@ -757,19 +779,40 @@ function formatDate(timestamp: number | null) {
                 <span class="mobile-card-label">{lang === 'vi' ? 'Ngày phát hành' : 'Issued Date'}</span>
                 <span class="mobile-card-value">{formatDate(order.createdAt)}</span>
               </div>
+              {order.startDate && order.expiredAt && (
+                <div class="mobile-card-row">
+                  <span class="mobile-card-label">{lang === 'vi' ? 'Thời hạn' : 'Duration'}</span>
+                  <span class="mobile-card-value mono">{formatDate(order.startDate)} - {formatDate(order.expiredAt)}</span>
+                </div>
+              )}
               <div class="mobile-card-row">
                 <span class="mobile-card-label">{lang === 'vi' ? 'Nhân sự' : 'Staff'}</span>
                 <span class="mobile-card-value" style="font-size: 0.75rem; color: var(--text-secondary);">{order.staffName || (lang === 'vi' ? 'Hệ thống' : 'System')}</span>
               </div>
             </div>
 
-            <div class="mobile-card-footer" style="width: 100%;">
-              <a href={`/crm/qr-tool?orderId=${order.id}`} class="btn-action" style="width: 100%; justify-content: center;">
+            <div class="mobile-card-footer" style="width: 100%; display: flex; gap: 0.5rem;">
+              <a href={`/crm/qr-tool?orderId=${order.id}`} class="btn-action" style="flex: 1; justify-content: center;">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px;">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" />
                 </svg>
                 {lang === 'vi' ? 'Thanh toán' : 'Pay'}
               </a>
+              {(user?.role === 'admin' || user?.role === 'accountant') && (
+                <button 
+                  type="button" 
+                  class="btn-action btn-edit-order" 
+                  data-id={order.id}
+                  data-service-id={order.serviceId || ''}
+                  data-amount={order.amount}
+                  data-start-date={order.startDate || ''}
+                  data-expired-at={order.expiredAt || ''}
+                  data-number={order.orderNumber}
+                  style="flex: 1; justify-content: center;"
+                >
+                  ✏️ {lang === 'vi' ? 'Sửa' : 'Edit'}
+                </button>
+              )}
             </div>
           </div>
         ))
@@ -838,6 +881,49 @@ function formatDate(timestamp: number | null) {
         <div class="modal-footer" style="margin-top: 1.5rem;">
           <button type="button" class="btn-cancel" id="quickOrderModalCancelBtn">{lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}</button>
           <button type="submit" class="btn-filter" id="quickOrderSubmitBtn" style="padding: 0.65rem 1.25rem;">{lang === 'vi' ? 'Tạo đơn hàng' : 'Create Order'}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Order Modal -->
+  <div class="modal-backdrop" id="editOrderModal">
+    <div class="modal-content" style="max-width: 500px;">
+      <div class="modal-header">
+        <h3>{lang === 'vi' ? 'Chỉnh sửa đơn hàng' : 'Edit Order'} <span id="editOrderNumber" class="mono"></span></h3>
+        <button class="modal-close" id="editOrderModalCloseBtn">&times;</button>
+      </div>
+      <form id="editOrderForm" style="display: flex; flex-direction: column;">
+        <input type="hidden" id="editOrderId" />
+        
+        <div class="form-group">
+          <label for="editOrderService">{lang === 'vi' ? 'Dịch vụ' : 'Service'}</label>
+          <select id="editOrderService" class="form-select" required>
+            {servicesList.map((srv: any) => (
+              <option value={srv.id} data-price={srv.price} data-cycle={srv.billingCycle}>{srv.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="editOrderAmount">{lang === 'vi' ? 'Số tiền (VND)' : 'Amount (VND)'}</label>
+          <input type="number" id="editOrderAmount" class="form-input" required min="0" />
+        </div>
+
+        <div class="grid-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+          <div class="form-group">
+            <label for="editOrderStartDate">{lang === 'vi' ? 'Ngày bắt đầu' : 'Start Date'}</label>
+            <input type="date" id="editOrderStartDate" class="form-input" required />
+          </div>
+          <div class="form-group">
+            <label for="editOrderExpiredAt">{lang === 'vi' ? 'Ngày hết hạn' : 'End Date'}</label>
+            <input type="date" id="editOrderExpiredAt" class="form-input" required />
+          </div>
+        </div>
+
+        <div class="modal-footer" style="margin-top: 1.5rem;">
+          <button type="button" class="btn-cancel" id="editOrderModalCancelBtn">{lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}</button>
+          <button type="submit" class="btn-filter" id="editOrderSubmitBtn" style="padding: 0.65rem 1.25rem;">{lang === 'vi' ? 'Cập nhật' : 'Update'}</button>
         </div>
       </form>
     </div>
@@ -973,6 +1059,139 @@ function formatDate(timestamp: number | null) {
           alert('Có lỗi xảy ra trong quá trình gửi yêu cầu!');
           submitBtn.disabled = false;
           submitBtn.textContent = originalText;
+        }
+      });
+    }
+
+    // Edit Order Modal Logic
+    const editModal = document.getElementById('editOrderModal');
+    const editCloseBtn = document.getElementById('editOrderModalCloseBtn');
+    const editCancelBtn = document.getElementById('editOrderModalCancelBtn');
+    const editForm = document.getElementById('editOrderForm');
+    const editSubmitBtn = document.getElementById('editOrderSubmitBtn');
+
+    const editOrderIdInput = document.getElementById('editOrderId');
+    const editOrderNumberSpan = document.getElementById('editOrderNumber');
+    const editServiceSelect = document.getElementById('editOrderService');
+    const editAmountInput = document.getElementById('editOrderAmount');
+    const editStartDateInput = document.getElementById('editOrderStartDate');
+    const editExpiredAtInput = document.getElementById('editOrderExpiredAt');
+
+    // Format dates from timestamp to YYYY-MM-DD
+    const formatDateInput = (timestamp) => {
+      if (!timestamp) return '';
+      const d = new Date(Number(timestamp));
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    };
+
+    document.querySelectorAll('.btn-edit-order').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        const serviceId = btn.getAttribute('data-service-id');
+        const amount = btn.getAttribute('data-amount');
+        const startDate = btn.getAttribute('data-start-date');
+        const expiredAt = btn.getAttribute('data-expired-at');
+        const number = btn.getAttribute('data-number');
+
+        editOrderIdInput.value = id;
+        editOrderNumberSpan.textContent = `(${number})`;
+        editServiceSelect.value = serviceId;
+        editAmountInput.value = amount;
+        editStartDateInput.value = formatDateInput(startDate);
+        editExpiredAtInput.value = formatDateInput(expiredAt);
+
+        if (editModal) editModal.style.display = 'flex';
+      });
+    });
+
+    const closeEditModal = () => {
+      if (editModal) editModal.style.display = 'none';
+    };
+
+    if (editCloseBtn) editCloseBtn.addEventListener('click', closeEditModal);
+    if (editCancelBtn) editCancelBtn.addEventListener('click', closeEditModal);
+
+    window.addEventListener('click', (e) => {
+      if (e.target === editModal) closeEditModal();
+    });
+
+    // Service change auto-recalculates End Date and price
+    if (editServiceSelect) {
+      editServiceSelect.addEventListener('change', () => {
+        const selectedOption = editServiceSelect.options[editServiceSelect.selectedIndex];
+        if (selectedOption && selectedOption.value) {
+          const price = selectedOption.getAttribute('data-price');
+          editAmountInput.value = price;
+          const cycleDays = parseInt(selectedOption.getAttribute('data-cycle') || '30', 10);
+          calculateEditEndDate(cycleDays);
+        }
+      });
+    }
+
+    // Start Date change auto-recalculates End Date
+    if (editStartDateInput) {
+      editStartDateInput.addEventListener('change', () => {
+        const selectedOption = editServiceSelect.options[editServiceSelect.selectedIndex];
+        if (selectedOption && selectedOption.value) {
+          const cycleDays = parseInt(selectedOption.getAttribute('data-cycle') || '30', 10);
+          calculateEditEndDate(cycleDays);
+        }
+      });
+    }
+
+    const calculateEditEndDate = (days) => {
+      const startVal = editStartDateInput.value;
+      if (!startVal) return;
+      const startDate = new Date(startVal);
+      startDate.setDate(startDate.getDate() + days);
+      editExpiredAtInput.value = startDate.toISOString().split('T')[0];
+    };
+
+    // Submit Edit Form
+    if (editForm) {
+      editForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const orderId = editOrderIdInput.value;
+        const serviceId = editServiceSelect.value;
+        const amount = Number(editAmountInput.value);
+        // Convert input date string to UTC/Local start/end timestamp (ms)
+        const startDate = new Date(editStartDateInput.value).getTime();
+        const expiredAt = new Date(editExpiredAtInput.value).getTime();
+
+        if (!orderId || !serviceId || amount === undefined || !startDate || !expiredAt) {
+          alert('Vui lòng điền đầy đủ thông tin!');
+          return;
+        }
+
+        editSubmitBtn.disabled = true;
+        const originalText = editSubmitBtn.textContent;
+        editSubmitBtn.textContent = 'Đang cập nhật...';
+
+        try {
+          const response = await fetch('/api/crm/orders', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ orderId, serviceId, amount, startDate, expiredAt })
+          });
+
+          const resData = await response.json();
+          if (response.ok && resData.success) {
+            alert('Cập nhật đơn hàng thành công!');
+            window.location.reload();
+          } else {
+            alert('Lỗi: ' + (resData.error || 'Không xác định'));
+            editSubmitBtn.disabled = false;
+            editSubmitBtn.textContent = originalText;
+          }
+        } catch (error) {
+          console.error(error);
+          alert('Có lỗi xảy ra khi cập nhật đơn hàng!');
+          editSubmitBtn.disabled = false;
+          editSubmitBtn.textContent = originalText;
         }
       });
     }
