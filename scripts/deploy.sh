@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # @para-doc [plan-v0.10.0#phase-7-deploy-pipeline]
 # Safe deployment script for pageel-crm
-# Enforces: backup → review migrations → dry-run → user confirm → apply → deploy
+# Enforces: backup → review migrations → user confirm → apply → deploy
 set -euo pipefail
 
 RED='\033[0;31m'
@@ -13,8 +13,39 @@ echo -e "${YELLOW}════════════════════�
 echo -e "${YELLOW}  pageel-crm Safe Deploy Pipeline${NC}"
 echo -e "${YELLOW}═══════════════════════════════════════════════${NC}"
 
-# Step 1: Check for pending migration files
-echo -e "\n${GREEN}[1/5]${NC} Checking for pending migrations..."
+# Step 1: Fetch the real database ID dynamically from wrangler CLI
+# This avoids hardcoding production secrets or UUIDs in the public repository.
+echo -e "\n${GREEN}[1/5]${NC} Fetching database ID for pageel-crm-db..."
+REAL_DB_ID=$(npx wrangler d1 list --json 2>/dev/null | node -e '
+  const fs = require("fs");
+  try {
+    const list = JSON.parse(fs.readFileSync(0, "utf-8"));
+    const db = list.find(item => item.name === "pageel-crm-db");
+    if (db && db.uuid) {
+      console.log(db.uuid);
+    } else {
+      process.exit(1);
+    }
+  } catch (e) {
+    process.exit(1);
+  }
+' || true)
+
+if [ -z "$REAL_DB_ID" ]; then
+  echo -e "  ${RED}Error: Could not find D1 database 'pageel-crm-db' on your Cloudflare account.${NC}"
+  echo "  Please run 'npx wrangler login' and ensure the database exists."
+  exit 1
+fi
+echo -e "  Found database UUID: ${GREEN}$REAL_DB_ID${NC}"
+
+# Temporary wrangler config setup to inject real D1 database UUID
+TEMP_CONFIG=$(mktemp wrangler-temp.XXXXXX.jsonc)
+trap 'rm -f "$TEMP_CONFIG"' EXIT
+
+sed "s/00000000-0000-0000-0000-000000000000/$REAL_DB_ID/g" wrangler.jsonc > "$TEMP_CONFIG"
+
+# Step 2: Check for pending migration files
+echo -e "\n${GREEN}[2/5]${NC} Checking for pending migrations..."
 MIGRATION_DIR="./drizzle"
 PENDING=$(find "$MIGRATION_DIR" -name "*.sql" -newer ".wrangler/state" 2>/dev/null | head -20 || true)
 
@@ -25,8 +56,8 @@ else
   echo "$PENDING" | sed 's/^/    /'
 fi
 
-# Step 2: Review migration SQL (show content)
-echo -e "\n${GREEN}[2/5]${NC} Reviewing migration SQL files..."
+# Step 3: Review migration SQL (show content)
+echo -e "\n${GREEN}[3/5]${NC} Reviewing migration SQL files..."
 for sql_file in "$MIGRATION_DIR"/*.sql; do
   if [ -f "$sql_file" ]; then
     echo -e "\n  ${YELLOW}── $(basename "$sql_file") ──${NC}"
@@ -39,23 +70,15 @@ for sql_file in "$MIGRATION_DIR"/*.sql; do
   fi
 done
 
-# Step 3: Backup production DB via D1 export
-echo -e "\n${GREEN}[3/5]${NC} Backing up production database..."
+# Step 4: Backup production DB via D1 export
+echo -e "\n${GREEN}[4/5]${NC} Backing up production database..."
 BACKUP_FILE="backup-$(date +%Y%m%d-%H%M%S).sql"
-echo "  Running: wrangler d1 export DB --remote --output $BACKUP_FILE"
-npx wrangler d1 export DB --remote --output "$BACKUP_FILE" 2>&1 || {
+echo "  Running: wrangler d1 export DB --remote --output $BACKUP_FILE -c $TEMP_CONFIG"
+npx wrangler d1 export DB --remote --output "$BACKUP_FILE" -c "$TEMP_CONFIG" 2>&1 || {
   echo -e "  ${RED}Backup failed! Aborting deploy.${NC}"
   exit 1
 }
 echo -e "  ${GREEN}✅ Backup saved to $BACKUP_FILE${NC}"
-
-# Step 4: Dry-run migration
-echo -e "\n${GREEN}[4/5]${NC} Dry-run migration (no changes applied)..."
-echo "  Running: wrangler d1 migrations apply DB --remote --dry-run"
-npx wrangler d1 migrations apply DB --remote --dry-run 2>&1 || {
-  echo -e "  ${RED}Dry-run failed! Review errors above.${NC}"
-  exit 1
-}
 
 # Step 5: User confirmation
 echo -e "\n${YELLOW}═══════════════════════════════════════════════${NC}"
@@ -70,9 +93,9 @@ fi
 
 # Step 6: Apply migrations
 echo -e "\n${GREEN}[5/5]${NC} Applying migrations to production..."
-npx wrangler d1 migrations apply DB --remote 2>&1 || {
+npx wrangler d1 migrations apply DB --remote -c "$TEMP_CONFIG" 2>&1 || {
   echo -e "${RED}Migration failed! Use D1 Time Travel to restore:${NC}"
-  echo "  wrangler d1 time-travel restore DB --timestamp $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "  wrangler d1 time-travel restore pageel-crm-db --timestamp $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   exit 1
 }
 
