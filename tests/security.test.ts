@@ -1,6 +1,7 @@
 // @para-doc [plan-v0.10.0#phase-7-security-hardening]
 // Security hardening tests — Phase 7 TDD
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { onRequest } from '../src/middleware';
 import {
   createSessionCookie,
   verifySessionCookie,
@@ -165,3 +166,30 @@ describe('SSRF URL Validation for Restore (S3)', () => {
     expect(validateRestoreUrl('ftp://github.com/file')).toBe(false);
   });
 });
+
+// ============================================================
+// 7.4 Content-Security-Policy (CSP) Tests
+// ============================================================
+describe('CSP Content Security Policy (S4)', () => {
+  it('should include https://img.vietqr.io in the CSP img-src directive', async () => {
+    const mockContext: any = {
+      url: new URL('http://localhost/api/auth/login'),
+      request: new Request('http://localhost/api/auth/login'),
+      cookies: {
+        get: () => null
+      },
+      locals: {}
+    };
+
+    const nextResponse = new Response('ok');
+    const nextCalled = vi.fn().mockResolvedValue(nextResponse);
+
+    const response = await onRequest(mockContext, nextCalled);
+
+    expect(response.status).toBe(200);
+    const csp = response.headers.get('Content-Security-Policy');
+    expect(csp).not.toBeNull();
+    expect(csp).toContain('https://img.vietqr.io');
+  });
+});
+
