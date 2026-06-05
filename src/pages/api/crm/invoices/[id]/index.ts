@@ -66,10 +66,10 @@ export const PUT: APIRoute = async (context) => {
       });
     }
 
-    // Check if linked to any payments
+    // Check if linked to any payments or already paid
     const linkedPayments = await db.select().from(payments).where(eq(payments.invoiceId, id));
-    if (linkedPayments.length > 0 || existingInvoice.paymentId) {
-      return new Response(JSON.stringify({ error: 'Không thể chỉnh sửa hóa đơn đã được gán vào giao dịch. Vui lòng gỡ liên kết giao dịch trước.' }), {
+    if (linkedPayments.length > 0 || existingInvoice.paymentId || existingInvoice.status === 'paid') {
+      return new Response(JSON.stringify({ error: 'Không thể chỉnh sửa hóa đơn đã được gán vào giao dịch hoặc đã thanh toán. Vui lòng gỡ liên kết giao dịch trước.' }), {
         status: 409,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -156,10 +156,10 @@ export const DELETE: APIRoute = async (context) => {
       });
     }
 
-    // Check if linked to any payments
+    // Check if linked to any payments or already paid
     const linkedPayments = await db.select().from(payments).where(eq(payments.invoiceId, id));
-    if (linkedPayments.length > 0 || existingInvoice.paymentId) {
-      return new Response(JSON.stringify({ error: 'Không thể xóa hóa đơn đã được gán vào giao dịch. Vui lòng gỡ liên kết giao dịch trước.' }), {
+    if (linkedPayments.length > 0 || existingInvoice.paymentId || existingInvoice.status === 'paid') {
+      return new Response(JSON.stringify({ error: 'Không thể xóa hóa đơn đã được gán vào giao dịch hoặc đã thanh toán. Vui lòng gỡ liên kết giao dịch trước.' }), {
         status: 409,
         headers: { 'Content-Type': 'application/json' },
       });

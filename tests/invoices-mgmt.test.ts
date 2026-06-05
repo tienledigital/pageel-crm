@@ -189,6 +189,34 @@ describe('Invoice Management API Integration Tests', () => {
       const data = await response.json();
       expect(data.error).toContain('giao dịch');
     });
+
+    it('should return 409 Conflict when attempting to edit an invoice with status paid', async () => {
+      const db = getDb();
+      const invoiceId = 'INV-UPDATE-PAID-STATUS';
+
+      // Insert test invoice with status 'paid' directly
+      await db.insert(invoices).values({
+        id: invoiceId,
+        customerId: TEST_CUSTOMER_1.id,
+        invoiceNumber: 'INV-005',
+        amount: 100000,
+        content: 'Paid status invoice',
+        status: 'paid',
+      });
+
+      const body = {
+        customerId: TEST_CUSTOMER_2.id,
+        amount: 150000,
+        content: 'Attempted update on paid invoice',
+      };
+
+      const context = createMockContext('PUT', invoiceId, body, adminToken);
+      const response = await updateInvoiceHandler(context);
+      expect(response.status).toBe(409);
+
+      const data = await response.json();
+      expect(data.error).toContain('đã thanh toán');
+    });
   });
 
   describe('DELETE: Delete Invoice', () => {
@@ -262,6 +290,32 @@ describe('Invoice Management API Integration Tests', () => {
 
       const data = await response.json();
       expect(data.error).toContain('giao dịch');
+
+      // Verify DB still contains invoice
+      const updated = await db.select().from(invoices).where(eq(invoices.id, invoiceId)).get();
+      expect(updated).toBeDefined();
+    });
+
+    it('should return 409 Conflict and block deletion when invoice status is paid', async () => {
+      const db = getDb();
+      const invoiceId = 'INV-DELETE-PAID-STATUS';
+
+      // Seed paid invoice
+      await db.insert(invoices).values({
+        id: invoiceId,
+        customerId: TEST_CUSTOMER_1.id,
+        invoiceNumber: 'INV-006',
+        amount: 200000,
+        content: 'Paid invoice to delete',
+        status: 'paid',
+      });
+
+      const context = createMockContext('DELETE', invoiceId, undefined, adminToken);
+      const response = await deleteInvoiceHandler(context);
+      expect(response.status).toBe(409);
+
+      const data = await response.json();
+      expect(data.error).toContain('đã thanh toán');
 
       // Verify DB still contains invoice
       const updated = await db.select().from(invoices).where(eq(invoices.id, invoiceId)).get();
