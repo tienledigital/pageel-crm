@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - **Late Association Date Selection**: Added option to use the bank transaction date as the Start Date of the service package in Late Association modal, rather than forcing today's date.
+- **Customer Main Service Auto-Assignment**: Implemented `autoAssignMainService` which automatically maps the customer's most recently assigned service package (from `customerServices` or `orders` history) to their main `serviceId` on customer page load if it was previously blank.
 
 ### Changed
 - **Late Association Writes to Orders**: Refactored Late Association flow to create a service package order (mã `ORD-` in table `orders`) and link `payments.orderId` instead of creating an invoice. This satisfies the requirement of using Invoices solely for tax declaration while Orders handle active service cycles.

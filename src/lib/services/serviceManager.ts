@@ -1,6 +1,6 @@
 // @para-doc [services-payments-spec.md#project-structure]
-import { eq, and } from 'drizzle-orm';
-import { services, customerServices, invoices, payments, customers, orders } from '@/lib/db/schema';
+import { eq, and, or, desc, inArray, sql } from 'drizzle-orm';
+import { services, customerServices, payments, customers, orders } from '@/lib/db/schema';
 
 // @para-doc [services-payments-spec.md#service-helpers]
 export interface CreateServiceParams {
@@ -754,4 +754,70 @@ export async function syncCustomerServices(db: any, customerId: string): Promise
     .set({ expiredAt: maxExpiredAt })
     .where(eq(customers.id, customerId));
 }
+
+export async function autoAssignMainService(db: any): Promise<void> {
+  // 1. Find all customers where serviceId is null or empty
+  const unassignedCustomers = await db
+    .select({ id: customers.id })
+    .from(customers)
+    .where(or(sql`${customers.serviceId} IS NULL`, eq(customers.serviceId, '')))
+    .all();
+
+  if (unassignedCustomers.length === 0) return;
+
+  const customerIds = unassignedCustomers.map((c: any) => c.id);
+
+  // 2. Query all customerServices for these customers, ordered by startDate desc, createdAt desc
+  const csRecords = await db
+    .select({
+      customerId: customerServices.customerId,
+      serviceId: customerServices.serviceId,
+      startDate: customerServices.startDate,
+      createdAt: customerServices.createdAt,
+    })
+    .from(customerServices)
+    .where(inArray(customerServices.customerId, customerIds))
+    .orderBy(desc(customerServices.startDate), desc(customerServices.createdAt))
+    .all();
+
+  // 3. Query all orders for these customers with serviceId set
+  const orderRecords = await db
+    .select({
+      customerId: orders.customerId,
+      serviceId: orders.serviceId,
+      createdAt: orders.createdAt,
+    })
+    .from(orders)
+    .where(and(
+      inArray(orders.customerId, customerIds),
+      sql`${orders.serviceId} IS NOT NULL`
+    ))
+    .orderBy(desc(orders.createdAt))
+    .all();
+
+  const assignments = new Map<string, string>();
+
+  // First pass: from customerServices
+  for (const record of csRecords) {
+    if (record.customerId && record.serviceId && !assignments.has(record.customerId)) {
+      assignments.set(record.customerId, record.serviceId);
+    }
+  }
+
+  // Fallback to orders
+  for (const record of orderRecords) {
+    if (record.customerId && record.serviceId && !assignments.has(record.customerId)) {
+      assignments.set(record.customerId, record.serviceId);
+    }
+  }
+
+  // 4. Update customers with the assigned serviceId
+  for (const [custId, serviceId] of assignments.entries()) {
+    await db
+      .update(customers)
+      .set({ serviceId })
+      .where(eq(customers.id, custId));
+  }
+}
+
 

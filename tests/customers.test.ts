@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { getDb } from '../src/lib/db';
-import { users, customers, auditLogs, staff, services } from '../src/lib/db/schema';
+import { users, customers, auditLogs, staff, services, customerServices, orders } from '../src/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import path from 'path';
 import { createSessionCookie, hashPassword } from '../src/lib/auth';
@@ -291,6 +291,80 @@ describe('CRM Customers API Integration Tests', () => {
       expect(newCustomer).toBeDefined();
       expect(newCustomer.serviceId).toBe('srv-test-2');
       expect(newCustomer.balance).toBe(50000);
+    });
+  });
+
+  describe('Auto-assign latest service package (TDD)', () => {
+    it('should auto-assign the latest service package from customerServices or orders if customers.serviceId is null', async () => {
+      // 1. Create a customer with serviceId = null
+      await db.insert(customers).values({
+        id: 'CUST-NO-SERVICE',
+        fullName: 'No Service Customer',
+        phone: '0999999999',
+        balance: 0,
+      });
+
+      // 2. Add history in customerServices
+      await db.insert(customerServices).values({
+        id: 'cs-old',
+        customerId: 'CUST-NO-SERVICE',
+        serviceId: 'srv-test-1',
+        status: 'active',
+        startDate: Date.now() - 1000 * 60 * 60 * 24 * 10, // 10 days ago
+        expiredAt: Date.now() - 1000 * 60 * 60 * 24, // 1 day ago
+        createdAt: Date.now() - 1000 * 60 * 60 * 24 * 10,
+      });
+
+      await db.insert(customerServices).values({
+        id: 'cs-new',
+        customerId: 'CUST-NO-SERVICE',
+        serviceId: 'srv-test-2',
+        status: 'active',
+        startDate: Date.now(), // now
+        expiredAt: Date.now() + 1000 * 60 * 60 * 24 * 30, // 30 days from now
+        createdAt: Date.now(),
+      });
+
+      // Import the autoAssignMainService helper
+      const { autoAssignMainService } = await import('../src/lib/services/serviceManager');
+
+      // 3. Call the helper
+      await autoAssignMainService(db);
+
+      // 4. Expect that customer's serviceId was updated to the latest one ('srv-test-2')
+      const [updatedCustomer] = await db.select().from(customers).where(eq(customers.id, 'CUST-NO-SERVICE'));
+      expect(updatedCustomer.serviceId).toBe('srv-test-2');
+    });
+
+    it('should fallback to orders if no customerServices entry exists', async () => {
+      // 1. Create a customer with serviceId = null
+      await db.insert(customers).values({
+        id: 'CUST-NO-SERVICE-ORDER',
+        fullName: 'No Service Order Customer',
+        phone: '0888888888',
+        balance: 0,
+      });
+
+      // 2. Add history in orders
+      await db.insert(orders).values({
+        id: 'ord-new',
+        customerId: 'CUST-NO-SERVICE-ORDER',
+        serviceId: 'srv-test-2',
+        orderNumber: 'ORD-TEST-999',
+        amount: 200000,
+        content: 'Registration srv-test-2',
+        status: 'paid',
+        createdAt: Date.now(),
+      });
+
+      const { autoAssignMainService } = await import('../src/lib/services/serviceManager');
+
+      // 3. Call the helper
+      await autoAssignMainService(db);
+
+      // 4. Expect that customer's serviceId was updated to the order's serviceId ('srv-test-2')
+      const [updatedCustomer] = await db.select().from(customers).where(eq(customers.id, 'CUST-NO-SERVICE-ORDER'));
+      expect(updatedCustomer.serviceId).toBe('srv-test-2');
     });
   });
 });

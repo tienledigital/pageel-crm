@@ -4,10 +4,14 @@ import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { customers, staff, services } from '@/lib/db/schema';
 import { desc, eq, like, and, or, sql } from 'drizzle-orm';
+import { autoAssignMainService } from '@/lib/services/serviceManager';
 
 const db = getDb(env);
 const user = Astro.locals.user;
 const isWritableBalance = user && (user.role === 'admin' || user.role === 'accountant');
+
+// Auto-assign latest service package if customer serviceId is null/empty
+await autoAssignMainService(db);
 
 // 1. Parse query parameters
 const url = new URL(Astro.request.url);
