@@ -321,6 +321,54 @@ describe('Quick Create Paid Order API Endpoint Integration Tests', () => {
     expect(order.status).toBe('paid');
     expect(order.staffId).toBe(staffId);
   });
+
+  it('should successfully create paid order via API even if the user has no staff profile (staffId becomes null)', async () => {
+    const db = getDb();
+    
+    // Seed customer and service, but do NOT seed staff for usr-admin-ord
+    const customerId = 'CUST-API-ORD-NO-STAFF';
+    const serviceId = 'srv-api-ord-no-staff';
+
+    await db.insert(customers).values({
+      id: customerId,
+      fullName: 'API Customer Order No Staff',
+      phone: '0912345679',
+    });
+
+    await db.insert(services).values({
+      id: serviceId,
+      name: 'API Service Order No Staff',
+      price: 600000,
+      billingCycle: 30,
+      prefix: 'APISRVORDNOSTAFF',
+      status: 'active',
+      createdAt: Date.now(),
+    });
+
+    const body = {
+      customerId,
+      serviceId,
+      amount: 600000,
+      content: 'API quick order no staff',
+      paidAt: Date.now(),
+      startDateFromPayment: false,
+      paymentMethod: 'bank_transfer',
+    };
+
+    const context = createMockContext(body, adminToken);
+    const response = await createPaidOrderHandler(context);
+    expect(response.status).toBe(200);
+
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.orderId).toBeDefined();
+
+    // Verify DB order
+    const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).get();
+    expect(order).toBeDefined();
+    expect(order.status).toBe('paid');
+    expect(order.staffId).toBeNull();
+  });
 });
 
 describe('DELETE: Delete Paid Order API Endpoint Integration Tests', () => {

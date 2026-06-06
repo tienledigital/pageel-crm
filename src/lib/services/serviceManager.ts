@@ -350,7 +350,7 @@ export interface CreatePaidOrderParams {
   paidAt: number;
   startDateFromPayment: boolean;
   paymentMethod: string;
-  staffId: string;
+  staffId: string | null;
 }
 
 export async function createPaidOrder(

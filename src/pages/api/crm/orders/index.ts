@@ -92,12 +92,7 @@ export const POST: APIRoute = async (context) => {
 
     // 4. Retrieve current staff member associated with the user
     const currentStaff = await db.select().from(staff).where(eq(staff.userId, user.id)).get();
-    if (!currentStaff) {
-      return new Response(JSON.stringify({ error: 'Bad Request: Staff profile not found' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+    const staffId = currentStaff?.id || null;
 
     // 5. Create paid order
     const result = await createPaidOrder(db, {
@@ -108,7 +103,7 @@ export const POST: APIRoute = async (context) => {
       paidAt: Number(paidAt),
       startDateFromPayment: Boolean(startDateFromPayment),
       paymentMethod,
-      staffId: currentStaff.id,
+      staffId,
     });
 
     return new Response(JSON.stringify({ success: true, orderId: result.orderId, orderNumber: result.orderNumber }), {
