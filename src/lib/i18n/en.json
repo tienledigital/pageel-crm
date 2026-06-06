@@ -9,6 +9,7 @@
     "services": "Services",
     "sync_logs": "Sync Logs",
     "settings": "Settings",
+    "audit": "Data Reconciliation",
     "logout": "Sign Out"
   },
   "settings": {

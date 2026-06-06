@@ -1,0 +1,1483 @@
+---
+import DashboardLayout from '@/layouts/DashboardLayout.astro';
+import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
+
+const lang = Astro.locals.lang || 'vi';
+const title = lang === 'vi' ? 'Đối soát dữ liệu hệ thống' : 'System Data Reconciliation';
+
+// 1. Xác thực session và kiểm tra quyền admin/accountant ở server-side Astro
+const sessionCookie = Astro.cookies.get('session')?.value;
+const sessionSecret = getSessionSecret();
+
+if (!sessionCookie) {
+  return Astro.redirect('/login');
+}
+
+const user = await verifySessionCookie(sessionCookie, sessionSecret);
+if (!user || (user.role !== 'admin' && user.role !== 'accountant')) {
+  return Astro.redirect('/dashboard'); // Quay về dashboard nếu không có quyền
+}
+
+const isAdmin = user.role === 'admin';
+---
+
+<DashboardLayout title={title}>
+  <div class="audit-layout" data-lang={lang} data-role={user.role}>
+    <!-- Header Card -->
+    <header class="audit-header">
+      <div class="header-text">
+        <h1>{lang === 'vi' ? 'Đối soát dữ liệu' : 'Data Reconciliation'}</h1>
+        <p class="subtitle">
+          {lang === 'vi' 
+            ? 'Công cụ rà soát sai lệch liên kết chéo giữa Giao dịch - Hóa đơn - Đơn hàng và dọn dẹp an toàn.' 
+            : 'Cross-linking reconciliation and safe data cleanup for Payments, Invoices, and Orders.'}
+        </p>
+      </div>
+      <button id="btnScan" class="btn btn-primary btn-scan">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="icon spin-target">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+        </svg>
+        <span class="btn-text">{lang === 'vi' ? 'Quét dữ liệu' : 'Scan Database'}</span>
+      </button>
+    </header>
+
+    <!-- Stat Dashboard Cards -->
+    <section class="audit-stats-grid">
+      <div class="stat-card border-danger" data-target-tab="invoices">
+        <div class="stat-icon bg-danger-glow">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="text-danger">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+          </svg>
+        </div>
+        <div class="stat-details">
+          <span class="stat-value text-danger" id="statInvoices">0</span>
+          <span class="stat-label">{lang === 'vi' ? 'Hóa đơn lỗi / mồ côi' : 'Invoice Errors / Orphans'}</span>
+        </div>
+      </div>
+
+      <div class="stat-card border-warning" data-target-tab="orders">
+        <div class="stat-icon bg-warning-glow">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="text-warning">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007zM8.625 10.5a.375.375 0 11-.75 0 .375.375 0 01.75 0zm7.5 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+          </svg>
+        </div>
+        <div class="stat-details">
+          <span class="stat-value text-warning" id="statOrders">0</span>
+          <span class="stat-label">{lang === 'vi' ? 'Đơn hàng lỗi / mồ côi' : 'Order Errors / Orphans'}</span>
+        </div>
+      </div>
+
+      <div class="stat-card border-info" data-target-tab="threeway">
+        <div class="stat-icon bg-info-glow">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" class="text-info">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+          </svg>
+        </div>
+        <div class="stat-details">
+          <span class="stat-value text-info" id="statThreeWay">0</span>
+          <span class="stat-label">{lang === 'vi' ? 'Sai lệch liên kết 3 bên' : 'Three-Way Discrepancies'}</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Navigation Tabs -->
+    <div class="audit-tabs-nav">
+      <button class="nav-btn active" data-tab="invoices">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="icon">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+        </svg>
+        {lang === 'vi' ? 'Hóa đơn lỗi' : 'Invoice Errors'}
+      </button>
+      <button class="nav-btn" data-tab="orders">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="icon">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 10.5V6a3.75 3.75 0 10-7.5 0v4.5m11.356-1.993l1.263 12c.07.665-.45 1.243-1.119 1.243H4.25a1.125 1.125 0 01-1.12-1.243l1.264-12A1.125 1.125 0 015.513 7.5h12.974c.576 0 1.059.435 1.119 1.007zM8.625 10.5a.375.375 0 11-.75 0 .375.375 0 01.75 0zm7.5 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+        </svg>
+        {lang === 'vi' ? 'Đơn hàng lỗi' : 'Order Errors'}
+      </button>
+      <button class="nav-btn" data-tab="threeway">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="icon">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+        </svg>
+        {lang === 'vi' ? 'Giao dịch lệch chéo' : 'Linked Payments Mismatch'}
+      </button>
+    </div>
+
+    <!-- Tab Panels Container -->
+    <div class="tab-panels">
+      <!-- Loading State -->
+      <div id="loadingPanel" class="loading-state card">
+        <div class="spinner"></div>
+        <p>{lang === 'vi' ? 'Đang tải dữ liệu đối soát...' : 'Analyzing database integrity...'}</p>
+      </div>
+
+      <!-- Empty State -->
+      <div id="emptyPanel" class="empty-state card hidden">
+        <div class="success-icon-badge">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h3>{lang === 'vi' ? 'Dữ liệu hoàn hảo!' : 'Database is fully consistent!'}</h3>
+        <p>{lang === 'vi' ? 'Không phát hiện bất kỳ sai lệch dữ liệu nào giữa các Giao dịch, Hóa đơn và Đơn hàng.' : 'No cross-linking discrepancies or orphaned records were found.'}</p>
+      </div>
+
+      <!-- INVOICES TAB PANEL -->
+      <div class="tab-panel active" id="panelInvoices">
+        <div class="card card-table">
+          <div class="table-scroll-container">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th style="width: 40px; text-align: center;"><input type="checkbox" id="selectAllInvoices" class="audit-checkbox-main" /></th>
+                  <th>{lang === 'vi' ? 'Mã Hóa đơn' : 'Invoice Number'}</th>
+                  <th>{lang === 'vi' ? 'Khách hàng' : 'Customer ID'}</th>
+                  <th>{lang === 'vi' ? 'Số tiền' : 'Amount'}</th>
+                  <th>{lang === 'vi' ? 'Lỗi phát hiện' : 'Detected Issue'}</th>
+                  <th class="actions-col">{lang === 'vi' ? 'Thao tác' : 'Actions'}</th>
+                </tr>
+              </thead>
+              <tbody id="tableInvoicesBody">
+                <!-- Dynamic Content -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- ORDERS TAB PANEL -->
+      <div class="tab-panel" id="panelOrders">
+        <div class="card card-table">
+          <div class="table-scroll-container">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th style="width: 40px; text-align: center;"><input type="checkbox" id="selectAllOrders" class="audit-checkbox-main" /></th>
+                  <th>{lang === 'vi' ? 'Mã Đơn hàng' : 'Order Number'}</th>
+                  <th>{lang === 'vi' ? 'Khách hàng' : 'Customer ID'}</th>
+                  <th>{lang === 'vi' ? 'Số tiền' : 'Amount'}</th>
+                  <th>{lang === 'vi' ? 'Lỗi phát hiện' : 'Detected Issue'}</th>
+                  <th class="actions-col">{lang === 'vi' ? 'Thao tác' : 'Actions'}</th>
+                </tr>
+              </thead>
+              <tbody id="tableOrdersBody">
+                <!-- Dynamic Content -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- THREE-WAY LINK TAB PANEL -->
+      <div class="tab-panel" id="panelThreeWay">
+        <div class="card card-table">
+          <div class="table-scroll-container">
+            <table class="audit-table">
+              <thead>
+                <tr>
+                  <th style="width: 40px; text-align: center;"><input type="checkbox" id="selectAllThreeWay" class="audit-checkbox-main" /></th>
+                  <th>{lang === 'vi' ? 'Mã Giao dịch (SePay)' : 'Transaction (ID)'}</th>
+                  <th>{lang === 'vi' ? 'Thông tin lệch' : 'Discrepancy Details'}</th>
+                  <th>{lang === 'vi' ? 'Nguyên nhân' : 'Cause'}</th>
+                  <th class="actions-col">{lang === 'vi' ? 'Thao tác' : 'Actions'}</th>
+                </tr>
+              </thead>
+              <tbody id="tableThreeWayBody">
+                <!-- Dynamic Content -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Bulk Action Bar -->
+    <div id="bulkActionBar" class="bulk-action-bar card hidden">
+      <div class="bulk-info">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="bulk-icon" style="width: 20px; height: 20px; color: var(--primary);">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span id="bulkCountText">Đã chọn 0 mục</span>
+      </div>
+      <div class="bulk-actions">
+        <button id="btnBulkUnlink" class="btn btn-secondary btn-sm">
+          {lang === 'vi' ? 'Gỡ liên kết hàng loạt' : 'Bulk Unlink'}
+        </button>
+        <button id="btnBulkDelete" class="btn btn-danger btn-sm">
+          {lang === 'vi' ? 'Xóa hàng loạt' : 'Bulk Delete'}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Safety Confirmation Dialogue Modal (Vanilla JS/HTML Dialog) -->
+  <dialog id="confirmDialog" class="confirm-dialog card">
+    <form method="dialog" class="dialog-content">
+      <div class="dialog-header">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="dialog-warn-icon text-danger">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+        </svg>
+        <h3>{lang === 'vi' ? 'Hành động nguy hiểm' : 'Critical Action Required'}</h3>
+      </div>
+      <div class="dialog-body">
+        <p id="dialogMessage">Xác nhận thực hiện hành động này?</p>
+        <div class="confirm-input-area">
+          <label for="confirmInput">{lang === 'vi' ? 'Nhập chữ CONFIRM để xác nhận:' : 'Type CONFIRM to authorize this delete:'}</label>
+          <input type="text" id="confirmInput" class="confirm-text-input" autocomplete="off" placeholder="CONFIRM" />
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button type="button" id="btnDialogCancel" class="btn btn-secondary">{lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}</button>
+        <button type="submit" id="btnDialogConfirm" class="btn btn-danger" disabled>{lang === 'vi' ? 'Xác nhận thực hiện' : 'Execute Action'}</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Toast Notification -->
+  <div id="toastNotification" class="toast-notification">
+    <span id="toastNotificationText">Success</span>
+  </div>
+
+  <!-- Client-side script -->
+  <script is:inline define:vars={{ lang, isAdmin }}>
+    let auditData = null;
+    let pendingAction = null;
+    let pendingTargetIds = []; // support array for bulk actions
+
+    // Elements
+    const btnScan = document.getElementById('btnScan');
+    const loadingPanel = document.getElementById('loadingPanel');
+    const emptyPanel = document.getElementById('emptyPanel');
+    
+    // Panels
+    const panels = {
+      invoices: document.getElementById('panelInvoices'),
+      orders: document.getElementById('panelOrders'),
+      threeway: document.getElementById('panelThreeWay')
+    };
+
+    // Stats
+    const stats = {
+      invoices: document.getElementById('statInvoices'),
+      orders: document.getElementById('statOrders'),
+      threeway: document.getElementById('statThreeWay')
+    };
+
+    // Tables
+    const tables = {
+      invoices: document.getElementById('tableInvoicesBody'),
+      orders: document.getElementById('tableOrdersBody'),
+      threeway: document.getElementById('tableThreeWayBody')
+    };
+
+    // Bulk Select elements
+    const selectAllCheckbox = {
+      invoices: document.getElementById('selectAllInvoices'),
+      orders: document.getElementById('selectAllOrders'),
+      threeway: document.getElementById('selectAllThreeWay')
+    };
+
+    const bulkActionBar = document.getElementById('bulkActionBar');
+    const bulkCountText = document.getElementById('bulkCountText');
+    const btnBulkUnlink = document.getElementById('btnBulkUnlink');
+    const btnBulkDelete = document.getElementById('btnBulkDelete');
+
+    // Dialog
+    const confirmDialog = document.getElementById('confirmDialog');
+    const dialogMessage = document.getElementById('dialogMessage');
+    const confirmInput = document.getElementById('confirmInput');
+    const btnDialogCancel = document.getElementById('btnDialogCancel');
+    const btnDialogConfirm = document.getElementById('btnDialogConfirm');
+
+    // Toast
+    const toast = document.getElementById('toastNotification');
+    const toastText = document.getElementById('toastNotificationText');
+
+    let activeTab = 'invoices';
+
+    function showToast(message, type = 'success') {
+      toastText.textContent = message;
+      toast.className = `toast-notification show ${type}`;
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3000);
+    }
+
+    // Tab Navigation Logic
+    const tabButtons = document.querySelectorAll('.audit-tabs-nav .nav-btn');
+    const statCards = document.querySelectorAll('.audit-stats-grid .stat-card');
+
+    function switchTab(tabId) {
+      activeTab = tabId;
+      tabButtons.forEach(btn => {
+        if (btn.getAttribute('data-tab') === tabId) {
+          btn.classList.add('active');
+        } else {
+          btn.classList.remove('active');
+        }
+      });
+
+      Object.keys(panels).forEach(key => {
+        if (key === tabId) {
+          panels[key].classList.add('active');
+        } else {
+          panels[key].classList.remove('active');
+        }
+      });
+
+      // Clear selections when switching tab
+      clearAllSelections();
+    }
+
+    tabButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        switchTab(btn.getAttribute('data-tab'));
+      });
+    });
+
+    statCards.forEach(card => {
+      card.addEventListener('click', () => {
+        switchTab(card.getAttribute('data-target-tab'));
+      });
+    });
+
+    // Format currency Helper
+    function formatMoney(amount) {
+      return (amount || 0).toLocaleString() + ' đ';
+    }
+
+    // Call reconciliation check API
+    async function scanDatabase() {
+      // Clear selections first
+      clearAllSelections();
+
+      // Show loading
+      loadingPanel.classList.remove('hidden');
+      emptyPanel.classList.add('hidden');
+      Object.values(panels).forEach(p => p.classList.add('hidden-panel-temporary'));
+      
+      const spinTarget = btnScan.querySelector('.spin-target');
+      if (spinTarget) spinTarget.classList.add('spinning');
+      btnScan.disabled = true;
+
+      try {
+        const response = await fetch('/api/crm/audit/check');
+        if (!response.ok) {
+          throw new Error(lang === 'vi' ? 'Không thể tải dữ liệu đối soát.' : 'Failed to scan database.');
+        }
+
+        auditData = await response.json();
+        renderAuditData();
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        loadingPanel.classList.add('hidden');
+        if (spinTarget) spinTarget.classList.remove('spinning');
+        btnScan.disabled = false;
+        Object.values(panels).forEach(p => p.classList.remove('hidden-panel-temporary'));
+      }
+    }
+
+    // Selection Handling helpers
+    function clearAllSelections() {
+      // Uncheck all row checkboxes
+      document.querySelectorAll('.audit-row-checkbox').forEach(cb => cb.checked = false);
+      // Uncheck all header selectAll checkboxes
+      Object.values(selectAllCheckbox).forEach(cb => {
+        if (cb) cb.checked = false;
+      });
+      // Hide bulk actions bar
+      if (bulkActionBar) bulkActionBar.classList.add('hidden');
+    }
+
+    function updateBulkActionBar() {
+      const checkedBoxes = document.querySelectorAll(`.tab-panel.active .audit-row-checkbox:checked`);
+      const count = checkedBoxes.length;
+
+      if (count > 0) {
+        bulkCountText.textContent = lang === 'vi' ? `Đã chọn ${count} mục` : `Selected ${count} items`;
+        bulkActionBar.classList.remove('hidden');
+
+        // Check if selectAll header checkbox needs to be checked
+        const allBoxes = document.querySelectorAll(`.tab-panel.active .audit-row-checkbox`);
+        if (selectAllCheckbox[activeTab]) {
+          selectAllCheckbox[activeTab].checked = allBoxes.length === count;
+        }
+
+        // Show/hide unlink in bulk actions depending on if unlink is valid
+        if (activeTab === 'threeway') {
+          btnBulkUnlink.classList.add('hidden');
+        } else {
+          btnBulkUnlink.classList.remove('hidden');
+        }
+      } else {
+        bulkActionBar.classList.add('hidden');
+        if (selectAllCheckbox[activeTab]) {
+          selectAllCheckbox[activeTab].checked = false;
+        }
+      }
+    }
+
+    // Set up listeners for Select All checkboxes
+    Object.keys(selectAllCheckbox).forEach(tabKey => {
+      const cb = selectAllCheckbox[tabKey];
+      if (cb) {
+        cb.addEventListener('change', () => {
+          const isChecked = cb.checked;
+          const rowCbs = document.querySelectorAll(`#panel${tabKey.charAt(0).toUpperCase() + tabKey.slice(1)} .audit-row-checkbox`);
+          rowCbs.forEach(rowCb => {
+            rowCb.checked = isChecked;
+          });
+          updateBulkActionBar();
+        });
+      }
+    });
+
+    // Listen for dynamically created row checkbox changes via event delegation
+    Object.keys(panels).forEach(tabKey => {
+      const panel = panels[tabKey];
+      if (panel) {
+        panel.addEventListener('change', (e) => {
+          if (e.target && e.target.classList.contains('audit-row-checkbox')) {
+            updateBulkActionBar();
+          }
+        });
+      }
+    });
+
+    function renderAuditData() {
+      if (!auditData) return;
+
+      // Stats counts
+      const invErrors = (auditData.invoices?.orphans?.length || 0) + 
+                       (auditData.invoices?.paidNullPayment?.length || 0) + 
+                       (auditData.invoices?.mismatchedAmount?.length || 0);
+
+      const ordErrors = (auditData.orders?.orphans?.length || 0) + 
+                       (auditData.orders?.paidNullPayment?.length || 0) + 
+                       (auditData.orders?.mismatchedAmount?.length || 0);
+
+      const crossErrors = (auditData.threeWay?.mismatchedLinks?.length || 0) + 
+                        (auditData.threeWay?.mismatchedCustomers?.length || 0);
+
+      stats.invoices.textContent = invErrors;
+      stats.orders.textContent = ordErrors;
+      stats.threeway.textContent = crossErrors;
+
+      // Check if completely clean
+      if (invErrors === 0 && ordErrors === 0 && crossErrors === 0) {
+        emptyPanel.classList.remove('hidden');
+        Object.values(panels).forEach(p => p.classList.add('hidden'));
+        return;
+      } else {
+        emptyPanel.classList.add('hidden');
+        // Restore active panel state
+        switchTab(activeTab);
+      }
+
+      // 1. Render Invoices Tab
+      let invHtml = '';
+      
+      // 1.1 Orphans
+      (auditData.invoices?.orphans || []).forEach(inv => {
+        invHtml += `
+          <tr class="danger-row">
+            <td style="text-align: center;"><input type="checkbox" class="audit-row-checkbox" data-id="${inv.id}" /></td>
+            <td><strong>${inv.invoiceNumber}</strong><br/><small class="text-muted">ID: ${inv.id}</small></td>
+            <td><span class="badge badge-secondary">${inv.customerId || 'N/A'}</span></td>
+            <td>${formatMoney(inv.amount)}</td>
+            <td><span class="text-danger-custom font-semibold">${lang === 'vi' ? 'Liên kết paymentId mồ côi (không tồn tại)' : 'Orphaned paymentId (does not exist)'}</span><br/><small class="text-muted">paymentId: ${inv.paymentId}</small></td>
+            <td>
+              <div class="actions-group">
+                <button class="btn btn-secondary btn-sm" onclick="triggerAction('unlink_orphan', '${inv.id}')">
+                  ${lang === 'vi' ? 'Gỡ liên kết' : 'Unlink'}
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="triggerAction('delete_invoice', '${inv.id}')">
+                  ${lang === 'vi' ? 'Xóa' : 'Delete'}
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      // 1.2 Paid but NULL paymentId
+      (auditData.invoices?.paidNullPayment || []).forEach(inv => {
+        invHtml += `
+          <tr class="warning-row">
+            <td style="text-align: center;"><input type="checkbox" class="audit-row-checkbox" data-id="${inv.id}" /></td>
+            <td><strong>${inv.invoiceNumber}</strong><br/><small class="text-muted">ID: ${inv.id}</small></td>
+            <td><span class="badge badge-secondary">${inv.customerId || 'N/A'}</span></td>
+            <td>${formatMoney(inv.amount)}</td>
+            <td><span class="text-warning-custom font-semibold">${lang === 'vi' ? 'Đã thanh toán (paid) nhưng trống paymentId' : 'Status paid but paymentId is NULL'}</span></td>
+            <td>
+              <div class="actions-group">
+                <button class="btn btn-danger btn-sm" onclick="triggerAction('delete_invoice', '${inv.id}')">
+                  ${lang === 'vi' ? 'Xóa' : 'Delete'}
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      // 1.3 Mismatched amount
+      (auditData.invoices?.mismatchedAmount || []).forEach(inv => {
+        invHtml += `
+          <tr class="info-row">
+            <td style="text-align: center;"><input type="checkbox" class="audit-row-checkbox" data-id="${inv.id}" /></td>
+            <td><strong>${inv.invoiceNumber}</strong><br/><small class="text-muted">ID: ${inv.id}</small></td>
+            <td><span class="badge badge-secondary">${inv.paymentId}</span></td>
+            <td>
+              <div style="font-size: 0.85rem;">
+                <div>${lang === 'vi' ? 'Hóa đơn:' : 'Invoice:'} <span class="font-semibold">${formatMoney(inv.amount)}</span></div>
+                <div>${lang === 'vi' ? 'Giao dịch:' : 'Payment:'} <span class="font-semibold text-danger">${formatMoney(inv.paymentAmount)}</span></div>
+              </div>
+            </td>
+            <td>
+              <span class="text-info-custom font-semibold">${lang === 'vi' ? 'Lệch số tiền với giao dịch thanh toán' : 'Amount mismatch with linked payment'}</span>
+              <br/><small class="text-muted">Transaction ID: ${inv.transactionId || 'N/A'}</small>
+            </td>
+            <td>
+              <div class="actions-group">
+                <button class="btn btn-secondary btn-sm" onclick="triggerAction('unlink_orphan', '${inv.id}')">
+                  ${lang === 'vi' ? 'Gỡ liên kết' : 'Unlink'}
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      tables.invoices.innerHTML = invHtml || `<tr><td colspan="6" class="text-center text-muted">${lang === 'vi' ? 'Không có hóa đơn lỗi nào.' : 'No invoice errors found.'}</td></tr>`;
+
+      // 2. Render Orders Tab
+      let ordHtml = '';
+
+      // 2.1 Orphans
+      (auditData.orders?.orphans || []).forEach(ord => {
+        ordHtml += `
+          <tr class="danger-row">
+            <td style="text-align: center;"><input type="checkbox" class="audit-row-checkbox" data-id="${ord.id}" /></td>
+            <td><strong>${ord.orderNumber}</strong><br/><small class="text-muted">ID: ${ord.id}</small></td>
+            <td><span class="badge badge-secondary">${ord.customerId || 'N/A'}</span></td>
+            <td>${formatMoney(ord.amount)}</td>
+            <td><span class="text-danger-custom font-semibold">${lang === 'vi' ? 'Liên kết paymentId mồ côi (không tồn tại)' : 'Orphaned paymentId (does not exist)'}</span><br/><small class="text-muted">paymentId: ${ord.paymentId}</small></td>
+            <td>
+              <div class="actions-group">
+                <button class="btn btn-secondary btn-sm" onclick="triggerAction('unlink_orphan', '${ord.id}')">
+                  ${lang === 'vi' ? 'Gỡ liên kết' : 'Unlink'}
+                </button>
+                <button class="btn btn-danger btn-sm" onclick="triggerAction('delete_order', '${ord.id}')">
+                  ${lang === 'vi' ? 'Xóa' : 'Delete'}
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      // 2.2 Paid but NULL paymentId
+      (auditData.orders?.paidNullPayment || []).forEach(ord => {
+        ordHtml += `
+          <tr class="warning-row">
+            <td style="text-align: center;"><input type="checkbox" class="audit-row-checkbox" data-id="${ord.id}" /></td>
+            <td><strong>${ord.orderNumber}</strong><br/><small class="text-muted">ID: ${ord.id}</small></td>
+            <td><span class="badge badge-secondary">${ord.customerId || 'N/A'}</span></td>
+            <td>${formatMoney(ord.amount)}</td>
+            <td><span class="text-warning-custom font-semibold">${lang === 'vi' ? 'Đã thanh toán (paid) nhưng trống paymentId' : 'Status paid but paymentId is NULL'}</span></td>
+            <td>
+              <div class="actions-group">
+                <button class="btn btn-danger btn-sm" onclick="triggerAction('delete_order', '${ord.id}')">
+                  ${lang === 'vi' ? 'Xóa' : 'Delete'}
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      // 2.3 Mismatched amount
+      (auditData.orders?.mismatchedAmount || []).forEach(ord => {
+        ordHtml += `
+          <tr class="info-row">
+            <td style="text-align: center;"><input type="checkbox" class="audit-row-checkbox" data-id="${ord.id}" /></td>
+            <td><strong>${ord.orderNumber}</strong><br/><small class="text-muted">ID: ${ord.id}</small></td>
+            <td><span class="badge badge-secondary">${ord.paymentId}</span></td>
+            <td>
+              <div style="font-size: 0.85rem;">
+                <div>${lang === 'vi' ? 'Đơn hàng:' : 'Order:'} <span class="font-semibold">${formatMoney(ord.amount)}</span></div>
+                <div>${lang === 'vi' ? 'Giao dịch:' : 'Payment:'} <span class="font-semibold text-danger">${formatMoney(ord.paymentAmount)}</span></div>
+              </div>
+            </td>
+            <td>
+              <span class="text-info-custom font-semibold">${lang === 'vi' ? 'Lệch số tiền với giao dịch thanh toán' : 'Amount mismatch with linked payment'}</span>
+              <br/><small class="text-muted">Transaction ID: ${ord.transactionId || 'N/A'}</small>
+            </td>
+            <td>
+              <div class="actions-group">
+                <button class="btn btn-secondary btn-sm" onclick="triggerAction('unlink_orphan', '${ord.id}')">
+                  ${lang === 'vi' ? 'Gỡ liên kết' : 'Unlink'}
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      tables.orders.innerHTML = ordHtml || `<tr><td colspan="6" class="text-center text-muted">${lang === 'vi' ? 'Không có đơn hàng lỗi nào.' : 'No order errors found.'}</td></tr>`;
+
+      // 3. Render ThreeWay Tab
+      let threeHtml = '';
+
+      // 3.1 Mismatched Links (Lệch ngược chéo)
+      (auditData.threeWay?.mismatchedLinks || []).forEach(p => {
+        let details = '';
+        if (p.orderId) {
+          details += `<div>${lang === 'vi' ? 'Đơn hàng:' : 'Order:'} <strong>${p.orderId}</strong> (${lang === 'vi' ? 'trỏ tới' : 'points to'} paymentId: <code class="code-id">${p.orderLinkedPaymentId || 'NULL'}</code>)</div>`;
+        }
+        if (p.invoiceId) {
+          details += `<div>${lang === 'vi' ? 'Hóa đơn:' : 'Invoice:'} <strong>${p.invoiceId}</strong> (${lang === 'vi' ? 'trỏ tới' : 'points to'} paymentId: <code class="code-id">${p.invoiceLinkedPaymentId || 'NULL'}</code>)</div>`;
+        }
+
+        threeHtml += `
+          <tr class="warning-row">
+            <td style="text-align: center;"><input type="checkbox" class="audit-row-checkbox" data-id="${p.paymentId}" /></td>
+            <td><strong>${p.transactionId || 'N/A'}</strong><br/><small class="text-muted">Payment ID: ${p.paymentId}</small></td>
+            <td>
+              <div class="cross-link-details">${details}</div>
+            </td>
+            <td>
+              <span class="text-warning-custom font-semibold">
+                ${lang === 'vi' ? 'Giao dịch trỏ tới Đơn hàng/Hóa đơn nhưng các bên không trỏ ngược lại đúng Giao dịch này.' : 'Circular reference link mismatch.'}
+              </span>
+            </td>
+            <td>
+              <div class="actions-group">
+                <button class="btn btn-danger btn-sm" onclick="triggerAction('delete_payment_and_links', '${p.paymentId}')">
+                  ${lang === 'vi' ? 'Xóa GD' : 'Delete Payment'}
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      // 3.2 Mismatched Customers (Lệch khách hàng chéo)
+      (auditData.threeWay?.mismatchedCustomers || []).forEach(p => {
+        let details = `<div>${lang === 'vi' ? 'Giao dịch:' : 'Payment:'} <code class="code-id">${p.payCust}</code></div>`;
+        if (p.orderId) {
+          details += `<div>${lang === 'vi' ? 'Đơn hàng:' : 'Order:'} <strong>${p.orderId}</strong> (${lang === 'vi' ? 'KH:' : 'Cust:'} <code class="code-id">${p.ordCust}</code>)</div>`;
+        }
+        if (p.invoiceId) {
+          details += `<div>${lang === 'vi' ? 'Hóa đơn:' : 'Invoice:'} <strong>${p.invoiceId}</strong> (${lang === 'vi' ? 'KH:' : 'Cust:'} <code class="code-id">${p.invCust}</code>)</div>`;
+        }
+
+        threeHtml += `
+          <tr class="danger-row">
+            <td style="text-align: center;"><input type="checkbox" class="audit-row-checkbox" data-id="${p.paymentId}" /></td>
+            <td><strong>${p.transactionId || 'N/A'}</strong><br/><small class="text-muted">Payment ID: ${p.paymentId}</small></td>
+            <td>
+              <div class="cross-link-details">${details}</div>
+            </td>
+            <td>
+              <span class="text-danger-custom font-semibold">
+                ${lang === 'vi' ? 'Lệch Khách hàng liên kết chéo giữa Giao dịch, Đơn hàng hoặc Hóa đơn.' : 'Customer ID mismatch among linked records.'}
+              </span>
+            </td>
+            <td>
+              <div class="actions-group">
+                <button class="btn btn-danger btn-sm" onclick="triggerAction('delete_payment_and_links', '${p.paymentId}')">
+                  ${lang === 'vi' ? 'Xóa GD' : 'Delete Payment'}
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+
+      tables.threeway.innerHTML = threeHtml || `<tr><td colspan="5" class="text-center text-muted">${lang === 'vi' ? 'Không có giao dịch chéo bị lệch.' : 'No cross-linking discrepancies found.'}</td></tr>`;
+
+      // Recalculate check state
+      updateBulkActionBar();
+    }
+
+    // Action execution trigger
+    window.triggerAction = function(action, targetIdOrIds) {
+      pendingAction = action;
+      pendingTargetIds = Array.isArray(targetIdOrIds) ? targetIdOrIds : [targetIdOrIds];
+      
+      const count = pendingTargetIds.length;
+      let message = '';
+      const isMultiple = count > 1;
+
+      if (action === 'unlink_orphan') {
+        message = lang === 'vi' 
+          ? `Bạn có chắc chắn muốn <strong>gỡ liên kết</strong> của ${isMultiple ? `<strong>${count} bản ghi đã chọn</strong>` : `bản ghi <code>${pendingTargetIds[0]}</code>`}? (Trạng thái bản ghi sẽ chuyển về 'pending' để an toàn).`
+          : `Are you sure you want to <strong>unlink</strong> ${isMultiple ? `<strong>${count} selected records</strong>` : `record <code>${pendingTargetIds[0]}</code>`}? (Status will revert to 'pending' safely).`;
+      } else if (action === 'delete_invoice') {
+        message = lang === 'vi'
+          ? `Bạn có chắc chắn muốn <strong>XÓA VĨNH VIỄN</strong> ${isMultiple ? `<strong>${count} hóa đơn đã chọn</strong>` : `hóa đơn <code>${pendingTargetIds[0]}</code>`}? Hành động này không thể hoàn tác.`
+          : `Are you sure you want to <strong>PERMANENTLY DELETE</strong> ${isMultiple ? `<strong>${count} selected invoices</strong>` : `invoice <code>${pendingTargetIds[0]}</code>`}? This cannot be undone.`;
+      } else if (action === 'delete_order') {
+        message = lang === 'vi'
+          ? `Bạn có chắc chắn muốn <strong>XÓA VĨNH VIỄN</strong> ${isMultiple ? `<strong>${count} đơn hàng đã chọn</strong>` : `đơn hàng <code>${pendingTargetIds[0]}</code>`}? Hành động này không thể hoàn tác.`
+          : `Are you sure you want to <strong>PERMANENTLY DELETE</strong> ${isMultiple ? `<strong>${count} selected orders</strong>` : `order <code>${pendingTargetIds[0]}</code>`}? This cannot be undone.`;
+      } else if (action === 'delete_payment_and_links') {
+        message = lang === 'vi'
+          ? `Bạn có chắc chắn muốn <strong>XÓA ${isMultiple ? `${count} giao dịch đã chọn` : `giao dịch <code>${pendingTargetIds[0]}</code>`}</strong> và tự động gỡ liên kết ở hóa đơn/đơn hàng tương ứng?`
+          : `Are you sure you want to <strong>DELETE ${isMultiple ? `${count} selected payments` : `payment <code>${pendingTargetIds[0]}</code>`}</strong> and remove their references from invoices/orders?`;
+      }
+
+      dialogMessage.innerHTML = message;
+      confirmInput.value = '';
+      btnDialogConfirm.disabled = true;
+
+      // Unlink is safe action, doesn't require typing 'CONFIRM'
+      if (action === 'unlink_orphan') {
+        btnDialogConfirm.disabled = false;
+        document.querySelector('.confirm-input-area').classList.add('hidden-input-field');
+      } else {
+        document.querySelector('.confirm-input-area').classList.remove('hidden-input-field');
+      }
+
+      confirmDialog.showModal();
+    }
+
+    // Set up Bulk Action click handlers
+    function triggerBulkAction(action) {
+      const checkedBoxes = document.querySelectorAll(`.tab-panel.active .audit-row-checkbox:checked`);
+      const selectedIds = Array.from(checkedBoxes).map(cb => cb.getAttribute('data-id'));
+      if (selectedIds.length === 0) return;
+      triggerAction(action, selectedIds);
+    }
+
+    btnBulkUnlink.addEventListener('click', () => {
+      triggerBulkAction('unlink_orphan');
+    });
+
+    btnBulkDelete.addEventListener('click', () => {
+      if (activeTab === 'invoices') {
+        triggerBulkAction('delete_invoice');
+      } else if (activeTab === 'orders') {
+        triggerBulkAction('delete_order');
+      } else if (activeTab === 'threeway') {
+        triggerBulkAction('delete_payment_and_links');
+      }
+    });
+
+    // Modal Events
+    confirmInput.addEventListener('input', () => {
+      if (confirmInput.value === 'CONFIRM') {
+        btnDialogConfirm.disabled = false;
+      } else {
+        if (pendingAction !== 'unlink_orphan') {
+          btnDialogConfirm.disabled = true;
+        }
+      }
+    });
+
+    btnDialogCancel.addEventListener('click', () => {
+      confirmDialog.close();
+      pendingAction = null;
+      pendingTargetIds = [];
+    });
+
+    confirmDialog.addEventListener('close', () => {
+      pendingAction = null;
+      pendingTargetIds = [];
+    });
+
+    confirmDialog.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      confirmDialog.close();
+
+      if (!pendingAction || pendingTargetIds.length === 0) return;
+
+      try {
+        const response = await fetch('/api/crm/audit/action', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            action: pendingAction,
+            targetIds: pendingTargetIds
+          })
+        });
+
+        const resData = await response.json();
+        if (!response.ok) {
+          throw new Error(resData.error || (lang === 'vi' ? 'Thao tác thất bại.' : 'Action failed.'));
+        }
+
+        showToast(lang === 'vi' ? 'Xử lý thành công!' : 'Operation completed successfully!');
+        // Refresh scan data
+        scanDatabase();
+      } catch (err) {
+        showToast(err.message, 'error');
+      } finally {
+        pendingAction = null;
+        pendingTargetIds = [];
+      }
+    });
+
+    // Auto run scan on page load
+    btnScan.addEventListener('click', scanDatabase);
+    document.addEventListener('DOMContentLoaded', () => {
+      scanDatabase();
+    });
+  </script>
+</DashboardLayout>
+
+<style>
+  /* Base Styles & Premium Layout */
+  .audit-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 1.75rem;
+    width: 100%;
+    animation: layoutFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes layoutFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .audit-header {
+    background: linear-gradient(135deg, #ffffff 0%, #fafafa 100%);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 1.5rem 2rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  }
+
+  .audit-header h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.5px;
+    margin-bottom: 0.25rem;
+  }
+
+  .audit-header .subtitle {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+  }
+
+  /* Stats grid */
+  .audit-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.25rem;
+  }
+
+  .stat-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.01);
+  }
+
+  .stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.04);
+  }
+
+  .stat-card.border-danger:hover {
+    border-color: var(--error);
+  }
+
+  .stat-card.border-warning:hover {
+    border-color: #f59e0b;
+  }
+
+  .stat-card.border-info:hover {
+    border-color: #0284c7;
+  }
+
+  .stat-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .bg-danger-glow {
+    background-color: rgba(239, 68, 68, 0.08);
+  }
+
+  .bg-warning-glow {
+    background-color: rgba(245, 158, 11, 0.08);
+  }
+
+  .bg-info-glow {
+    background-color: rgba(2, 132, 199, 0.08);
+  }
+
+  .text-danger {
+    color: var(--error);
+  }
+
+  .text-warning {
+    color: #d97706;
+  }
+
+  .text-info {
+    color: #0284c7;
+  }
+
+  .stat-details {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+  }
+
+  .stat-label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-top: 0.15rem;
+  }
+
+  /* Navigation Tabs */
+  .audit-tabs-nav {
+    display: flex;
+    gap: 0.25rem;
+    background-color: #f1f5f9;
+    border-radius: 12px;
+    padding: 0.25rem;
+  }
+
+  .nav-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.65rem 1rem;
+    background: transparent;
+    border: none;
+    outline: none;
+    font-family: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .nav-btn:hover {
+    color: var(--text-primary);
+    background-color: rgba(0, 0, 0, 0.02);
+  }
+
+  .nav-btn.active {
+    background-color: white;
+    color: var(--primary);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+
+  .nav-btn .icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* Buttons & Actions */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-family: inherit;
+    font-size: 0.875rem;
+    font-weight: 600;
+    padding: 0.6rem 1.1rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-primary {
+    background-color: var(--primary);
+    color: white;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background-color: #e04f00;
+  }
+
+  .btn-secondary {
+    background-color: transparent;
+    border-color: var(--border-color);
+    color: var(--text-secondary);
+  }
+
+  .btn-secondary:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .btn-danger {
+    background-color: var(--error);
+    color: white;
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background-color: #dc2626;
+  }
+
+  .btn-sm {
+    font-size: 0.75rem;
+    padding: 0.35rem 0.65rem;
+    border-radius: 6px;
+  }
+
+  /* Card and Tables */
+  .card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 1.5rem;
+  }
+
+  .card-table {
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .audit-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 0.875rem;
+  }
+
+  .audit-table th {
+    background-color: #fafafa;
+    border-bottom: 1px solid var(--border-color);
+    padding: 1rem 1.25rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.5px;
+  }
+
+  .audit-table td {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+    color: var(--text-primary);
+  }
+
+  .audit-table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .actions-col {
+    text-align: right;
+    width: 200px;
+  }
+
+  .actions-group {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+  }
+
+  /* Table Custom Rows Styles */
+  .danger-row {
+    background-color: rgba(239, 68, 68, 0.01);
+  }
+  .danger-row:hover {
+    background-color: rgba(239, 68, 68, 0.02);
+  }
+  .warning-row {
+    background-color: rgba(245, 158, 11, 0.01);
+  }
+  .warning-row:hover {
+    background-color: rgba(245, 158, 11, 0.02);
+  }
+  .info-row {
+    background-color: rgba(2, 132, 199, 0.01);
+  }
+  .info-row:hover {
+    background-color: rgba(2, 132, 199, 0.02);
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border-radius: 4px;
+    background-color: var(--bg-hover);
+    color: var(--text-secondary);
+  }
+
+  .code-id {
+    font-family: monospace;
+    font-size: 0.8rem;
+    background-color: #f1f5f9;
+    padding: 0.1rem 0.3rem;
+    border-radius: 4px;
+    color: #475569;
+  }
+
+  .text-danger-custom {
+    color: #ef4444;
+  }
+
+  .text-warning-custom {
+    color: #b45309;
+  }
+
+  .text-info-custom {
+    color: #0284c7;
+  }
+
+  .font-semibold {
+    font-weight: 600;
+  }
+
+  .cross-link-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    font-size: 0.85rem;
+  }
+
+  /* Panel hiding/showing */
+  .tab-panel {
+    display: none;
+  }
+
+  .tab-panel.active {
+    display: block;
+    animation: tabFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  @keyframes tabFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* States */
+  .loading-state, .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+    gap: 1rem;
+  }
+
+  .spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .spinning {
+    animation: spin 0.8s linear infinite;
+  }
+
+  .success-icon-badge {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background-color: rgba(16, 185, 129, 0.1);
+    color: var(--success);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .success-icon-badge svg {
+    width: 32px;
+    height: 32px;
+  }
+
+  .hidden {
+    display: none !important;
+  }
+
+  .hidden-panel-temporary {
+    display: none !important;
+  }
+
+  /* Safety Dialog Modal */
+  .confirm-dialog {
+    border: 1px solid var(--border-color);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    max-width: 440px;
+    width: 90%;
+    padding: 0;
+    margin: auto;
+    border-radius: 16px;
+    outline: none;
+    overflow: hidden;
+  }
+
+  .confirm-dialog::backdrop {
+    background-color: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
+    animation: backdropFade 0.25s ease-out;
+  }
+
+  @keyframes backdropFade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+
+  .dialog-content {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dialog-header {
+    background-color: #fafafa;
+    border-bottom: 1px solid var(--border-color);
+    padding: 1.25rem 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .dialog-header h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .dialog-warn-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .dialog-body {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .confirm-input-area {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    background-color: #fafafa;
+    border: 1px solid var(--border-color);
+    padding: 0.85rem 1rem;
+    border-radius: 8px;
+  }
+
+  .confirm-input-area label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--text-secondary);
+  }
+
+  .confirm-text-input {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 0.9rem;
+    font-weight: 700;
+    outline: none;
+    text-align: center;
+    letter-spacing: 2px;
+    background-color: white;
+  }
+
+  .confirm-text-input:focus {
+    border-color: var(--error);
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.08);
+  }
+
+  .hidden-input-field {
+    display: none !important;
+  }
+
+  .dialog-footer {
+    border-top: 1px solid var(--border-color);
+    padding: 1rem 1.5rem;
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    background-color: #fafafa;
+  }
+
+  /* Toast Notification */
+  .toast-notification {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    background-color: #1e293b;
+    color: white;
+    padding: 0.85rem 1.5rem;
+    border-radius: 10px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    font-size: 0.875rem;
+    font-weight: 600;
+    z-index: 1000;
+    transform: translateY(100px);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    align-items: center;
+    border-left: 4px solid var(--primary);
+  }
+
+  .toast-notification.show {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  .toast-notification.success {
+    border-left-color: var(--success);
+  }
+
+  .toast-notification.error {
+    border-left-color: var(--error);
+  }
+
+  /* Checkboxes style */
+  .audit-checkbox-main, .audit-row-checkbox {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--primary);
+    cursor: pointer;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    transition: all 0.2s ease;
+  }
+
+  /* Floating Bulk Action Bar style */
+  .bulk-action-bar {
+    position: fixed;
+    bottom: 2rem;
+    left: calc(50% + 130px); /* Offset by half sidebar width (260px / 2 = 130px) */
+    transform: translateX(-50%) translateY(120px);
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+    border-radius: 16px;
+    padding: 0.85rem 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2rem;
+    z-index: 99;
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    width: auto;
+    min-width: 480px;
+  }
+
+  @media (max-width: 1024px) {
+    .bulk-action-bar {
+      left: 50%;
+      min-width: 90%;
+    }
+  }
+
+  .bulk-action-bar:not(.hidden) {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+
+  .bulk-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .bulk-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  /* Premium Table design adjustments */
+  .audit-table th {
+    background-color: #f8fafc;
+    border-bottom: 2px solid var(--border-color);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    padding: 1rem 1.25rem;
+  }
+
+  .audit-table td {
+    padding: 1.15rem 1.25rem;
+    border-bottom: 1px solid var(--border-color);
+    transition: background-color 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .audit-table tbody tr:hover td {
+    background-color: var(--bg-main) !important;
+  }
+
+  .actions-group .btn {
+    opacity: 0.85;
+    transition: all 0.2s ease;
+  }
+
+  .actions-group .btn:hover {
+    opacity: 1;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+</style>

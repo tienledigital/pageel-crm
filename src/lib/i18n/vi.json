@@ -9,6 +9,7 @@
     "services": "Dịch vụ",
     "sync_logs": "Nhật ký đồng bộ",
     "settings": "Cài đặt",
+    "audit": "Đối soát dữ liệu",
     "logout": "Đăng xuất"
   },
   "settings": {
