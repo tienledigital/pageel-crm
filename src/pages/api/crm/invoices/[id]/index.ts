@@ -5,6 +5,7 @@ import { getDb } from '@/lib/db';
 import { invoices, payments } from '@/lib/db/schema';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
+import { logDebug } from '@/lib/debug-logger';
 import { eq } from 'drizzle-orm';
 
 export const PUT: APIRoute = async (context) => {
@@ -68,10 +69,30 @@ export const PUT: APIRoute = async (context) => {
 
     // Check if linked to any payments or already paid
     const linkedPayments = await db.select().from(payments).where(eq(payments.invoiceId, id));
-    if (linkedPayments.length > 0 || existingInvoice.paymentId || existingInvoice.status === 'paid') {
+    let hasRealPayment = linkedPayments.length > 0;
+    let isOrphaned = false;
+    if (!hasRealPayment && existingInvoice.paymentId) {
+      const [associatedPayment] = await db.select().from(payments).where(eq(payments.id, existingInvoice.paymentId));
+      if (associatedPayment) {
+        hasRealPayment = true;
+      } else {
+        isOrphaned = true;
+      }
+    }
+
+    if (hasRealPayment) {
       return new Response(JSON.stringify({ error: 'Không thể chỉnh sửa hóa đơn đã được gán vào giao dịch hoặc đã thanh toán. Vui lòng gỡ liên kết giao dịch trước.' }), {
         status: 409,
         headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (isOrphaned) {
+      await logDebug(db, {
+        level: 'warn',
+        endpoint: context.url.pathname,
+        method: 'PUT',
+        message: `Bypass invoice block: Invoice ${id} has orphaned paymentId '${existingInvoice.paymentId}' but no matching record exists in payments.`,
       });
     }
 
@@ -109,6 +130,14 @@ export const PUT: APIRoute = async (context) => {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err: any) {
+    const db = getDb(env);
+    await logDebug(db, {
+      level: 'error',
+      endpoint: context.url.pathname,
+      method: 'PUT',
+      message: err.message,
+      stack: err.stack,
+    });
     return new Response(JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: err.message }) }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
@@ -158,10 +187,30 @@ export const DELETE: APIRoute = async (context) => {
 
     // Check if linked to any payments or already paid
     const linkedPayments = await db.select().from(payments).where(eq(payments.invoiceId, id));
-    if (linkedPayments.length > 0 || existingInvoice.paymentId || existingInvoice.status === 'paid') {
+    let hasRealPayment = linkedPayments.length > 0;
+    let isOrphaned = false;
+    if (!hasRealPayment && existingInvoice.paymentId) {
+      const [associatedPayment] = await db.select().from(payments).where(eq(payments.id, existingInvoice.paymentId));
+      if (associatedPayment) {
+        hasRealPayment = true;
+      } else {
+        isOrphaned = true;
+      }
+    }
+
+    if (hasRealPayment) {
       return new Response(JSON.stringify({ error: 'Không thể xóa hóa đơn đã được gán vào giao dịch hoặc đã thanh toán. Vui lòng gỡ liên kết giao dịch trước.' }), {
         status: 409,
         headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (isOrphaned) {
+      await logDebug(db, {
+        level: 'warn',
+        endpoint: context.url.pathname,
+        method: 'DELETE',
+        message: `Bypass invoice block: Invoice ${id} has orphaned paymentId '${existingInvoice.paymentId}' but no matching record exists in payments.`,
       });
     }
 
@@ -193,6 +242,14 @@ export const DELETE: APIRoute = async (context) => {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err: any) {
+    const db = getDb(env);
+    await logDebug(db, {
+      level: 'error',
+      endpoint: context.url.pathname,
+      method: 'DELETE',
+      message: err.message,
+      stack: err.stack,
+    });
     return new Response(JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: err.message }) }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

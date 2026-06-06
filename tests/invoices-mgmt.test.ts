@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { getDb } from '@/lib/db';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import path from 'path';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { customers, staff, payments, invoices, users } from '@/lib/db/schema';
 import { createSessionCookie } from '@/lib/auth';
 import { PUT as updateInvoiceHandler, DELETE as deleteInvoiceHandler } from '@/pages/api/crm/invoices/[id]/index';
@@ -194,6 +194,8 @@ describe('Invoice Management API Integration Tests', () => {
       const db = getDb();
       const invoiceId = 'INV-UPDATE-PAID-STATUS';
 
+      const paymentId = 'PAY-INV-UPDATE-STATUS';
+
       // Insert test invoice with status 'paid' directly
       await db.insert(invoices).values({
         id: invoiceId,
@@ -202,7 +204,21 @@ describe('Invoice Management API Integration Tests', () => {
         amount: 100000,
         content: 'Paid status invoice',
         status: 'paid',
+        paymentId: null,
       });
+
+      await db.insert(payments).values({
+        id: paymentId,
+        invoiceId: invoiceId,
+        amount: 100000,
+        transactionId: 'TX_INV_UPDATE_STATUS',
+        paymentMethod: 'bank_transfer',
+        type: 'in',
+        category: 'revenue',
+        paidAt: Date.now(),
+      });
+
+      await db.update(invoices).set({ paymentId }).where(eq(invoices.id, invoiceId));
 
       const body = {
         customerId: TEST_CUSTOMER_2.id,
@@ -216,6 +232,41 @@ describe('Invoice Management API Integration Tests', () => {
 
       const data = await response.json();
       expect(data.error).toContain('đã thanh toán');
+    });
+
+    it('should successfully update invoice even if status is paid or paymentId is set, if the payment does not exist in DB (orphaned)', async () => {
+      const db = getDb();
+      const invoiceId = 'INV-UPDATE-ORPHANED';
+
+      // Temporarily disable foreign keys for seeding orphaned reference
+      await db.run(sql`PRAGMA foreign_keys = OFF`);
+      await db.insert(invoices).values({
+        id: invoiceId,
+        customerId: TEST_CUSTOMER_1.id,
+        invoiceNumber: 'INV-ORPH-UPD',
+        amount: 100000,
+        content: 'Orphaned Invoice content',
+        status: 'paid',
+        paymentId: 'NON-EXISTENT-PAYMENT-ID',
+      });
+      await db.run(sql`PRAGMA foreign_keys = ON`);
+
+      const body = {
+        customerId: TEST_CUSTOMER_2.id,
+        amount: 150000,
+        content: 'Updated Orphaned Invoice',
+      };
+
+      const context = createMockContext('PUT', invoiceId, body, adminToken);
+      const response = await updateInvoiceHandler(context);
+      expect(response.status).toBe(200);
+
+      const data = await response.json();
+      expect(data.success).toBe(true);
+
+      const updated = await db.select().from(invoices).where(eq(invoices.id, invoiceId)).get();
+      expect(updated.amount).toBe(150000);
+      expect(updated.content).toBe('Updated Orphaned Invoice');
     });
   });
 
@@ -300,6 +351,8 @@ describe('Invoice Management API Integration Tests', () => {
       const db = getDb();
       const invoiceId = 'INV-DELETE-PAID-STATUS';
 
+      const paymentId = 'PAY-INV-DELETE-STATUS';
+
       // Seed paid invoice
       await db.insert(invoices).values({
         id: invoiceId,
@@ -308,7 +361,21 @@ describe('Invoice Management API Integration Tests', () => {
         amount: 200000,
         content: 'Paid invoice to delete',
         status: 'paid',
+        paymentId: null,
       });
+
+      await db.insert(payments).values({
+        id: paymentId,
+        invoiceId: invoiceId,
+        amount: 200000,
+        transactionId: 'TX_INV_DELETE_STATUS',
+        paymentMethod: 'bank_transfer',
+        type: 'in',
+        category: 'revenue',
+        paidAt: Date.now(),
+      });
+
+      await db.update(invoices).set({ paymentId }).where(eq(invoices.id, invoiceId));
 
       const context = createMockContext('DELETE', invoiceId, undefined, adminToken);
       const response = await deleteInvoiceHandler(context);
@@ -320,6 +387,34 @@ describe('Invoice Management API Integration Tests', () => {
       // Verify DB still contains invoice
       const updated = await db.select().from(invoices).where(eq(invoices.id, invoiceId)).get();
       expect(updated).toBeDefined();
+    });
+
+    it('should successfully delete invoice even if status is paid or paymentId is set, if the payment does not exist in DB (orphaned)', async () => {
+      const db = getDb();
+      const invoiceId = 'INV-DELETE-ORPHANED';
+
+      // Temporarily disable foreign keys for seeding orphaned reference
+      await db.run(sql`PRAGMA foreign_keys = OFF`);
+      await db.insert(invoices).values({
+        id: invoiceId,
+        customerId: TEST_CUSTOMER_1.id,
+        invoiceNumber: 'INV-ORPH-DEL',
+        amount: 200000,
+        content: 'Orphaned Invoice to delete',
+        status: 'paid',
+        paymentId: 'NON-EXISTENT-PAYMENT-ID',
+      });
+      await db.run(sql`PRAGMA foreign_keys = ON`);
+
+      const context = createMockContext('DELETE', invoiceId, undefined, adminToken);
+      const response = await deleteInvoiceHandler(context);
+      expect(response.status).toBe(200);
+
+      const data = await response.json();
+      expect(data.success).toBe(true);
+
+      const deleted = await db.select().from(invoices).where(eq(invoices.id, invoiceId)).get();
+      expect(deleted).toBeUndefined();
     });
   });
 });
