@@ -3,7 +3,7 @@ import { getDb } from '@/lib/db';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import path from 'path';
 import { eq, sql } from 'drizzle-orm';
-import { customers, staff, payments, invoices, users } from '@/lib/db/schema';
+import { customers, staff, payments, invoices, users, debugLogs } from '@/lib/db/schema';
 import { createSessionCookie } from '@/lib/auth';
 import { PUT as updateInvoiceHandler, DELETE as deleteInvoiceHandler } from '@/pages/api/crm/invoices/[id]/index';
 
@@ -257,6 +257,9 @@ describe('Invoice Management API Integration Tests', () => {
         content: 'Updated Orphaned Invoice',
       };
 
+      // Clear debug logs first to isolate this test
+      await db.delete(debugLogs);
+
       const context = createMockContext('PUT', invoiceId, body, adminToken);
       const response = await updateInvoiceHandler(context);
       expect(response.status).toBe(200);
@@ -267,6 +270,12 @@ describe('Invoice Management API Integration Tests', () => {
       const updated = await db.select().from(invoices).where(eq(invoices.id, invoiceId)).get();
       expect(updated.amount).toBe(150000);
       expect(updated.content).toBe('Updated Orphaned Invoice');
+
+      // Verify that a warn-level debug log was created for bypassing orphaned invoice
+      const logs = await db.select().from(debugLogs).where(eq(debugLogs.level, 'warn')).all();
+      expect(logs.length).toBe(1);
+      expect(logs[0].message).toContain('Bypass invoice block');
+      expect(logs[0].message).toContain('orphaned paymentId');
     });
   });
 
@@ -406,6 +415,9 @@ describe('Invoice Management API Integration Tests', () => {
       });
       await db.run(sql`PRAGMA foreign_keys = ON`);
 
+      // Clear debug logs first to isolate this test
+      await db.delete(debugLogs);
+
       const context = createMockContext('DELETE', invoiceId, undefined, adminToken);
       const response = await deleteInvoiceHandler(context);
       expect(response.status).toBe(200);
@@ -415,6 +427,12 @@ describe('Invoice Management API Integration Tests', () => {
 
       const deleted = await db.select().from(invoices).where(eq(invoices.id, invoiceId)).get();
       expect(deleted).toBeUndefined();
+
+      // Verify that a warn-level debug log was created for bypassing orphaned invoice
+      const logs = await db.select().from(debugLogs).where(eq(debugLogs.level, 'warn')).all();
+      expect(logs.length).toBe(1);
+      expect(logs[0].message).toContain('Bypass invoice block');
+      expect(logs[0].message).toContain('orphaned paymentId');
     });
   });
 });
