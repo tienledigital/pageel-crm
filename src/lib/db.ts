@@ -15,6 +15,7 @@ export function getDb(platformEnv?: { DB: any }) {
   if (process.env.NODE_ENV === 'test') {
     if (!sqliteDb) {
       const sqlite = new Database(':memory:');
+      sqlite.pragma('foreign_keys = ON');
       sqliteDb = drizzleSqlite(sqlite, { schema });
     }
     return sqliteDb;
