@@ -54,11 +54,13 @@ describe('DB Schema Verification', () => {
     expect((customerServices as any).createdAt).toBeDefined();
   });
 
-  it('should have correct columns on invoices table', async () => {
-    const { invoices } = await import('../src/lib/db/schema');
-    expect((invoices as any).serviceId).toBeDefined();
-    expect((invoices as any).paymentId).toBeDefined();
-    expect((invoices as any).startDate).toBeDefined();
-    expect((invoices as any).expiredAt).toBeDefined();
+  it('should have correct columns on orders table', async () => {
+    const { orders } = await import('../src/lib/db/schema');
+    expect((orders as any).serviceId).toBeDefined();
+    expect((orders as any).paymentId).toBeDefined();
+    expect((orders as any).startDate).toBeDefined();
+    expect((orders as any).expiredAt).toBeDefined();
+    expect((orders as any).taxInvoiceNumber).toBeDefined();
+    expect((orders as any).taxInvoiceDate).toBeDefined();
   });
 });

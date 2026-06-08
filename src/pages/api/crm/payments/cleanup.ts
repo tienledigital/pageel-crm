@@ -2,7 +2,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { payments, invoices, config } from '@/lib/db/schema';
+import { payments, orders, config } from '@/lib/db/schema';
 import { eq, ne, and, isNotNull } from 'drizzle-orm';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { logDebug } from '@/lib/debug-logger';
@@ -61,17 +61,17 @@ export const POST: APIRoute = async (context) => {
       });
     }
 
-    // 4. Revert linked invoices to 'pending' state
-    const linkedInvoiceIds = mismatchedPayments
-      .map((p: { invoiceId: string | null }) => p.invoiceId)
+    // 4. Revert linked orders to 'pending' state
+    const linkedOrderIds = mismatchedPayments
+      .map((p: { orderId: string | null }) => p.orderId)
       .filter((id: string | null): id is string => id !== null);
 
-    if (linkedInvoiceIds.length > 0) {
-      for (const invId of linkedInvoiceIds) {
+    if (linkedOrderIds.length > 0) {
+      for (const ordId of linkedOrderIds) {
         await db
-          .update(invoices)
+          .update(orders)
           .set({ status: 'pending', paidAt: null })
-          .where(eq(invoices.id, invId));
+          .where(eq(orders.id, ordId));
       }
     }
 

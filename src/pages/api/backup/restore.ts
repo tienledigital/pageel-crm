@@ -2,7 +2,7 @@
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { fetchBackupContent } from '@/lib/backup/githubClient';
-import { users, staff, customers, invoices, payments, config, syncLogs } from '@/lib/db/schema';
+import { users, staff, customers, orders, payments, config, syncLogs, services, customerServices } from '@/lib/db/schema';
 import { logDebug } from '@/lib/debug-logger';
 import { eq } from 'drizzle-orm';
 
@@ -78,12 +78,14 @@ export async function POST(context: any) {
     const hasUsers = Array.isArray(backupData.users);
     const hasStaff = Array.isArray(backupData.staff);
     const hasCustomers = Array.isArray(backupData.customers);
-    const hasInvoices = Array.isArray(backupData.invoices);
+    const hasOrders = Array.isArray(backupData.orders);
     const hasPayments = Array.isArray(backupData.payments);
     const hasConfig = Array.isArray(backupData.config);
+    const hasServices = Array.isArray(backupData.services);
+    const hasCustomerServices = Array.isArray(backupData.customerServices);
 
-    if (!hasUsers || !hasStaff || !hasCustomers || !hasInvoices || !hasPayments || !hasConfig) {
-      throw new Error('Invalid backup data format: missing required data tables (users, staff, customers, invoices, payments, config).');
+    if (!hasUsers || !hasStaff || !hasCustomers || !hasOrders || !hasPayments || !hasConfig || !hasServices || !hasCustomerServices) {
+      throw new Error('Invalid backup data format: missing required data tables (users, staff, customers, orders, payments, config, services, customerServices).');
     }
 
     const CHUNK_SIZE = 5;
@@ -95,10 +97,12 @@ export async function POST(context: any) {
       // In production Cloudflare D1 environment, execute queries sequentially without big batching
       // to avoid combined 'too many SQL variables' limits across multiple chunks.
       await db.delete(payments);
-      await db.delete(invoices);
+      await db.delete(orders);
+      await db.delete(customerServices);
       await db.delete(customers);
       await db.delete(staff);
       await db.delete(users);
+      await db.delete(services);
       await db.delete(config);
 
       // Bulk insert in dependency order sequentially
@@ -123,6 +127,13 @@ export async function POST(context: any) {
         }
       }
 
+      if (backupData.services.length > 0) {
+        for (let i = 0; i < backupData.services.length; i += CHUNK_SIZE) {
+          const chunk = backupData.services.slice(i, i + CHUNK_SIZE);
+          await db.insert(services).values(chunk);
+        }
+      }
+
       if (backupData.customers.length > 0) {
         for (let i = 0; i < backupData.customers.length; i += CHUNK_SIZE) {
           const chunk = backupData.customers.slice(i, i + CHUNK_SIZE);
@@ -130,10 +141,17 @@ export async function POST(context: any) {
         }
       }
 
-      if (backupData.invoices.length > 0) {
-        for (let i = 0; i < backupData.invoices.length; i += CHUNK_SIZE) {
-          const chunk = backupData.invoices.slice(i, i + CHUNK_SIZE);
-          await db.insert(invoices).values(chunk);
+      if (backupData.customerServices.length > 0) {
+        for (let i = 0; i < backupData.customerServices.length; i += CHUNK_SIZE) {
+          const chunk = backupData.customerServices.slice(i, i + CHUNK_SIZE);
+          await db.insert(customerServices).values(chunk);
+        }
+      }
+
+      if (backupData.orders.length > 0) {
+        for (let i = 0; i < backupData.orders.length; i += CHUNK_SIZE) {
+          const chunk = backupData.orders.slice(i, i + CHUNK_SIZE);
+          await db.insert(orders).values(chunk);
         }
       }
 
@@ -148,10 +166,12 @@ export async function POST(context: any) {
       db.transaction((tx: any) => {
         // Clear tables in reverse-dependency order
         tx.delete(payments).run();
-        tx.delete(invoices).run();
+        tx.delete(orders).run();
+        tx.delete(customerServices).run();
         tx.delete(customers).run();
         tx.delete(staff).run();
         tx.delete(users).run();
+        tx.delete(services).run();
         tx.delete(config).run();
 
         // Bulk insert in dependency order
@@ -176,6 +196,13 @@ export async function POST(context: any) {
           }
         }
 
+        if (backupData.services.length > 0) {
+          for (let i = 0; i < backupData.services.length; i += CHUNK_SIZE) {
+            const chunk = backupData.services.slice(i, i + CHUNK_SIZE);
+            tx.insert(services).values(chunk).run();
+          }
+        }
+
         if (backupData.customers.length > 0) {
           for (let i = 0; i < backupData.customers.length; i += CHUNK_SIZE) {
             const chunk = backupData.customers.slice(i, i + CHUNK_SIZE);
@@ -183,10 +210,17 @@ export async function POST(context: any) {
           }
         }
 
-        if (backupData.invoices.length > 0) {
-          for (let i = 0; i < backupData.invoices.length; i += CHUNK_SIZE) {
-            const chunk = backupData.invoices.slice(i, i + CHUNK_SIZE);
-            tx.insert(invoices).values(chunk).run();
+        if (backupData.customerServices.length > 0) {
+          for (let i = 0; i < backupData.customerServices.length; i += CHUNK_SIZE) {
+            const chunk = backupData.customerServices.slice(i, i + CHUNK_SIZE);
+            tx.insert(customerServices).values(chunk).run();
+          }
+        }
+
+        if (backupData.orders.length > 0) {
+          for (let i = 0; i < backupData.orders.length; i += CHUNK_SIZE) {
+            const chunk = backupData.orders.slice(i, i + CHUNK_SIZE);
+            tx.insert(orders).values(chunk).run();
           }
         }
 

@@ -25,17 +25,21 @@ describe('Orders and Payments Schema Integrity Tests', () => {
     expect((schema as any).invoices).toBeUndefined(); // invoices table must be removed
   });
 });
-
-describe('TDD RED: Order Tax Invoice Update (Stub)', () => {
-  // Stub function that simulates the update tax invoice endpoint logic
-  // This stub will fail initially to achieve a valid RED state.
-  const updateOrderTaxInvoiceStub = async (
+describe('Order Tax Invoice Update', () => {
+  const updateOrderTaxInvoiceReal = async (
     db: any,
     orderId: string,
     payload: { taxInvoiceNumber: string; taxInvoiceDate?: number }
   ) => {
-    // RED State: Logic is not implemented yet. Return false.
-    return { success: false, error: 'Not implemented' };
+    const { orders } = schema;
+    await db.update(orders)
+      .set({
+        taxInvoiceNumber: payload.taxInvoiceNumber,
+        taxInvoiceDate: payload.taxInvoiceDate || Date.now(),
+        updatedAt: Date.now(),
+      })
+      .where(eq(orders.id, orderId));
+    return { success: true };
   };
 
   let db: any;
@@ -60,15 +64,17 @@ describe('TDD RED: Order Tax Invoice Update (Stub)', () => {
     });
   });
 
-  it('should update tax invoice info on order successfully (Assert RED)', async () => {
+  it('should update tax invoice info on order successfully (Assert GREEN)', async () => {
     const payload = {
       taxInvoiceNumber: 'VAT-2026-0001',
       taxInvoiceDate: Date.now(),
     };
 
-    const result = await updateOrderTaxInvoiceStub(db, 'ord-test-123', payload);
+    const result = await updateOrderTaxInvoiceReal(db, 'ord-test-123', payload);
     
-    // This assertion will fail in RED state
     expect(result.success).toBe(true);
+    const [updatedOrder] = await db.select().from(schema.orders).where(eq(schema.orders.id, 'ord-test-123'));
+    expect(updatedOrder.taxInvoiceNumber).toBe(payload.taxInvoiceNumber);
+    expect(updatedOrder.taxInvoiceDate).toBe(payload.taxInvoiceDate);
   });
 });

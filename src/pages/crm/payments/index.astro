@@ -2,7 +2,7 @@
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { payments, customers, invoices, config, services, orders } from '@/lib/db/schema';
+import { payments, customers, config, services, orders } from '@/lib/db/schema';
 import { desc, eq, like, and, or, sql } from 'drizzle-orm';
 import { t } from '@/lib/i18n';
 
@@ -20,16 +20,17 @@ const allCustomers = await db
   .from(customers)
   .orderBy(customers.fullName);
 
-// Fetch all invoices to allow linking
-const allInvoices = await db
+// Fetch all pending/partially_paid orders to allow linking
+const allOrders = await db
   .select({
-    id: invoices.id,
-    invoiceNumber: invoices.invoiceNumber,
-    amount: invoices.amount,
-    customerId: invoices.customerId,
-    status: invoices.status,
+    id: orders.id,
+    orderNumber: orders.orderNumber,
+    amount: orders.amount,
+    customerId: orders.customerId,
+    status: orders.status,
   })
-  .from(invoices);
+  .from(orders)
+  .where(or(eq(orders.status, 'pending'), eq(orders.status, 'partially_paid')));
 
 // Fetch active services
 const allServices = await db
@@ -62,7 +63,7 @@ if (typeFilter === 'in' || typeFilter === 'out') {
 
 const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-// 3. Query transactions list joining with customer and invoice to enrich context
+// 3. Query transactions list joining with customer and order to enrich context
 const transactionList = await db
   .select({
     id: payments.id,
@@ -78,14 +79,11 @@ const transactionList = await db
     paidAt: payments.paidAt,
     customerName: customers.fullName,
     customerId: customers.id,
-    invoiceNumber: invoices.invoiceNumber,
-    invoiceId: invoices.id,
     orderId: payments.orderId,
     orderNumber: orders.orderNumber,
   })
   .from(payments)
   .leftJoin(customers, eq(payments.customerId, customers.id))
-  .leftJoin(invoices, eq(payments.invoiceId, invoices.id))
   .leftJoin(orders, eq(payments.orderId, orders.id))
   .where(whereClause)
   .orderBy(desc(payments.paidAt));
@@ -163,9 +161,9 @@ const allCustomerIds = new Set(
     .map((c: any) => c.id?.toLowerCase() || '')
     .filter(Boolean)
 );
-const allInvoiceNumbers = new Set(
-  (await db.select({ invoiceNumber: invoices.invoiceNumber }).from(invoices))
-    .map((i: any) => i.invoiceNumber?.toLowerCase() || '')
+const allOrderNumbers = new Set(
+  (await db.select({ orderNumber: orders.orderNumber }).from(orders))
+    .map((o: any) => o.orderNumber?.toLowerCase() || '')
     .filter(Boolean)
 );
 
@@ -192,7 +190,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
       if (tokens) {
         for (const token of tokens) {
           const cleaned = token.trim().toLowerCase();
-          if (cleaned.length >= 3 && allInvoiceNumbers.has(cleaned)) return true;
+          if (cleaned.length >= 3 && allOrderNumbers.has(cleaned)) return true;
         }
       }
     } else if (rule.pattern && contentLower.includes(rule.pattern.toLowerCase())) {
@@ -865,11 +863,6 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
                     ) : (
                       <span style="color: var(--text-muted); font-size: 0.75rem;">No customer link</span>
                     )}
-                    {tx.invoiceNumber && (
-                      <span style="font-size: 0.75rem; color: var(--text-secondary);">
-                        📄 Invoice: <span class="mono">{tx.invoiceNumber}</span>
-                      </span>
-                    )}
                     {tx.orderNumber && (
                       <span style="font-size: 0.75rem; color: var(--text-secondary);">
                         📦 Order: <a href={`/crm/orders?search=${tx.orderNumber}`} style="color: var(--primary); font-weight: 500;" class="mono">{tx.orderNumber}</a>
@@ -882,7 +875,6 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
                         data-amount={tx.amount}
                         data-content={tx.content || ''}
                         data-customer-id={tx.customerId || ''} 
-                        data-invoice-id={tx.invoiceId || ''}
                         data-category={tx.category || ''}
                         data-tax-category={tx.taxCategory || ''}
                         data-type={tx.type || ''}
@@ -892,7 +884,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
                       >
                         ✏️ Link / Edit
                       </button>
-                      {tx.type === 'in' && !tx.invoiceId && !tx.orderId && (
+                      {tx.type === 'in' && !tx.orderId && (
                         <button 
                           class="btn-late-assoc btn-action" 
                           data-id={tx.id} 
@@ -1200,19 +1192,19 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
             </div>
           </div>
 
-          <!-- Invoice Select -->
+          <!-- Order Select -->
           <div class="form-group">
-            <label for="modalInvoiceSelect">{t('payments.invoice_link', lang)}</label>
-            <select id="modalInvoiceSelect" class="form-select">
-              <option value="">{t('payments.no_invoice_link', lang)}</option>
-              {allInvoices.map((inv: any) => (
+            <label for="modalOrderSelect">{lang === 'vi' ? 'Liên kết Đơn hàng' : 'Link Order'}</label>
+            <select id="modalOrderSelect" class="form-select">
+              <option value="">{lang === 'vi' ? '-- Không liên kết đơn hàng --' : '-- No order link --'}</option>
+              {allOrders.map((ord: any) => (
                 <option 
-                  value={inv.id} 
-                  data-customer-id={inv.customerId || ''}
-                  data-amount={inv.amount}
-                  data-status={inv.status}
+                  value={ord.id} 
+                  data-customer-id={ord.customerId || ''}
+                  data-amount={ord.amount}
+                  data-status={ord.status}
                 >
-                  {inv.invoiceNumber} - {inv.amount.toLocaleString()} đ [{inv.status.toUpperCase()}]
+                  {ord.orderNumber} - {ord.amount.toLocaleString()} đ [{ord.status.toUpperCase()}]
                 </option>
               ))}
             </select>
@@ -1369,7 +1361,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
   )}
 
   <!-- Client script for modal handling -->
-  <script is:inline define:vars={{ allInvoices, classificationRules, lang, allServices, sepaySyncLimit }}>
+  <script is:inline define:vars={{ allOrders, classificationRules, lang, allServices, sepaySyncLimit }}>
     const modal = document.getElementById('reconcileModal');
     const closeBtn = document.getElementById('modalCloseBtn');
     const cancelBtn = document.getElementById('modalCancelBtn');
@@ -1385,12 +1377,12 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
     const customerSearchDropdown = document.getElementById('customerSearchDropdown');
     const customerOptions = Array.from(customerSearchDropdown.querySelectorAll('.searchable-select-option'));
 
-    const invoiceSelect = document.getElementById('modalInvoiceSelect');
+    const orderSelect = document.getElementById('modalOrderSelect');
     const modalCategorySelect = document.getElementById('modalCategorySelect');
     const modalTaxCategoryInput = document.getElementById('modalTaxCategoryInput');
 
-    // Track all options of invoice select to filter them dynamically
-    const invoiceOptions = Array.from(invoiceSelect.options);
+    // Track all options of order select to filter them dynamically
+    const orderOptions = Array.from(orderSelect.options);
 
     // Searchable Select Handling
     customerSearchInput.addEventListener('focus', () => {
@@ -1440,7 +1432,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         }
       });
 
-      filterInvoices(id);
+      filterOrders(id);
     }
 
     // Open Modal
@@ -1450,7 +1442,6 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         const amount = Number(btn.getAttribute('data-amount')) || 0;
         const content = btn.getAttribute('data-content');
         const customerId = btn.getAttribute('data-customer-id');
-        const invoiceId = btn.getAttribute('data-invoice-id');
         const category = btn.getAttribute('data-category') || 'non_revenue';
         const taxCategory = btn.getAttribute('data-tax-category') || '';
         const flowType = btn.getAttribute('data-type') || 'in';
@@ -1496,32 +1487,32 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         const label = matchedOpt ? matchedOpt.textContent.trim() : '';
         selectCustomer(customerId || '', label);
 
-        invoiceSelect.value = invoiceId;
+        orderSelect.value = orderId || '';
 
         // Display modal
         modal.style.display = 'flex';
       });
     });
 
-    function filterInvoices(customerId) {
+    function filterOrders(customerId) {
       // Clear current options except the first placeholder
-      invoiceSelect.innerHTML = '';
-      invoiceSelect.appendChild(invoiceOptions[0]);
+      orderSelect.innerHTML = '';
+      orderSelect.appendChild(orderOptions[0]);
 
       if (!customerId) {
-        // If no customer selected, show all invoices
-        for (let i = 1; i < invoiceOptions.length; i++) {
-          invoiceSelect.appendChild(invoiceOptions[i]);
+        // If no customer selected, show all orders
+        for (let i = 1; i < orderOptions.length; i++) {
+          orderSelect.appendChild(orderOptions[i]);
         }
         return;
       }
 
-      // Show only invoices belonging to the selected customer
-      for (let i = 1; i < invoiceOptions.length; i++) {
-        const option = invoiceOptions[i];
+      // Show only orders belonging to the selected customer
+      for (let i = 1; i < orderOptions.length; i++) {
+        const option = orderOptions[i];
         const optionCustId = option.getAttribute('data-customer-id');
         if (optionCustId === customerId) {
-          invoiceSelect.appendChild(option);
+          orderSelect.appendChild(option);
         }
       }
     }
@@ -1542,7 +1533,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
       e.preventDefault();
       const paymentId = modalPaymentId.value;
       const customerId = customerSelect.value;
-      const invoiceId = invoiceSelect.value;
+      const orderId = orderSelect.value;
       const category = modalCategorySelect ? modalCategorySelect.value : 'non_revenue';
       const taxCategory = modalTaxCategoryInput ? modalTaxCategoryInput.value.trim() : '';
 
@@ -1550,7 +1541,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         const res = await fetch('/api/crm/payments/reconcile', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ paymentId, customerId, invoiceId, category, taxCategory }),
+          body: JSON.stringify({ paymentId, customerId, orderId, category, taxCategory }),
         });
 
         const data = await res.json();
@@ -2384,7 +2375,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
       const expiredAt = new Date(endVal).getTime();
 
       try {
-        const res = await fetch('/api/crm/payments/create-invoice', {
+        const res = await fetch('/api/crm/payments/create-order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

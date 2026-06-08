@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { invoices, orders, payments } from '@/lib/db/schema';
+import { orders, payments } from '@/lib/db/schema';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { eq } from 'drizzle-orm';
@@ -53,21 +53,10 @@ export const POST: APIRoute = async (context) => {
     const executeAction = async (tx: any) => {
       for (const id of ids) {
         if (action === 'unlink_orphan') {
-          const [inv] = await tx.select().from(invoices).where(eq(invoices.id, id));
-          if (inv) {
-            await tx.update(invoices).set({ paymentId: null, status: 'pending' }).where(eq(invoices.id, id));
-          } else {
-            const [ord] = await tx.select().from(orders).where(eq(orders.id, id));
-            if (ord) {
-              await tx.update(orders).set({ paymentId: null, status: 'pending' }).where(eq(orders.id, id));
-            }
+          const [ord] = await tx.select().from(orders).where(eq(orders.id, id));
+          if (ord) {
+            await tx.update(orders).set({ paymentId: null, status: 'pending' }).where(eq(orders.id, id));
           }
-        } 
-        
-        else if (action === 'delete_invoice') {
-          await tx.update(payments).set({ invoiceId: null }).where(eq(payments.invoiceId, id));
-          await tx.update(invoices).set({ paymentId: null }).where(eq(invoices.id, id));
-          await tx.delete(invoices).where(eq(invoices.id, id));
         } 
         
         else if (action === 'delete_order') {
@@ -77,7 +66,6 @@ export const POST: APIRoute = async (context) => {
         } 
         
         else if (action === 'delete_payment_and_links') {
-          await tx.update(invoices).set({ paymentId: null }).where(eq(invoices.paymentId, id));
           await tx.update(orders).set({ paymentId: null }).where(eq(orders.paymentId, id));
           await tx.delete(payments).where(eq(payments.id, id));
         } 

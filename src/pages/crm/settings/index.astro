@@ -13,7 +13,7 @@ import {
   debugLogs,
   customers,
   staff,
-  invoices,
+  orders,
   payments
 } from '@/lib/db/schema';
 
@@ -65,7 +65,7 @@ if (isAdmin) {
     { name: 'users', schema: usersTable },
     { name: 'customers', schema: customers },
     { name: 'staff', schema: staff },
-    { name: 'invoices', schema: invoices },
+    { name: 'orders', schema: orders },
     { name: 'payments', schema: payments },
     { name: 'config', schema: configTable },
     { name: 'sync_logs', schema: syncLogs },

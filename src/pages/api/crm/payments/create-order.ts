@@ -1,14 +1,12 @@
-// @para-doc [api-contracts.md#late-association]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
+import { staff } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { createOrderFromPayment } from '@/lib/services/serviceManager';
 import { logDebug } from '@/lib/debug-logger';
-import { eq } from 'drizzle-orm';
-import { staff } from '@/lib/db/schema';
 
-// @para-doc [services-payments-spec.md#b-co-che-doi-soat--xu-ly-thanh-toan-thieu-underpayment]
 export const POST: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions
@@ -30,12 +28,12 @@ export const POST: APIRoute = async (context) => {
       });
     }
 
-    // 2. Parse body parameters
-    const body = await context.request.json();
+    // 2. Parse request body
+    const body = await context.request.json().catch(() => ({}));
     const { paymentId, customerId, serviceId, startDate, expiredAt, customPrice } = body;
 
     if (!paymentId || !customerId || !serviceId || !startDate || !expiredAt) {
-      return new Response(JSON.stringify({ error: 'Missing required parameters' }), {
+      return new Response(JSON.stringify({ error: 'Bad Request: Missing required parameters' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -43,22 +41,23 @@ export const POST: APIRoute = async (context) => {
 
     const db = getDb(env);
 
-    // Look up the staff record by user.id
-    const staffRecord = await db
-      .select()
-      .from(staff)
-      .where(eq(staff.userId, user.id))
-      .limit(1);
-    const staffId = staffRecord[0]?.id || null;
+    // 3. Retrieve current staff member associated with the user
+    const currentStaff = await db.select().from(staff).where(eq(staff.userId, user.id)).get();
+    if (!currentStaff) {
+      return new Response(JSON.stringify({ error: 'Forbidden: User is not linked to staff record' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-    // 3. Call serviceManager logic
+    // 4. Create order from payment
     const result = await createOrderFromPayment(db, {
       paymentId,
       customerId,
       serviceId,
       startDate: Number(startDate),
       expiredAt: Number(expiredAt),
-      staffId,
+      staffId: currentStaff.id,
       customPrice: customPrice !== undefined ? Number(customPrice) : undefined,
     });
 
@@ -67,23 +66,31 @@ export const POST: APIRoute = async (context) => {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err: any) {
-    console.error('[API create-invoice] Error:', err.message);
-    const status = (err.message === 'PAYMENT_ALREADY_RECONCILED' || err.message === 'SERVICE_NOT_FOUND') ? 400 : 500;
+    console.error('[API create-order] Error:', err.message);
     try {
       const db = getDb(env);
       await logDebug(db, {
         level: 'error',
         endpoint: context.url.pathname,
-        method: context.request.method,
-        statusCode: status,
+        method: 'POST',
+        statusCode: 500,
         message: err.message,
         stack: err.stack,
       });
     } catch (logErr) {
       console.error('Failed to write debug log to DB:', logErr);
     }
-    return new Response(JSON.stringify({ error: err.message || 'Internal Server Error' }), {
-      status,
+    
+    // Check specific error message from core logic
+    if (err.message === 'PAYMENT_ALREADY_RECONCILED' || err.message === 'SERVICE_NOT_FOUND') {
+      return new Response(JSON.stringify({ error: err.message }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: err.message }) }), {
+      status: 500,
       headers: { 'Content-Type': 'application/json' },
     });
   }

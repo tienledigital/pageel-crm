@@ -3,11 +3,10 @@ import { getDb } from '@/lib/db';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import path from 'path';
 import { eq, sql } from 'drizzle-orm';
-import { customers, staff, payments, invoices, orders, users, auditLogs } from '@/lib/db/schema';
+import { customers, staff, payments, orders, users, auditLogs } from '@/lib/db/schema';
 import { createSessionCookie } from '@/lib/auth';
-// Import các handler tương lai để test
 import { GET as checkAuditHandler } from '../src/pages/api/crm/audit/check';
-import { POST as runActionHandler } from '../src/pages/api/crm/audit/action'; // relative import to resolve IDE cache issues
+import { POST as runActionHandler } from '../src/pages/api/crm/audit/action';
 
 describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
   const SESSION_SECRET = 'fallback-secret-key-must-be-at-least-32-chars-long';
@@ -106,45 +105,44 @@ describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
 
       // Tắt foreign keys để chèn dữ liệu seed chéo mà không lỗi
       await db.run(sql`PRAGMA foreign_keys = OFF`);
-      await db.delete(invoices);
       await db.delete(orders);
       await db.delete(payments);
 
-      // 1. Seed hóa đơn mồ côi (paymentId không tồn tại thực tế)
-      await db.insert(invoices).values({
-        id: 'INV-ORPHAN-1',
-        invoiceNumber: 'PO-ORPHAN-01',
+      // 1. Seed đơn hàng mồ côi (paymentId không tồn tại thực tế)
+      await db.insert(orders).values({
+        id: 'ORD-ORPHAN-1',
+        orderNumber: 'ORD-ORPHAN-01',
         customerId: TEST_CUSTOMER.id,
         amount: 100000,
-        content: 'Orphaned invoice test',
+        content: 'Orphaned order test',
         status: 'paid',
         paymentId: 'NON-EXISTENT-PAYMENT-ID',
       });
 
-      // 2. Seed hóa đơn paid nhưng paymentId bị NULL
-      await db.insert(invoices).values({
-        id: 'INV-PAID-NULL-1',
-        invoiceNumber: 'PO-PAID-NULL-01',
+      // 2. Seed đơn hàng paid nhưng paymentId bị NULL
+      await db.insert(orders).values({
+        id: 'ORD-PAID-NULL-1',
+        orderNumber: 'ORD-PAID-NULL-01',
         customerId: TEST_CUSTOMER.id,
         amount: 200000,
-        content: 'Paid invoice without paymentId',
+        content: 'Paid order without paymentId',
         status: 'paid',
         paymentId: null,
       });
 
-      // 3. Seed lệch số tiền giữa hóa đơn và giao dịch liên kết
-      await db.insert(invoices).values({
-        id: 'INV-AMT-MISMATCH-1',
-        invoiceNumber: 'PO-AMT-MISMATCH-01',
+      // 3. Seed lệch số tiền giữa đơn hàng và giao dịch liên kết
+      await db.insert(orders).values({
+        id: 'ORD-AMT-MISMATCH-1',
+        orderNumber: 'ORD-AMT-MISMATCH-01',
         customerId: TEST_CUSTOMER.id,
-        amount: 300000, // Tiền hóa đơn 300k
-        content: 'Amount mismatch invoice',
+        amount: 300000, // Tiền đơn hàng 300k
+        content: 'Amount mismatch order',
         status: 'paid',
         paymentId: 'PAY-AMT-MISMATCH-1',
       });
       await db.insert(payments).values({
         id: 'PAY-AMT-MISMATCH-1',
-        invoiceId: 'INV-AMT-MISMATCH-1',
+        orderId: 'ORD-AMT-MISMATCH-1',
         customerId: TEST_CUSTOMER.id,
         amount: 350000, // Giao dịch thực tế 350k (lệch tiền)
         transactionId: 'TX_AMT_MISMATCH_1',
@@ -154,19 +152,19 @@ describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
         paidAt: Date.now(),
       });
 
-      // 4. Seed lệch liên kết ngược 3 bên (payment trỏ tới invoice nhưng invoice lại không trỏ ngược tới payment đó)
-      await db.insert(invoices).values({
-        id: 'INV-LINK-MISMATCH-1',
-        invoiceNumber: 'PO-LINK-MISMATCH-01',
+      // 4. Seed lệch liên kết ngược (payment trỏ tới order nhưng order lại không trỏ ngược tới payment đó)
+      await db.insert(orders).values({
+        id: 'ORD-LINK-MISMATCH-1',
+        orderNumber: 'ORD-LINK-MISMATCH-01',
         customerId: TEST_CUSTOMER.id,
         amount: 400000,
-        content: 'Link mismatch invoice',
+        content: 'Link mismatch order',
         status: 'paid',
         paymentId: null, // Không trỏ tới payment chéo
       });
       await db.insert(payments).values({
         id: 'PAY-LINK-MISMATCH-1',
-        invoiceId: 'INV-LINK-MISMATCH-1', // Payment trỏ tới invoice
+        orderId: 'ORD-LINK-MISMATCH-1', // Payment trỏ tới order
         customerId: TEST_CUSTOMER.id,
         amount: 400000,
         transactionId: 'TX_LINK_MISMATCH_1',
@@ -176,19 +174,19 @@ describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
         paidAt: Date.now(),
       });
 
-      // 5. Seed lệch khách hàng chéo giữa 3 bên
-      await db.insert(invoices).values({
-        id: 'INV-CUST-MISMATCH-1',
-        invoiceNumber: 'PO-CUST-MISMATCH-01',
+      // 5. Seed lệch khách hàng chéo
+      await db.insert(orders).values({
+        id: 'ORD-CUST-MISMATCH-1',
+        orderNumber: 'ORD-CUST-MISMATCH-01',
         customerId: TEST_CUSTOMER.id, // Khách hàng TEST_CUSTOMER
         amount: 500000,
-        content: 'Customer mismatch invoice',
+        content: 'Customer mismatch order',
         status: 'paid',
         paymentId: 'PAY-CUST-MISMATCH-1',
       });
       await db.insert(payments).values({
         id: 'PAY-CUST-MISMATCH-1',
-        invoiceId: 'INV-CUST-MISMATCH-1',
+        orderId: 'ORD-CUST-MISMATCH-1',
         customerId: 'DIFFERENT-CUST-ID', // Khách hàng khác (lệch)
         amount: 500000,
         transactionId: 'TX_CUST_MISMATCH_1',
@@ -211,19 +209,19 @@ describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
 
       const data = await response.json();
       
-      // Kiểm tra hóa đơn mồ côi
-      expect(data.invoices.orphans.length).toBe(1);
-      expect(data.invoices.orphans[0].id).toBe('INV-ORPHAN-1');
+      // Kiểm tra đơn hàng mồ côi
+      expect(data.orders.orphans.length).toBe(1);
+      expect(data.orders.orphans[0].id).toBe('ORD-ORPHAN-1');
 
-      // Kiểm tra hóa đơn paid nhưng paymentId = null (bao gồm cả hóa đơn lệch liên kết ngược)
-      expect(data.invoices.paidNullPayment.length).toBe(2);
+      // Kiểm tra đơn hàng paid nhưng paymentId = null (bao gồm cả đơn lệch liên kết ngược)
+      expect(data.orders.paidNullPayment.length).toBe(2);
 
       // Kiểm tra lệch tiền
-      expect(data.invoices.mismatchedAmount.length).toBe(1);
-      expect(data.invoices.mismatchedAmount[0].id).toBe('INV-AMT-MISMATCH-1');
-      expect(data.invoices.mismatchedAmount[0].paymentAmount).toBe(350000);
+      expect(data.orders.mismatchedAmount.length).toBe(1);
+      expect(data.orders.mismatchedAmount[0].id).toBe('ORD-AMT-MISMATCH-1');
+      expect(data.orders.mismatchedAmount[0].paymentAmount).toBe(350000);
 
-      // Kiểm tra lệch liên kết ngược 3 bên
+      // Kiểm tra lệch liên kết ngược
       expect(data.threeWay.mismatchedLinks.length).toBe(1);
       expect(data.threeWay.mismatchedLinks[0].paymentId).toBe('PAY-LINK-MISMATCH-1');
 
@@ -236,13 +234,13 @@ describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
   describe('POST: /api/crm/audit/action (Thực thi dọn dẹp)', () => {
     it('nên gỡ liên kết mồ côi (unlink_orphan) thành công', async () => {
       const db = getDb();
-      const invoiceId = 'INV-ACTION-UNLINK';
+      const orderId = 'ORD-ACTION-UNLINK';
 
-      // Seed hóa đơn mồ côi
+      // Seed đơn hàng mồ côi
       await db.run(sql`PRAGMA foreign_keys = OFF`);
-      await db.insert(invoices).values({
-        id: invoiceId,
-        invoiceNumber: 'PO-UNLINK-TEST',
+      await db.insert(orders).values({
+        id: orderId,
+        orderNumber: 'ORD-UNLINK-TEST',
         customerId: TEST_CUSTOMER.id,
         amount: 150000,
         content: 'Orphaned link test',
@@ -253,7 +251,7 @@ describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
 
       const payload = {
         action: 'unlink_orphan',
-        targetId: invoiceId,
+        targetId: orderId,
       };
 
       const context = createMockContext('POST', payload, adminToken);
@@ -267,32 +265,32 @@ describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
       expect(data.success).toBe(true);
 
       // Kiểm tra DB đã được gỡ liên kết (paymentId = null)
-      const updated = await db.select().from(invoices).where(eq(invoices.id, invoiceId)).get();
+      const updated = await db.select().from(orders).where(eq(orders.id, orderId)).get();
       expect(updated.paymentId).toBeNull();
       
-      // Đồng thời status chuyển về 'pending' theo logic auto-fix an toàn của spec
+      // Đồng thời status chuyển về 'pending' theo logic auto-fix an toàn
       expect(updated.status).toBe('pending');
     });
 
-    it('nên xóa hóa đơn sai lệch (delete_invoice) an toàn không gây lỗi khóa ngoại', async () => {
+    it('nên xóa đơn hàng sai lệch (delete_order) an toàn không gây lỗi khóa ngoại', async () => {
       const db = getDb();
-      const invoiceId = 'INV-ACTION-DELETE';
+      const orderId = 'ORD-ACTION-DELETE';
       const paymentId = 'PAY-ACTION-DELETE';
 
-      // Seed hóa đơn và thanh toán liên kết
-      await db.insert(invoices).values({
-        id: invoiceId,
-        invoiceNumber: 'PO-DELETE-TEST',
+      // Seed đơn hàng và thanh toán liên kết
+      await db.insert(orders).values({
+        id: orderId,
+        orderNumber: 'ORD-DELETE-TEST',
         customerId: TEST_CUSTOMER.id,
         amount: 300000,
-        content: 'Invoice to delete test',
+        content: 'Order to delete test',
         status: 'paid',
         paymentId: null,
       });
 
       await db.insert(payments).values({
         id: paymentId,
-        invoiceId: invoiceId,
+        orderId: orderId,
         amount: 300000,
         transactionId: 'TX_ACTION_DELETE',
         paymentMethod: 'bank_transfer',
@@ -301,11 +299,11 @@ describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
         paidAt: Date.now(),
       });
 
-      await db.update(invoices).set({ paymentId }).where(eq(invoices.id, invoiceId));
+      await db.update(orders).set({ paymentId }).where(eq(orders.id, orderId));
 
       const payload = {
-        action: 'delete_invoice',
-        targetId: invoiceId,
+        action: 'delete_order',
+        targetId: orderId,
       };
 
       // Dọn dẹp log audit trước khi test
@@ -314,40 +312,39 @@ describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
       const context = createMockContext('POST', payload, adminToken);
       const response = await runActionHandler(context);
       
-      // Đảm bảo không lỗi ngoại lệ khóa ngoại của SQLite (FOREIGN KEY constraint failed)
       expect(response.status).toBe(200);
 
       const data = await response.json();
       expect(data.success).toBe(true);
 
-      // Kiểm tra DB: Hóa đơn đã bị xóa
-      const updatedInvoice = await db.select().from(invoices).where(eq(invoices.id, invoiceId)).get();
-      expect(updatedInvoice).toBeUndefined();
+      // Kiểm tra DB: Đơn hàng đã bị xóa
+      const updatedOrder = await db.select().from(orders).where(eq(orders.id, orderId)).get();
+      expect(updatedOrder).toBeUndefined();
 
-      // Kiểm tra DB: Giao dịch liên quan được gỡ liên kết invoice_id thành NULL tự động thay vì xóa
+      // Kiểm tra DB: Giao dịch liên quan được gỡ liên kết orderId thành NULL tự động thay vì xóa
       const updatedPayment = await db.select().from(payments).where(eq(payments.id, paymentId)).get();
       expect(updatedPayment).toBeDefined();
-      expect(updatedPayment.invoiceId).toBeNull();
+      expect(updatedPayment.orderId).toBeNull();
 
       // Kiểm tra log audit được ghi lại
       const audits = await db.select().from(auditLogs).all();
       expect(audits.length).toBeGreaterThanOrEqual(1);
-      expect(audits[0].action).toBe('audit.delete_invoice');
-      expect(audits[0].target).toBe(invoiceId);
+      expect(audits[0].action).toBe('audit.delete_order');
+      expect(audits[0].target).toBe(orderId);
     });
 
-    it('nên xóa hàng loạt hóa đơn sai lệch (targetIds) an toàn không gây lỗi khóa ngoại', async () => {
+    it('nên xóa hàng loạt đơn hàng sai lệch (targetIds) an toàn không gây lỗi khóa ngoại', async () => {
       const db = getDb();
-      const invoiceId1 = 'INV-BULK-1';
-      const invoiceId2 = 'INV-BULK-2';
+      const orderId1 = 'ORD-BULK-1';
+      const orderId2 = 'ORD-BULK-2';
       const paymentId1 = 'PAY-BULK-1';
       const paymentId2 = 'PAY-BULK-2';
 
       // Seed dữ liệu
-      await db.insert(invoices).values([
+      await db.insert(orders).values([
         {
-          id: invoiceId1,
-          invoiceNumber: 'PO-BULK-1',
+          id: orderId1,
+          orderNumber: 'ORD-BULK-1',
           customerId: TEST_CUSTOMER.id,
           amount: 100000,
           content: 'Bulk 1',
@@ -355,8 +352,8 @@ describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
           paymentId: null,
         },
         {
-          id: invoiceId2,
-          invoiceNumber: 'PO-BULK-2',
+          id: orderId2,
+          orderNumber: 'ORD-BULK-2',
           customerId: TEST_CUSTOMER.id,
           amount: 200000,
           content: 'Bulk 2',
@@ -368,7 +365,7 @@ describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
       await db.insert(payments).values([
         {
           id: paymentId1,
-          invoiceId: invoiceId1,
+          orderId: orderId1,
           amount: 100000,
           transactionId: 'TX_BULK_1',
           paymentMethod: 'bank_transfer',
@@ -378,7 +375,7 @@ describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
         },
         {
           id: paymentId2,
-          invoiceId: invoiceId2,
+          orderId: orderId2,
           amount: 200000,
           transactionId: 'TX_BULK_2',
           paymentMethod: 'bank_transfer',
@@ -388,12 +385,12 @@ describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
         }
       ]);
 
-      await db.update(invoices).set({ paymentId: paymentId1 }).where(eq(invoices.id, invoiceId1));
-      await db.update(invoices).set({ paymentId: paymentId2 }).where(eq(invoices.id, invoiceId2));
+      await db.update(orders).set({ paymentId: paymentId1 }).where(eq(orders.id, orderId1));
+      await db.update(orders).set({ paymentId: paymentId2 }).where(eq(orders.id, orderId2));
 
       const payload = {
-        action: 'delete_invoice',
-        targetIds: [invoiceId1, invoiceId2],
+        action: 'delete_order',
+        targetIds: [orderId1, orderId2],
       };
 
       await db.delete(auditLogs);
@@ -405,24 +402,24 @@ describe('Database Reconciliation (Audit) APIs Integration Tests', () => {
       const data = await response.json();
       expect(data.success).toBe(true);
 
-      // Kiểm tra DB: Cả hai hóa đơn đã bị xóa
-      const updatedInv1 = await db.select().from(invoices).where(eq(invoices.id, invoiceId1)).get();
-      const updatedInv2 = await db.select().from(invoices).where(eq(invoices.id, invoiceId2)).get();
-      expect(updatedInv1).toBeUndefined();
-      expect(updatedInv2).toBeUndefined();
+      // Kiểm tra DB: Cả hai đơn hàng đã bị xóa
+      const updatedOrd1 = await db.select().from(orders).where(eq(orders.id, orderId1)).get();
+      const updatedOrd2 = await db.select().from(orders).where(eq(orders.id, orderId2)).get();
+      expect(updatedOrd1).toBeUndefined();
+      expect(updatedOrd2).toBeUndefined();
 
       // Kiểm tra DB: Các thanh toán liên quan được gỡ liên kết
       const updatedPay1 = await db.select().from(payments).where(eq(payments.id, paymentId1)).get();
       const updatedPay2 = await db.select().from(payments).where(eq(payments.id, paymentId2)).get();
-      expect(updatedPay1.invoiceId).toBeNull();
-      expect(updatedPay2.invoiceId).toBeNull();
+      expect(updatedPay1.orderId).toBeNull();
+      expect(updatedPay2.orderId).toBeNull();
 
       // Kiểm tra log audit được ghi lại
       const audits = await db.select().from(auditLogs).all();
       expect(audits.length).toBeGreaterThanOrEqual(1);
-      expect(audits[0].action).toBe('audit.delete_invoice');
-      expect(audits[0].target).toContain(invoiceId1);
-      expect(audits[0].target).toContain(invoiceId2);
+      expect(audits[0].action).toBe('audit.delete_order');
+      expect(audits[0].target).toContain(orderId1);
+      expect(audits[0].target).toContain(orderId2);
     });
   });
 });

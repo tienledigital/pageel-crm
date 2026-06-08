@@ -27,7 +27,7 @@ describe('GitHub Backup Client', () => {
       const data = JSON.parse(jsonStr);
 
       expect(data).toHaveProperty('customers');
-      expect(data).toHaveProperty('invoices');
+      expect(data).toHaveProperty('orders');
       expect(data).toHaveProperty('payments');
       expect(data.customers.length).toBeGreaterThan(0);
       expect(data.customers[0].id).toBe('CUST-BACKUP-1');
@@ -568,9 +568,11 @@ describe('Astro API Endpoint - POST /api/backup/restore', () => {
         users: [],
         staff: [],
         customers: [{ id: 'RESTORED-CUST-1', fullName: 'Restored Cust 1', phone: '222222', email: null, idCard: null, taxCode: null, address: null, expiredAt: null, assignedStaffId: null, notes: null }],
-        invoices: [],
+        orders: [],
         payments: [],
-        config: []
+        config: [],
+        services: [],
+        customerServices: []
       })
     });
 

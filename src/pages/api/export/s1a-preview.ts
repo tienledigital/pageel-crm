@@ -1,7 +1,7 @@
 // @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
 import type { APIContext } from 'astro';
 import { getDb } from '@/lib/db';
-import { payments, customers, invoices, services } from '@/lib/db/schema';
+import { payments, customers, orders, services } from '@/lib/db/schema';
 import { eq, and, gte, lte, isNotNull } from 'drizzle-orm';
 import { env } from 'cloudflare:workers';
 
@@ -82,13 +82,13 @@ export const GET = async (context: APIContext): Promise<Response> => {
       .select({
         payment: payments,
         customer: customers,
-        invoice: invoices,
+        order: orders,
         service: services,
       })
       .from(payments)
       .leftJoin(customers, eq(payments.customerId, customers.id))
-      .leftJoin(invoices, eq(payments.invoiceId, invoices.id))
-      .leftJoin(services, eq(customers.serviceId, services.id))
+      .leftJoin(orders, eq(payments.orderId, orders.id))
+      .leftJoin(services, eq(orders.serviceId, services.id))
       .where(
         and(
           eq(payments.type, 'in'), // Only incoming payments for S1a
@@ -108,10 +108,12 @@ export const GET = async (context: APIContext): Promise<Response> => {
         id: row.customer.id,
         fullName: row.customer.fullName,
       } : null,
-      invoice: row.invoice ? {
-        id: row.invoice.id,
-        invoiceNumber: row.invoice.invoiceNumber,
-        content: row.invoice.content,
+      order: row.order ? {
+        id: row.order.id,
+        orderNumber: row.order.orderNumber,
+        content: row.order.content,
+        taxInvoiceNumber: row.order.taxInvoiceNumber,
+        taxInvoiceDate: row.order.taxInvoiceDate,
       } : null,
       serviceName: row.service ? row.service.name : null,
     }));
