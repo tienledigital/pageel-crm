@@ -6,7 +6,7 @@ import { eq, and } from 'drizzle-orm';
 import { customers, staff, payments, orders, customerServices, services, users } from '@/lib/db/schema';
 import { createSessionCookie } from '@/lib/auth';
 import { createPaidOrder } from '@/lib/services/serviceManager';
-import { POST as createPaidOrderHandler, DELETE as deleteOrderHandler } from '@/pages/api/crm/orders/index';
+import { POST as createPaidOrderHandler, DELETE as deleteOrderHandler, PUT as updateOrderHandler } from '@/pages/api/crm/orders/index';
 
 describe('Quick Create Paid Order Service Logic', () => {
   const TEST_CUSTOMER = {
@@ -530,5 +530,148 @@ describe('DELETE: Delete Paid Order API Endpoint Integration Tests', () => {
     // Verify customer expiredAt reset
     const updatedCust = await db.select().from(customers).where(eq(customers.id, customerId)).get();
     expect(updatedCust.expiredAt).toBe(0);
+  });
+});
+
+describe('PUT: Update Paid Order API Endpoint Integration Tests', () => {
+  const SESSION_SECRET = 'fallback-secret-key-must-be-at-least-32-chars-long';
+  let adminToken: string;
+  let staffToken: string;
+  let salerToken: string;
+
+  beforeAll(async () => {
+    process.env.SESSION_SECRET = SESSION_SECRET;
+    adminToken = await createSessionCookie({
+      id: 'usr-admin-ord',
+      username: 'adminord',
+      role: 'admin',
+      createdAt: Date.now(),
+    }, SESSION_SECRET);
+
+    staffToken = await createSessionCookie({
+      id: 'usr-accountant-ord',
+      username: 'accountantord',
+      role: 'accountant',
+      createdAt: Date.now(),
+    }, SESSION_SECRET);
+
+    salerToken = await createSessionCookie({
+      id: 'usr-saler-ord',
+      username: 'salerord',
+      role: 'saler',
+      createdAt: Date.now(),
+    }, SESSION_SECRET);
+  });
+
+  function createMockContext(body?: any, token?: string) {
+    const cookiesMap = new Map();
+    if (token) {
+      cookiesMap.set('session', { value: token });
+    }
+    const request = new Request('http://localhost/api/crm/orders', {
+      method: 'PUT',
+      body: body ? JSON.stringify(body) : undefined,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return {
+      request,
+      url: new URL(request.url),
+      cookies: cookiesMap,
+      locals: {
+        runtime: { env: { SESSION_SECRET } },
+      },
+    } as any;
+  }
+
+  it('should return 401 Unauthorized if user session cookie is missing', async () => {
+    const context = createMockContext({ orderId: 'ORD-123', serviceId: 'srv-1', amount: 100000, startDate: Date.now(), expiredAt: Date.now() + 30 * 24 * 60 * 60 * 1000 });
+    const response = await updateOrderHandler(context);
+    expect(response.status).toBe(401);
+  });
+
+  it('should return 403 Forbidden if user role is saler', async () => {
+    const context = createMockContext({ orderId: 'ORD-123', serviceId: 'srv-1', amount: 100000, startDate: Date.now(), expiredAt: Date.now() + 30 * 24 * 60 * 60 * 1000 }, salerToken);
+    const response = await updateOrderHandler(context);
+    expect(response.status).toBe(403);
+  });
+
+  it('should return 400 Bad Request if required parameters are missing', async () => {
+    const context = createMockContext({ orderId: 'ORD-123' }, staffToken);
+    const response = await updateOrderHandler(context);
+    expect(response.status).toBe(400);
+  });
+
+  it('should successfully update order and change updatedAt to be newer than createdAt', async () => {
+    const db = getDb();
+    const customerId = 'CUST-PUT-ORD';
+    const serviceId1 = 'srv-put-ord-1';
+    const serviceId2 = 'srv-put-ord-2';
+    const orderId = 'ORD-PUT-TEST-1';
+    const createdAt = Date.now() - 10000; // 10 seconds ago
+
+    // Seed customer
+    await db.insert(customers).values({
+      id: customerId,
+      fullName: 'PUT Order Cust',
+      phone: '0908888888',
+    });
+
+    // Seed services
+    await db.insert(services).values([
+      {
+        id: serviceId1,
+        name: 'Service 1',
+        price: 100000,
+        billingCycle: 30,
+        prefix: 'SV1',
+        status: 'active',
+        createdAt: Date.now(),
+      },
+      {
+        id: serviceId2,
+        name: 'Service 2',
+        price: 200000,
+        billingCycle: 30,
+        prefix: 'SV2',
+        status: 'active',
+        createdAt: Date.now(),
+      }
+    ]);
+
+    // Seed order
+    await db.insert(orders).values({
+      id: orderId,
+      customerId,
+      orderNumber: 'ORD-PUT-01',
+      amount: 100000,
+      content: 'Original Content',
+      status: 'paid',
+      serviceId: serviceId1,
+      startDate: createdAt,
+      expiredAt: createdAt + 30 * 24 * 60 * 60 * 1000,
+      createdAt,
+      updatedAt: createdAt,
+    });
+
+    const body = {
+      orderId,
+      serviceId: serviceId2,
+      amount: 200000,
+      startDate: Date.now(),
+      expiredAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    };
+
+    const context = createMockContext(body, staffToken);
+    const response = await updateOrderHandler(context);
+    expect(response.status).toBe(200);
+
+    const data = await response.json();
+    expect(data.success).toBe(true);
+
+    // Verify order
+    const order = await db.select().from(orders).where(eq(orders.id, orderId)).get();
+    expect(order.serviceId).toBe(serviceId2);
+    expect(order.amount).toBe(200000);
+    expect(order.updatedAt).toBeGreaterThan(createdAt);
   });
 });
