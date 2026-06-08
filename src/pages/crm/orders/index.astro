@@ -716,6 +716,7 @@ function formatDateInput(timestamp: number | null) {
             <th>{lang === 'vi' ? 'Trạng thái' : 'Status'}</th>
             <th>{lang === 'vi' ? 'Hóa đơn VAT' : 'VAT Invoice'}</th>
             <th>{lang === 'vi' ? 'Ngày phát hành' : 'Issued Date'}</th>
+            <th>{lang === 'vi' ? 'Ngày cập nhật' : 'Last Updated'}</th>
             <th>{lang === 'vi' ? 'Thao tác' : 'Actions'}</th>
           </tr>
         </thead>
@@ -778,7 +779,10 @@ function formatDateInput(timestamp: number | null) {
                   )}
                 </td>
                 <td>
-                  <span>{formatDate(order.createdAt)}</span>
+                  <span>{formatDate(order.issuedDate)}</span>
+                </td>
+                <td>
+                  <span>{formatDate(order.updatedAt || order.createdAt)}</span>
                 </td>
                 <td style="display: flex; gap: 0.25rem; align-items: center; flex-wrap: wrap;">
                   <a href={`/crm/qr-tool?orderId=${order.id}`} class="btn-action">
@@ -869,7 +873,11 @@ function formatDateInput(timestamp: number | null) {
               </div>
               <div class="mobile-card-row">
                 <span class="mobile-card-label">{lang === 'vi' ? 'Ngày phát hành' : 'Issued Date'}</span>
-                <span class="mobile-card-value">{formatDate(order.createdAt)}</span>
+                <span class="mobile-card-value">{formatDate(order.issuedDate)}</span>
+              </div>
+              <div class="mobile-card-row">
+                <span class="mobile-card-label">{lang === 'vi' ? 'Ngày cập nhật' : 'Last Updated'}</span>
+                <span class="mobile-card-value">{formatDate(order.updatedAt || order.createdAt)}</span>
               </div>
               {order.startDate && order.expiredAt && (
                 <div class="mobile-card-row">
