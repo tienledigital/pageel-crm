@@ -1,5 +1,4 @@
-// @para-doc [operations-guide.md#5-huong-dan-khoi-phuc-du-lieu-database-disaster-recovery]
-import { users, staff, customers, invoices, payments, config } from '../db/schema';
+import { users, staff, customers, orders, payments, config, services, customerServices } from '../db/schema';
 
 // @para-doc [operations-guide.md#5-huong-dan-khoi-phuc-du-lieu-database-disaster-recovery]
 export interface BackupParams {
@@ -20,17 +19,21 @@ export async function exportDatabaseToJson(db: any): Promise<string> {
   const allUsers = await db.select().from(users);
   const allStaff = await db.select().from(staff);
   const allCustomers = await db.select().from(customers);
-  const allInvoices = await db.select().from(invoices);
+  const allOrders = await db.select().from(orders);
   const allPayments = await db.select().from(payments);
   const allConfig = await db.select().from(config);
+  const allServices = await db.select().from(services);
+  const allCustomerServices = await db.select().from(customerServices);
 
   return JSON.stringify({
     users: allUsers,
     staff: allStaff,
     customers: allCustomers,
-    invoices: allInvoices,
+    orders: allOrders,
     payments: allPayments,
     config: allConfig,
+    services: allServices,
+    customerServices: allCustomerServices,
   });
 }
 

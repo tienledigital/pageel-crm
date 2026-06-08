@@ -5,7 +5,7 @@ import { generateS1a, exportYearlyS1aZip, type ExportPayment } from '../src/lib/
 import { GET as exportS1aHandler } from '../src/pages/api/export/s1a';
 import { GET as previewS1aHandler } from '../src/pages/api/export/s1a-preview';
 import { getDb } from '../src/lib/db';
-import { customers, invoices, payments } from '../src/lib/db/schema';
+import { customers, orders, payments } from '../src/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import ExcelJS from 'exceljs';
 import JSZip from 'jszip';
@@ -98,7 +98,7 @@ describe('Excel Generator - generateS1a', () => {
     expect(row12.getCell(3).value).toBe('1005 - Nguyễn Văn A - Hosting gói A');
   });
 
-  it('should map description correctly for payments with invoices', async () => {
+  it('should map description correctly for payments with orders', async () => {
     const template = getTemplateBuffer();
     const paymentsData: ExportPayment[] = [
       {
@@ -107,7 +107,7 @@ describe('Excel Generator - generateS1a', () => {
         type: 'in',
         content: 'Normal content',
         customer: { id: '1001', fullName: 'Lê Văn Tám' },
-        invoice: { id: 'INV-1', invoiceNumber: 'INV001', content: 'Gói VIP 6 Tháng' }
+        order: { id: 'ORD-1', orderNumber: 'ORD001', content: 'Gói VIP 6 Tháng' }
       }
     ];
 
@@ -129,7 +129,7 @@ describe('Excel Generator - generateS1a', () => {
         type: 'in',
         content: 'Chuyen khoan khong co thong tin',
         customer: null,
-        invoice: null
+        order: null
       },
       {
         paidAt: new Date('2026-05-16T10:00:00Z').getTime(),
@@ -137,7 +137,7 @@ describe('Excel Generator - generateS1a', () => {
         type: 'in',
         content: '',
         customer: null,
-        invoice: null
+        order: null
       }
     ];
 
@@ -162,7 +162,7 @@ describe('Excel Generator - generateS1a', () => {
         type: 'in',
         content: '=1+1',
         customer: null,
-        invoice: null
+        order: null
       }
     ];
 
@@ -220,7 +220,7 @@ describe('Export S1a API Endpoint - GET /api/export/s1a', () => {
 
     // Clean up
     await db.delete(payments);
-    await db.delete(invoices);
+    await db.delete(orders);
     await db.delete(customers);
 
     // Seed mock data
@@ -230,10 +230,10 @@ describe('Export S1a API Endpoint - GET /api/export/s1a', () => {
       phone: '0987654321',
     });
 
-    await db.insert(invoices).values({
-      id: 'INV-1',
+    await db.insert(orders).values({
+      id: 'ORD-1',
       customerId: '1005',
-      invoiceNumber: 'INV001',
+      orderNumber: 'ORD001',
       amount: 200000,
       content: 'Gia hạn CRM',
       status: 'paid',
@@ -242,7 +242,7 @@ describe('Export S1a API Endpoint - GET /api/export/s1a', () => {
     await db.insert(payments).values({
       id: 'PAY-1',
       customerId: '1005',
-      invoiceId: 'INV-1',
+      orderId: 'ORD-1',
       amount: 200000,
       type: 'in',
       transactionId: 'TX100',
@@ -394,7 +394,7 @@ describe('Preview S1a API Endpoint - GET /api/export/s1a-preview', () => {
 
     // Clean up
     await db.delete(payments);
-    await db.delete(invoices);
+    await db.delete(orders);
     await db.delete(customers);
 
     // Seed mock data

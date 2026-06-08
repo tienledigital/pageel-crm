@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { invoices, orders, payments } from '@/lib/db/schema';
+import { orders, payments } from '@/lib/db/schema';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { eq } from 'drizzle-orm';
@@ -49,25 +49,20 @@ export const POST: APIRoute = async (context) => {
 
     const db = getDb(env);
 
-    // Định nghĩa hàm thực thi hành động để chạy tương thích giữa D1 và better-sqlite3
+    // Execute actions helper for both D1 and better-sqlite3
     const executeAction = async (tx: any) => {
       for (const id of ids) {
         if (action === 'unlink_orphan') {
-          const [inv] = await tx.select().from(invoices).where(eq(invoices.id, id));
-          if (inv) {
-            await tx.update(invoices).set({ paymentId: null, status: 'pending' }).where(eq(invoices.id, id));
-          } else {
-            const [ord] = await tx.select().from(orders).where(eq(orders.id, id));
-            if (ord) {
-              await tx.update(orders).set({ paymentId: null, status: 'pending' }).where(eq(orders.id, id));
+          const [ord] = await tx.select().from(orders).where(eq(orders.id, id));
+          if (ord) {
+            // Unlink payment references
+            if (ord.paymentId) {
+              await tx.update(payments).set({ orderId: null }).where(eq(payments.id, ord.paymentId));
             }
+            await tx.update(payments).set({ orderId: null }).where(eq(payments.orderId, id));
+            // Unlink order reference and reset status
+            await tx.update(orders).set({ paymentId: null, status: 'pending' }).where(eq(orders.id, id));
           }
-        } 
-        
-        else if (action === 'delete_invoice') {
-          await tx.update(payments).set({ invoiceId: null }).where(eq(payments.invoiceId, id));
-          await tx.update(invoices).set({ paymentId: null }).where(eq(invoices.id, id));
-          await tx.delete(invoices).where(eq(invoices.id, id));
         } 
         
         else if (action === 'delete_order') {
@@ -77,7 +72,6 @@ export const POST: APIRoute = async (context) => {
         } 
         
         else if (action === 'delete_payment_and_links') {
-          await tx.update(invoices).set({ paymentId: null }).where(eq(invoices.paymentId, id));
           await tx.update(orders).set({ paymentId: null }).where(eq(orders.paymentId, id));
           await tx.delete(payments).where(eq(payments.id, id));
         } 
@@ -88,16 +82,10 @@ export const POST: APIRoute = async (context) => {
       }
     };
 
-    // better-sqlite3 dùng trong test không hỗ trợ async transaction qua db.transaction(),
-    // do đó ta phân biệt bằng isD1 để thực thi tương thích.
-    const isD1 = !(db as any).session?.client?.transaction;
-    if (isD1) {
-      await db.transaction(async (tx: any) => {
-        await executeAction(tx);
-      });
-    } else {
-      await executeAction(db);
-    }
+    // Execute actions directly on the db connection.
+    // This avoids transaction compatibility issues between Cloudflare D1 (async batch transaction)
+    // and Node.js better-sqlite3 (strictly synchronous transaction in unit tests).
+    await executeAction(db);
 
     // 4. Ghi log Audit để theo dõi lịch sử chỉnh sửa
     const ipAddress = context.clientAddress || 

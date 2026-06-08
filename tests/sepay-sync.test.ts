@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { getDb } from '../src/lib/db';
-import { customers, payments, users, invoices, config } from '../src/lib/db/schema';
+import { customers, payments, users, config, orders, services, customerServices } from '../src/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import path from 'path';
 import { POST as syncSepayHandler } from '../src/pages/api/payments/sync-sepay';
@@ -15,23 +15,20 @@ describe('SePay API Synchronization Endpoint - Integration Tests', () => {
   });
 
   beforeEach(async () => {
-    const { customerServices: csTable, orders: ordersTable, services: servicesTable } = await import('../src/lib/db/schema');
     // Clear databases
-    await db.update(invoices).set({ paymentId: null });
-    await db.update(ordersTable).set({ paymentId: null });
-    await db.update(payments).set({ invoiceId: null, orderId: null });
-    await db.delete(ordersTable);
-    await db.delete(csTable);
+    await db.update(orders).set({ paymentId: null });
+    await db.update(payments).set({ orderId: null });
+    await db.delete(orders);
+    await db.delete(customerServices);
     await db.delete(payments);
-    await db.delete(invoices);
     await db.delete(customers);
     await db.delete(users);
     await db.delete(config);
-    await db.delete(servicesTable);
+    await db.delete(services);
 
     // Seed default service
     const serviceId = 'srv-test-sync-1';
-    await db.insert(servicesTable).values({
+    await db.insert(services).values({
       id: serviceId,
       name: 'Default Service',
       price: 100000,
@@ -252,7 +249,7 @@ describe('SePay API Synchronization Endpoint - Integration Tests', () => {
     expect(data2.duplicates).toBe(1); // Caught by duplicate handler!
   });
 
-  it('should auto-match customer and invoice correctly using custom classification rules', async () => {
+  it('should auto-match customer and order correctly using custom classification rules', async () => {
     process.env.SEPAY_API_TOKEN = 'mock-sepay-token-api';
 
     // 1. Seed custom classification rules
@@ -263,13 +260,6 @@ describe('SePay API Synchronization Endpoint - Integration Tests', () => {
         type: 'in',
         category: 'revenue',
         taxCategory: 'Customer Payment',
-      },
-      {
-        matchType: 'auto_invoice',
-        pattern: '',
-        type: 'in',
-        category: 'revenue',
-        taxCategory: 'Invoice Payment',
       }
     ];
     await db.insert(config).values({
@@ -280,11 +270,11 @@ describe('SePay API Synchronization Endpoint - Integration Tests', () => {
       set: { value: JSON.stringify(rules) },
     });
 
-    // Seed an invoice to be matched
-    await db.insert(invoices).values({
-      id: 'inv-100',
+    // Seed an order to be matched
+    await db.insert(orders).values({
+      id: 'ord-100',
       customerId: '1005',
-      invoiceNumber: 'PO202630',
+      orderNumber: 'ORD-202630',
       amount: 150000,
       content: 'Purchase Order 202630',
       status: 'pending',
@@ -294,7 +284,7 @@ describe('SePay API Synchronization Endpoint - Integration Tests', () => {
     globalThis.fetch = mockFetch;
 
     // Call sync with a transaction that should match the customer auto-match rule
-    // and another transaction that should match the invoice auto-match rule
+    // and another transaction that should match the order auto-match
     mockFetch.mockResolvedValueOnce({
       ok: true,
       json: async () => ({
@@ -319,7 +309,7 @@ describe('SePay API Synchronization Endpoint - Integration Tests', () => {
             transaction_date: '2026-05-22 16:10:00',
             amount_in: 150000,
             amount_out: 0,
-            transaction_content: 'Thanh toan don PO202630 nhanh', // Has invoice PO202630 in text
+            transaction_content: 'Thanh toan don ORD-202630 nhanh', // Has order ORD-202630 in text
             reference_number: 'VCB_REF_88882',
             code: 'TX_CODE_88882',
           },
@@ -347,19 +337,19 @@ describe('SePay API Synchronization Endpoint - Integration Tests', () => {
     const p1 = await db.select().from(payments).where(eq(payments.transactionId, '88881'));
     expect(p1.length).toBe(1);
     expect(p1[0].customerId).toBe('1005');
-    expect(p1[0].invoiceId).toBeNull();
+    expect(p1[0].orderId).not.toBeNull();
 
-    // Verify invoice auto-matched payment & status update
+    // Verify order auto-matched payment & status update
     const p2 = await db.select().from(payments).where(eq(payments.transactionId, '88882'));
     expect(p2.length).toBe(1);
-    expect(p2[0].customerId).toBe('1005'); // Got linked from the invoice's customer ID!
-    expect(p2[0].invoiceId).toBe('inv-100'); // Linked directly to the invoice!
+    expect(p2[0].customerId).toBe('1005'); // Got linked from the order's customer ID!
+    expect(p2[0].orderId).toBe('ord-100'); // Linked directly to the order!
 
-    // Verify invoice status updated to 'paid'
-    const inv = await db.select().from(invoices).where(eq(invoices.id, 'inv-100'));
-    expect(inv.length).toBe(1);
-    expect(inv[0].status).toBe('paid');
-    expect(inv[0].paidAt).not.toBeNull();
+    // Verify order status updated to 'paid'
+    const ord = await db.select().from(orders).where(eq(orders.id, 'ord-100'));
+    expect(ord.length).toBe(1);
+    expect(ord[0].status).toBe('paid');
+    expect(ord[0].paidAt).not.toBeNull();
   });
 
   it('should append account_number parameter to SePay URL when defaultAccount is configured', async () => {

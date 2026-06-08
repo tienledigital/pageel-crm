@@ -11,9 +11,9 @@ import {
   createOrderFromPayment,
   syncCustomerServices
 } from '@/lib/services/serviceManager';
-import { customers, staff, payments, invoices, customerServices, services, users, orders } from '@/lib/db/schema';
+import { customers, staff, payments, customerServices, services, users, orders } from '@/lib/db/schema';
 import { createSessionCookie } from '@/lib/auth';
-import { POST as createInvoiceHandler } from '@/pages/api/crm/payments/create-invoice';
+import { POST as reconcilePaymentHandler } from '@/pages/api/crm/payments/reconcile';
 import { GET as getServicesHandler, POST as createServiceHandler } from '@/pages/api/crm/services/index';
 import { PUT as updateServiceHandler, DELETE as deleteServiceHandler } from '@/pages/api/crm/services/[id]';
 
@@ -297,7 +297,7 @@ describe('Late Association API Endpoint - Integration Tests', () => {
     if (token) {
       cookiesMap.set('session', { value: token });
     }
-    const request = new Request('http://localhost/api/crm/payments/create-invoice', {
+    const request = new Request('http://localhost/api/crm/payments/reconcile', {
       method: 'POST',
       body: body ? JSON.stringify(body) : undefined,
       headers: { 'Content-Type': 'application/json' }
@@ -314,23 +314,23 @@ describe('Late Association API Endpoint - Integration Tests', () => {
 
   it('should return 401 Unauthorized if user session cookie is missing', async () => {
     const context = createMockContext({ paymentId: 'PAY-1' });
-    const response = await createInvoiceHandler(context);
+    const response = await reconcilePaymentHandler(context);
     expect(response.status).toBe(401);
   });
 
   it('should return 403 Forbidden if user is saler', async () => {
     const context = createMockContext({ paymentId: 'PAY-1' }, salerToken);
-    const response = await createInvoiceHandler(context);
+    const response = await reconcilePaymentHandler(context);
     expect(response.status).toBe(403);
   });
 
   it('should return 400 Bad Request if required body parameter is missing', async () => {
     const context = createMockContext({ customerId: 'CUST-101' }, staffToken);
-    const response = await createInvoiceHandler(context);
+    const response = await reconcilePaymentHandler(context);
     expect(response.status).toBe(400);
   });
 
-  it('should successfully associate payment, create invoice and activate customer service', async () => {
+  it('should successfully associate payment to order and activate customer service', async () => {
     const db = getDb();
     
     // Seed database entities
@@ -338,6 +338,7 @@ describe('Late Association API Endpoint - Integration Tests', () => {
     const staffId = 'STAFF-API-1';
     const serviceId = 'srv-api-1';
     const paymentId = 'PAY-API-1';
+    const orderId = 'ORD-API-1';
 
     await db.insert(customers).values({
       id: customerId,
@@ -377,27 +378,40 @@ describe('Late Association API Endpoint - Integration Tests', () => {
       type: 'in'
     });
 
+    await db.insert(orders).values({
+      id: orderId,
+      customerId,
+      staffId,
+      serviceId,
+      orderNumber: 'ORD-API-1',
+      amount: 200000,
+      content: 'API order content',
+      status: 'pending',
+      createdAt: Date.now()
+    });
+
     const body = {
       paymentId,
       customerId,
-      serviceId,
-      startDate: Date.now(),
-      expiredAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
-      customPrice: 200000
+      orderId,
+      category: 'revenue'
     };
 
     const context = createMockContext(body, staffToken);
-    const response = await createInvoiceHandler(context);
+    const response = await reconcilePaymentHandler(context);
     expect(response.status).toBe(200);
 
     const data = await response.json();
     expect(data.success).toBe(true);
-    expect(data.orderId).toBeDefined();
 
     // Verify DB
-    const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).get();
+    const order = await db.select().from(orders).where(eq(orders.id, orderId)).get();
     expect(order.status).toBe('paid');
     expect(order.paymentId).toBe(paymentId);
+
+    const payment = await db.select().from(payments).where(eq(payments.id, paymentId)).get();
+    expect(payment.orderId).toBe(orderId);
+    expect(payment.customerId).toBe(customerId);
   });
 });
 

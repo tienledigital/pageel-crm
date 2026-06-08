@@ -13,9 +13,9 @@ process.env.SEPAY_WEBHOOK_SECRET = WEBHOOK_SECRET;
 
 describe('Sepay Reconciliation Unit Tests', () => {
   describe('Schema Check (TDD)', () => {
-    it('should have orders table, taxInvoiceNumber in invoices, and orderId in payments', () => {
+    it('should have orders table, taxInvoiceNumber in orders, and orderId in payments', () => {
       expect((schema as any).orders).toBeDefined();
-      expect((schema as any).invoices.taxInvoiceNumber).toBeDefined();
+      expect((schema as any).orders.taxInvoiceNumber).toBeDefined();
       expect((schema as any).payments.orderId).toBeDefined();
     });
   });
@@ -58,15 +58,13 @@ describe('Database Reconciliation Integration Tests', () => {
     migrate(db, { migrationsFolder: path.join(__dirname, '../drizzle') });
 
     // Reset DB state
-    const { customerServices: csTable, services: sTable, invoices: iTable, auditLogs: auditLogsTable, orders: ordersTable } = await import('@/lib/db/schema');
-    await db.update(iTable).set({ paymentId: null });
+    const { customerServices: csTable, services: sTable, auditLogs: auditLogsTable, orders: ordersTable } = await import('@/lib/db/schema');
     await db.update(ordersTable).set({ paymentId: null });
-    await db.update(payments).set({ invoiceId: null, orderId: null });
+    await db.update(payments).set({ orderId: null });
     await db.delete(auditLogsTable);
     await db.delete(ordersTable);
     await db.delete(csTable);
     await db.delete(payments);
-    await db.delete(iTable);
     await db.delete(customers);
     await db.delete(staff);
     await db.delete(users);
@@ -600,15 +598,13 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
     
     migrate(db, { migrationsFolder: path.join(__dirname, '../drizzle') });
 
-    const { customerServices: csTable, services: sTable, invoices: iTable, auditLogs: auditLogsTable, orders: ordersTable } = await import('@/lib/db/schema');
-    await db.update(iTable).set({ paymentId: null });
+    const { customerServices: csTable, services: sTable, auditLogs: auditLogsTable, orders: ordersTable } = await import('@/lib/db/schema');
     await db.update(ordersTable).set({ paymentId: null });
-    await db.update(payments).set({ invoiceId: null, orderId: null });
+    await db.update(payments).set({ orderId: null });
     await db.delete(auditLogsTable);
     await db.delete(ordersTable);
     await db.delete(csTable);
     await db.delete(payments);
-    await db.delete(iTable);
     await db.delete(customers);
     await db.delete(staff);
     await db.delete(users);
@@ -941,24 +937,25 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
       }, SESSION_SECRET);
     });
 
-    it('should update taxInvoiceNumber on invoice via PATCH (TDD)', async () => {
-      const { invoices: invoicesTable } = await import('@/lib/db/schema');
-      // Seed a PO invoice
-      await db.insert(invoicesTable).values({
-        id: 'inv-test-po-1',
-        invoiceNumber: 'PO-20260604-0001',
+    it('should update taxInvoiceNumber on order via POST (TDD)', async () => {
+      const { orders: ordersTable } = await import('@/lib/db/schema');
+      // Seed an order
+      await db.insert(ordersTable).values({
+        id: 'ord-test-tax-1',
+        orderNumber: 'ORD-20260604-9999',
         amount: 200000,
-        content: 'PO manual content',
+        content: 'Order manual content',
         status: 'pending',
       });
 
-      const { PATCH: patchTaxNumberHandler } = await import('../src/pages/api/crm/invoices/[id]/tax-number');
-      const context = createMockContextForApi('PATCH', { taxInvoiceNumber: 'VAT-12345' }, adminToken, { id: 'inv-test-po-1' });
-      const response = await patchTaxNumberHandler(context);
+      const { POST: postTaxInvoiceHandler } = await import('../src/pages/api/crm/orders/[id]/tax-invoice');
+      const context = createMockContextForApi('POST', { taxInvoiceNumber: 'VAT-12345', taxInvoiceDate: '2026-06-08' }, adminToken, { id: 'ord-test-tax-1' });
+      const response = await postTaxInvoiceHandler(context);
       expect(response.status).toBe(200);
 
-      const [updatedInvoice] = await db.select().from(invoicesTable).where(eq(invoicesTable.id, 'inv-test-po-1'));
-      expect(updatedInvoice.taxInvoiceNumber).toBe('VAT-12345');
+      const [updatedOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, 'ord-test-tax-1'));
+      expect(updatedOrder.taxInvoiceNumber).toBe('VAT-12345');
+      expect(updatedOrder.taxInvoiceDate).toBe(new Date('2026-06-08').getTime());
     });
 
     it('should list automatic orders via GET (TDD)', async () => {

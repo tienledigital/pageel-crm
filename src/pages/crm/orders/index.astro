@@ -28,6 +28,8 @@ const servicesList = await db.select({
 const url = new URL(Astro.request.url);
 const search = url.searchParams.get('search') || '';
 const statusFilter = url.searchParams.get('status') || ''; // 'paid', 'pending', 'partially_paid', 'cancelled'
+const startDateParam = url.searchParams.get('startDate') || '';
+const endDateParam = url.searchParams.get('endDate') || '';
 
 // 2. Build where clause
 const conditions = [];
@@ -44,6 +46,16 @@ if (search) {
 
 if (statusFilter) {
   conditions.push(eq(orders.status, statusFilter));
+}
+
+if (startDateParam) {
+  const startTs = new Date(startDateParam + 'T00:00:00+07:00').getTime();
+  conditions.push(sql`${orders.createdAt} >= ${startTs}`);
+}
+
+if (endDateParam) {
+  const endTs = new Date(endDateParam + 'T23:59:59+07:00').getTime();
+  conditions.push(sql`${orders.createdAt} <= ${endTs}`);
 }
 
 const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -64,12 +76,24 @@ const orderList = await db
     serviceId: orders.serviceId,
     startDate: orders.startDate,
     expiredAt: orders.expiredAt,
+    taxInvoiceNumber: orders.taxInvoiceNumber,
+    taxInvoiceDate: orders.taxInvoiceDate,
   })
   .from(orders)
   .leftJoin(customers, eq(orders.customerId, customers.id))
   .leftJoin(staff, eq(orders.staffId, staff.id))
   .where(whereClause)
   .orderBy(desc(orders.createdAt));
+
+// Count and sum of tax invoices
+const taxInvoiceStatsQuery = await db
+  .select({
+    count: sql<number>`COUNT(CASE WHEN ${orders.taxInvoiceNumber} IS NOT NULL THEN 1 END)`,
+    totalAmount: sql<number>`SUM(CASE WHEN ${orders.taxInvoiceNumber} IS NOT NULL THEN ${orders.amount} ELSE 0 END)`,
+  })
+  .from(orders);
+const taxInvoiceCount = Number(taxInvoiceStatsQuery[0]?.count || 0);
+const taxInvoiceAmount = Number(taxInvoiceStatsQuery[0]?.totalAmount || 0);
 
 // 4. Calculate Order Metrics
 const stats = await db
@@ -117,6 +141,15 @@ function formatDate(timestamp: number | null) {
     month: '2-digit',
     day: '2-digit',
   });
+}
+
+function formatDateInput(timestamp: number | null) {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 ---
 
@@ -620,6 +653,20 @@ function formatDate(timestamp: number | null) {
         <span style="font-size: 0.75rem; color: var(--text-secondary);">{lang === 'vi' ? `${countPending} chờ thanh toán, ${countPartial} một phần` : `${countPending} pending, ${countPartial} partial`}</span>
       </div>
     </div>
+
+    <!-- VAT Invoices -->
+    <div class="stat-card">
+      <div class="stat-icon collected" style="background-color: rgba(16, 185, 129, 0.1); color: var(--success);">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 24px; height: 24px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      </div>
+      <div class="stat-details">
+        <span class="stat-label">{lang === 'vi' ? 'Hóa đơn đỏ đã xuất' : 'VAT Invoices'}</span>
+        <span class="stat-value" style="color: var(--success);">{formatVND(taxInvoiceAmount)}</span>
+        <span style="font-size: 0.75rem; color: var(--text-secondary);">{lang === 'vi' ? `${taxInvoiceCount} hóa đơn` : `${taxInvoiceCount} invoices`}</span>
+      </div>
+    </div>
   </div>
 
   <!-- Filters -->
@@ -631,6 +678,12 @@ function formatDate(timestamp: number | null) {
       value={search} 
       class="search-input" 
     />
+    <div style="display: flex; gap: 0.5rem; align-items: center;">
+      <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">{lang === 'vi' ? 'Từ' : 'From'}</span>
+      <input type="date" name="startDate" value={startDateParam} class="select-filter" />
+      <span style="font-size: 0.8rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">{lang === 'vi' ? 'Đến' : 'To'}</span>
+      <input type="date" name="endDate" value={endDateParam} class="select-filter" />
+    </div>
     <select name="status" class="select-filter">
       <option value="">{lang === 'vi' ? 'Tất cả trạng thái' : 'All Statuses'}</option>
       <option value="paid" selected={statusFilter === 'paid'}>{lang === 'vi' ? 'Đã thanh toán (Paid)' : 'Paid'}</option>
@@ -639,7 +692,7 @@ function formatDate(timestamp: number | null) {
       <option value="cancelled" selected={statusFilter === 'cancelled'}>{lang === 'vi' ? 'Đã hủy (Cancelled)' : 'Cancelled'}</option>
     </select>
     <button type="submit" class="btn-filter">{lang === 'vi' ? 'Lọc đơn hàng' : 'Apply Filters'}</button>
-    {(search || statusFilter) && (
+    {(search || statusFilter || startDateParam || endDateParam) && (
       <a href="/crm/orders" class="btn-reset">{lang === 'vi' ? 'Đặt lại' : 'Reset'}</a>
     )}
   </form>
@@ -656,6 +709,7 @@ function formatDate(timestamp: number | null) {
             <th>{lang === 'vi' ? 'Mô tả / Nội dung' : 'Description'}</th>
             <th>{lang === 'vi' ? 'Số tiền' : 'Amount'}</th>
             <th>{lang === 'vi' ? 'Trạng thái' : 'Status'}</th>
+            <th>{lang === 'vi' ? 'Hóa đơn VAT' : 'VAT Invoice'}</th>
             <th>{lang === 'vi' ? 'Ngày phát hành' : 'Issued Date'}</th>
             <th>{lang === 'vi' ? 'Thao tác' : 'Actions'}</th>
           </tr>
@@ -707,17 +761,39 @@ function formatDate(timestamp: number | null) {
                   </span>
                 </td>
                 <td>
+                  {order.taxInvoiceNumber ? (
+                    <div style="display: flex; flex-direction: column; gap: 0.15rem;">
+                      <span class="mono" style="font-weight: 600; color: var(--success);">🧾 {order.taxInvoiceNumber}</span>
+                      {order.taxInvoiceDate && (
+                        <span style="font-size: 0.75rem; color: var(--text-secondary);">{formatDate(order.taxInvoiceDate)}</span>
+                      )}
+                    </div>
+                  ) : (
+                    <span style="color: var(--text-secondary); font-style: italic; font-size: 0.8rem;">{lang === 'vi' ? 'Chưa xuất' : 'Not issued'}</span>
+                  )}
+                </td>
+                <td>
                   <span>{formatDate(order.createdAt)}</span>
                 </td>
-                <td style="display: flex; gap: 0.25rem; align-items: center;">
+                <td style="display: flex; gap: 0.25rem; align-items: center; flex-wrap: wrap;">
                   <a href={`/crm/qr-tool?orderId=${order.id}`} class="btn-action">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 14px; height: 14px;">
                       <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 013.75 9.375v-4.5zM3.75 14.625c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5a1.125 1.125 0 01-1.125-1.125v-4.5zM13.5 4.875c0-.621.504-1.125 1.125-1.125h4.5c.621 0 1.125.504 1.125 1.125v4.5c0 .621-.504 1.125-1.125 1.125h-4.5A1.125 1.125 0 0113.5 9.375v-4.5zM6.75 6.75h.75v.75h-.75v-.75zM6.75 16.5h.75v.75h-.75v-.75zM16.5 6.75h.75v.75h-.75v-.75zM13.5 13.5h.75v.75h-.75v-.75zM16.5 16.5h.75v.75h-.75v-.75zM13.5 16.5h.75v.75h-.75v-.75zM16.5 13.5h.75v.75h-.75v-.75z" />
                     </svg>
-                    {lang === 'vi' ? 'Thanh toán QR' : 'Pay QR'}
+                    {lang === 'vi' ? 'Thanh toán' : 'Pay'}
                   </a>
                   {(user?.role === 'admin' || user?.role === 'accountant') && (
                     <>
+                      <button 
+                        type="button" 
+                        class="btn-action btn-tax-invoice" 
+                        data-id={order.id}
+                        data-number={order.orderNumber}
+                        data-tax-number={order.taxInvoiceNumber || ''}
+                        data-tax-date={order.taxInvoiceDate ? formatDateInput(order.taxInvoiceDate) : ''}
+                      >
+                        🧾 {lang === 'vi' ? 'Hoá Đơn' : 'VAT'}
+                      </button>
                       <button 
                         type="button" 
                         class="btn-action btn-edit-order" 
@@ -797,6 +873,12 @@ function formatDate(timestamp: number | null) {
                 </div>
               )}
               <div class="mobile-card-row">
+                <span class="mobile-card-label">{lang === 'vi' ? 'Hóa đơn VAT' : 'VAT Invoice'}</span>
+                <span class="mobile-card-value mono">
+                  {order.taxInvoiceNumber ? `🧾 ${order.taxInvoiceNumber}` : (lang === 'vi' ? 'Chưa xuất' : 'Not issued')}
+                </span>
+              </div>
+              <div class="mobile-card-row">
                 <span class="mobile-card-label">{lang === 'vi' ? 'Nhân sự' : 'Staff'}</span>
                 <span class="mobile-card-value" style="font-size: 0.75rem; color: var(--text-secondary);">{order.staffName || (lang === 'vi' ? 'Hệ thống' : 'System')}</span>
               </div>
@@ -810,7 +892,18 @@ function formatDate(timestamp: number | null) {
                 {lang === 'vi' ? 'Thanh toán' : 'Pay'}
               </a>
               {(user?.role === 'admin' || user?.role === 'accountant') && (
-                <div style="display: flex; gap: 0.5rem; width: 100%; margin-top: 0.25rem;">
+                <div style="display: flex; gap: 0.25rem; width: 100%; margin-top: 0.25rem; flex-wrap: wrap;">
+                  <button 
+                    type="button" 
+                    class="btn-action btn-tax-invoice" 
+                    data-id={order.id}
+                    data-number={order.orderNumber}
+                    data-tax-number={order.taxInvoiceNumber || ''}
+                    data-tax-date={order.taxInvoiceDate ? formatDateInput(order.taxInvoiceDate) : ''}
+                    style="flex: 1; justify-content: center; min-width: 80px;"
+                  >
+                    🧾 Hoá Đơn
+                  </button>
                   <button 
                     type="button" 
                     class="btn-action btn-edit-order" 
@@ -820,7 +913,7 @@ function formatDate(timestamp: number | null) {
                     data-start-date={order.startDate || ''}
                     data-expired-at={order.expiredAt || ''}
                     data-number={order.orderNumber}
-                    style="flex: 1; justify-content: center;"
+                    style="flex: 1; justify-content: center; min-width: 60px;"
                   >
                     ✏️ {lang === 'vi' ? 'Sửa' : 'Edit'}
                   </button>
@@ -829,7 +922,7 @@ function formatDate(timestamp: number | null) {
                     class="btn-action btn-delete-order" 
                     data-id={order.id}
                     data-number={order.orderNumber}
-                    style="flex: 1; justify-content: center; color: var(--error);"
+                    style="flex: 1; justify-content: center; color: var(--error;); min-width: 60px;"
                   >
                     🗑️ {lang === 'vi' ? 'Xóa' : 'Delete'}
                   </button>
@@ -946,6 +1039,34 @@ function formatDate(timestamp: number | null) {
         <div class="modal-footer" style="margin-top: 1.5rem;">
           <button type="button" class="btn-cancel" id="editOrderModalCancelBtn">{lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}</button>
           <button type="submit" class="btn-filter" id="editOrderSubmitBtn" style="padding: 0.65rem 1.25rem;">{lang === 'vi' ? 'Cập nhật' : 'Update'}</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Tax Invoice Modal -->
+  <div class="modal-backdrop" id="taxInvoiceModal">
+    <div class="modal-content" style="max-width: 450px;">
+      <div class="modal-header">
+        <h3>{lang === 'vi' ? 'Cập nhật hóa đơn đỏ' : 'Update VAT Invoice'} <span id="taxOrderNumber" class="mono"></span></h3>
+        <button class="modal-close" id="taxInvoiceModalCloseBtn">&times;</button>
+      </div>
+      <form id="taxInvoiceForm" style="display: flex; flex-direction: column;">
+        <input type="hidden" id="taxOrderId" />
+        
+        <div class="form-group">
+          <label for="taxInvoiceNumberInput">{lang === 'vi' ? 'Số hóa đơn đỏ' : 'Tax Invoice Number'}</label>
+          <input type="text" id="taxInvoiceNumberInput" class="form-input" placeholder="Ví dụ: HD000123" />
+        </div>
+
+        <div class="form-group">
+          <label for="taxInvoiceDateInput">{lang === 'vi' ? 'Ngày xuất hóa đơn' : 'Invoice Issued Date'}</label>
+          <input type="date" id="taxInvoiceDateInput" class="form-input" />
+        </div>
+
+        <div class="modal-footer" style="margin-top: 1.5rem;">
+          <button type="button" class="btn-cancel" id="taxInvoiceModalCancelBtn">{lang === 'vi' ? 'Hủy bỏ' : 'Cancel'}</button>
+          <button type="submit" class="btn-filter" id="taxInvoiceSubmitBtn" style="padding: 0.65rem 1.25rem;">{lang === 'vi' ? 'Cập nhật' : 'Update'}</button>
         </div>
       </form>
     </div>
@@ -1085,6 +1206,83 @@ function formatDate(timestamp: number | null) {
           alert('Có lỗi xảy ra trong quá trình gửi yêu cầu!');
           submitBtn.disabled = false;
           submitBtn.textContent = originalText;
+        }
+      });
+    }
+
+    // Tax Invoice Modal Logic
+    const taxModal = document.getElementById('taxInvoiceModal');
+    const taxCloseBtn = document.getElementById('taxInvoiceModalCloseBtn');
+    const taxCancelBtn = document.getElementById('taxInvoiceModalCancelBtn');
+    const taxForm = document.getElementById('taxInvoiceForm');
+    const taxSubmitBtn = document.getElementById('taxInvoiceSubmitBtn');
+
+    const taxOrderIdInput = document.getElementById('taxOrderId');
+    const taxOrderNumberSpan = document.getElementById('taxOrderNumber');
+    const taxInvoiceNumberInput = document.getElementById('taxInvoiceNumberInput');
+    const taxInvoiceDateInput = document.getElementById('taxInvoiceDateInput');
+
+    document.querySelectorAll('.btn-tax-invoice').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.getAttribute('data-id');
+        const number = btn.getAttribute('data-number');
+        const taxNumber = btn.getAttribute('data-tax-number');
+        const taxDate = btn.getAttribute('data-tax-date');
+
+        taxOrderIdInput.value = id;
+        taxOrderNumberSpan.textContent = `(${number})`;
+        taxInvoiceNumberInput.value = taxNumber || '';
+        taxInvoiceDateInput.value = taxDate || '';
+
+        if (taxModal) taxModal.style.display = 'flex';
+      });
+    });
+
+    const closeTaxModal = () => {
+      if (taxModal) taxModal.style.display = 'none';
+    };
+
+    if (taxCloseBtn) taxCloseBtn.addEventListener('click', closeTaxModal);
+    if (taxCancelBtn) taxCancelBtn.addEventListener('click', closeTaxModal);
+
+    window.addEventListener('click', (e) => {
+      if (e.target === taxModal) closeTaxModal();
+    });
+
+    if (taxForm) {
+      taxForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const orderId = taxOrderIdInput.value;
+        const taxInvoiceNumber = taxInvoiceNumberInput.value.trim() || null;
+        const dateVal = taxInvoiceDateInput.value;
+        const taxInvoiceDate = dateVal ? new Date(dateVal).getTime() : null;
+
+        taxSubmitBtn.disabled = true;
+        const originalText = taxSubmitBtn.textContent;
+        taxSubmitBtn.textContent = 'Đang cập nhật...';
+
+        try {
+          const response = await fetch(`/api/crm/orders/${orderId}/tax-invoice`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ taxInvoiceNumber, taxInvoiceDate })
+          });
+
+          const resData = await response.json();
+          if (response.ok && resData.success) {
+            alert('Cập nhật hóa đơn đỏ thành công!');
+            window.location.reload();
+          } else {
+            alert('Lỗi: ' + (resData.error || 'Không xác định'));
+            taxSubmitBtn.disabled = false;
+            taxSubmitBtn.textContent = originalText;
+          }
+        } catch (error) {
+          console.error(error);
+          alert('Có lỗi xảy ra khi cập nhật hóa đơn đỏ!');
+          taxSubmitBtn.disabled = false;
+          taxSubmitBtn.textContent = originalText;
         }
       });
     }

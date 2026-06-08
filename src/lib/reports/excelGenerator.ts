@@ -11,10 +11,12 @@ export interface ExportPayment {
     id: string;
     fullName: string;
   } | null;
-  invoice?: {
+  order?: {
     id: string;
-    invoiceNumber: string;
+    orderNumber: string;
     content: string;
+    taxInvoiceNumber?: string | null;
+    taxInvoiceDate?: number | null;
   } | null;
   serviceName?: string | null;
 }
@@ -34,13 +36,13 @@ const getPaymentDescription = (payment: ExportPayment): string => {
   if (payment.customer) {
     const id = payment.customer.id;
     const name = payment.customer.fullName;
-    const service = payment.invoice 
-      ? payment.invoice.content 
+    const service = payment.order 
+      ? payment.order.content 
       : (payment.serviceName ? payment.serviceName : 'TT GIA HAN');
     return `${id} - ${name} - ${service}`;
   }
-  if (payment.invoice) {
-    return `INVOICE ${payment.invoice.invoiceNumber} - ${payment.invoice.content}`;
+  if (payment.order) {
+    return `ORDER ${payment.order.orderNumber} - ${payment.order.content}`;
   }
   return payment.content ? payment.content : 'KHACH VANG LAI - THANH TOAN';
 };

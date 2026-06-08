@@ -2,7 +2,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { payments, invoices, orders } from '@/lib/db/schema';
+import { payments, orders } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { syncCustomerServices } from '@/lib/services/serviceManager';
@@ -32,7 +32,7 @@ export const POST: APIRoute = async (context) => {
 
     // 2. Parse body parameters
     const body = await context.request.json();
-    const { paymentId, customerId, invoiceId, category, taxCategory, unlinkOrder } = body;
+    const { paymentId, customerId, orderId, category, taxCategory, unlinkOrder } = body;
 
     if (!paymentId) {
       return new Response(JSON.stringify({ error: 'Payment ID is required' }), {
@@ -84,13 +84,13 @@ export const POST: APIRoute = async (context) => {
       });
     }
 
-    // If the payment was previously linked to an invoice, we might want to revert that invoice to 'pending'
-    // if the user is unlinking it or linking to a different invoice.
-    if (currentPayment.invoiceId && currentPayment.invoiceId !== invoiceId) {
+    // If the payment was previously linked to an order, we might want to revert that order to 'pending'
+    // if the user is unlinking it or linking to a different order.
+    if (currentPayment.orderId && currentPayment.orderId !== orderId) {
       await db
-        .update(invoices)
-        .set({ status: 'pending', paidAt: null })
-        .where(eq(invoices.id, currentPayment.invoiceId));
+        .update(orders)
+        .set({ status: 'pending', paidAt: null, paymentId: null })
+        .where(eq(orders.id, currentPayment.orderId));
     }
 
     // 4. Update the payment record with new links and category classifications
@@ -99,21 +99,22 @@ export const POST: APIRoute = async (context) => {
       .update(payments)
       .set({
         customerId: customerId || null,
-        invoiceId: invoiceId || null,
+        orderId: orderId || null,
         category: finalCategory,
         taxCategory: taxCategory !== undefined ? taxCategory : currentPayment.taxCategory,
       })
       .where(eq(payments.id, paymentId));
 
-    // 5. If linked to an invoice, update the invoice status to paid
-    if (invoiceId) {
+    // 5. If linked to an order, update the order status to paid
+    if (orderId) {
       await db
-        .update(invoices)
+        .update(orders)
         .set({
           status: 'paid',
           paidAt: currentPayment.paidAt || Date.now(),
+          paymentId: paymentId,
         })
-        .where(eq(invoices.id, invoiceId));
+        .where(eq(orders.id, orderId));
     }
 
     return new Response(JSON.stringify({ success: true }), {
@@ -187,12 +188,12 @@ export const DELETE: APIRoute = async (context) => {
     }
     const currentPayment = existingPayments[0];
 
-    // 4. Revert linked invoice status to pending
-    if (currentPayment.invoiceId) {
+    // 4. Revert linked order status to pending
+    if (currentPayment.orderId) {
       await db
-        .update(invoices)
-        .set({ status: 'pending', paidAt: null })
-        .where(eq(invoices.id, currentPayment.invoiceId));
+        .update(orders)
+        .set({ status: 'pending', paidAt: null, paymentId: null })
+        .where(eq(orders.id, currentPayment.orderId));
     }
 
     // 5. Delete payment

@@ -8,12 +8,14 @@ import {
   users,
   customers,
   staff,
-  invoices,
+  orders,
   payments,
   config,
   syncLogs,
   auditLogs,
-  debugLogs
+  debugLogs,
+  services,
+  customerServices
 } from '@/lib/db/schema';
 
 // @para-doc [administration-guide.md#5-bao-tri-co-so-du-lieu--giai-phong-dung-luong-database-maintenance]
@@ -44,12 +46,14 @@ export const GET: APIRoute = async (context) => {
       { name: 'users', schema: users },
       { name: 'customers', schema: customers },
       { name: 'staff', schema: staff },
-      { name: 'invoices', schema: invoices },
+      { name: 'orders', schema: orders },
       { name: 'payments', schema: payments },
       { name: 'config', schema: config },
       { name: 'sync_logs', schema: syncLogs },
       { name: 'audit_logs', schema: auditLogs },
-      { name: 'debug_logs', schema: debugLogs }
+      { name: 'debug_logs', schema: debugLogs },
+      { name: 'services', schema: services },
+      { name: 'customer_services', schema: customerServices }
     ];
 
     const tablesStats = [];

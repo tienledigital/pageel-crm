@@ -1,6 +1,6 @@
 // @para-doc [sepay-integration.md#reconciliation-logic]
 import { eq, sql, and } from 'drizzle-orm';
-import { customers, payments, config, invoices, services, customerServices, orders } from './db/schema';
+import { customers, payments, config, services, customerServices, orders } from './db/schema';
 
 /**
  * Parses customer ID from payment transfer memo content.
@@ -68,41 +68,33 @@ export async function autoMatchCustomer(db: any, content: string): Promise<strin
 }
 
 /**
- * Scans transaction memo content to automatically match any existing invoice number.
+ * Sums up all payments associated with a given order.
+ * If the sum of payments equals or exceeds the order amount, updates status to 'paid'.
  */
-// @para-doc [sepay-integration.md#memo-parsing]
-export async function autoMatchInvoice(
-  db: any,
-  content: string
-): Promise<{ invoiceId: string; customerId: string | null } | null> {
-  if (!content) return null;
+export async function checkAndUnionPartialOrderPayments(db: any, orderId: string): Promise<boolean> {
+  const order = await db.select().from(orders).where(eq(orders.id, orderId)).get();
+  if (!order) return false;
 
-  // Find all word tokens (alphanumeric sequences, allowing dashes for formats like PO-2026-01)
-  const tokens = content.match(/[a-zA-Z0-9-]+/g);
-  if (!tokens) return null;
+  // Calculates sum(payments.amount) for the target order
+  const result = await db
+    .select({
+      total: sql<number>`sum(${payments.amount})`
+    })
+    .from(payments)
+    .where(eq(payments.orderId, orderId))
+    .get();
 
-  for (const token of tokens) {
-    const cleaned = token.trim();
-    if (cleaned.length < 3) continue;
-
-    const matched = await db
-      .select()
-      .from(invoices)
-      .where(sql`LOWER(${invoices.invoiceNumber}) = ${cleaned.toLowerCase()}`);
-    if (matched.length > 0) {
-      return {
-        invoiceId: matched[0].id,
-        customerId: matched[0].customerId,
-      };
-    }
+  const totalPaid = result?.total || 0;
+  if (totalPaid >= order.amount) {
+    await db
+      .update(orders)
+      .set({ status: 'paid', paidAt: Date.now(), updatedAt: Date.now() })
+      .where(eq(orders.id, orderId));
+    return true;
   }
-
-  return null;
+  return false;
 }
 
-/**
- * Scans transaction memo content to automatically match any existing order number.
- */
 // @para-doc [sepay-integration.md#memo-parsing]
 export async function autoMatchOrder(
   db: any,
@@ -140,35 +132,6 @@ export async function autoMatchOrder(
   return null;
 }
 
-/**
- * Sums up all payments associated with a given invoice.
- * If the sum of payments equals or exceeds the invoice amount, updates status to 'paid'.
- */
-// @para-doc [sepay-integration.md#reconciliation-logic]
-export async function checkAndUnionPartialPayments(db: any, invoiceId: string): Promise<boolean> {
-  const invoice = await db.select().from(invoices).where(eq(invoices.id, invoiceId)).get();
-  if (!invoice) return false;
-
-  // Calculates sum(payments.amount) for the target invoice
-  const result = await db
-    .select({
-      total: sql<number>`sum(${payments.amount})`
-    })
-    .from(payments)
-    .where(eq(payments.invoiceId, invoiceId))
-    .get();
-
-  const totalPaid = result?.total || 0;
-  if (totalPaid >= invoice.amount) {
-    await db
-      .update(invoices)
-      .set({ status: 'paid' })
-      .where(eq(invoices.id, invoiceId));
-    return true;
-  }
-  return false;
-}
-
 // @para-doc [sepay-integration.md#reconciliation-logic]
 export interface ReconcileResult {
   success: boolean;
@@ -194,7 +157,6 @@ export async function reconcilePayment(
     senderBank?: string;
     paidAt: number;
     type?: string;
-    invoiceId?: string;
   }
 ): Promise<ReconcileResult> {
   const isD1 = !db.session?.client?.transaction;
@@ -213,7 +175,6 @@ export async function reconcilePayment(
     }
 
     let targetCustomerId = 'CUST-ANONYMOUS';
-    let targetInvoiceId = payment.invoiceId || null;
     let targetOrderId: string | null = null;
     let paymentType = payment.type || 'in';
     let paymentCategory = 'non_revenue';
@@ -248,16 +209,6 @@ export async function reconcilePayment(
                   matchedRule = { ...rule, resolvedCustomerId: matchedCustId };
                   break;
                 }
-              } else if (rule.matchType === 'auto_invoice') {
-                const matchedInv = await autoMatchInvoice(tx, payment.content);
-                if (matchedInv) {
-                  matchedRule = { 
-                    ...rule, 
-                    resolvedInvoiceId: matchedInv.invoiceId, 
-                    resolvedCustomerId: matchedInv.customerId 
-                  };
-                  break;
-                }
               } else if (rule.pattern && paymentContentLower.includes(rule.pattern.toLowerCase())) {
                 matchedRule = rule;
                 break;
@@ -273,10 +224,6 @@ export async function reconcilePayment(
         paymentType = matchedRule.type || payment.type || 'in';
         taxCategory = matchedRule.taxCategory || null;
         paymentCategory = paymentType === 'out' ? 'non_revenue' : (matchedRule.category || 'non_revenue');
-        
-        if (matchedRule.resolvedInvoiceId) {
-          targetInvoiceId = matchedRule.resolvedInvoiceId;
-        }
 
         if (matchedRule.resolvedCustomerId) {
           targetCustomerId = matchedRule.resolvedCustomerId;
@@ -363,13 +310,20 @@ export async function reconcilePayment(
           }
         }
 
-        // Fallback to customer's configured serviceId
-        if (!matchedService && customerInfo && customerInfo.serviceId) {
-          matchedService = await tx.select().from(services).where(eq(services.id, customerInfo.serviceId)).get();
+        // Fallback: If no service matches by QR prefix, but the customer already has a service assigned, use it
+        if (!matchedService && customerInfo?.serviceId) {
+          const matched = await tx
+            .select()
+            .from(services)
+            .where(eq(services.id, customerInfo.serviceId))
+            .limit(1);
+          if (matched.length > 0) {
+            matchedService = matched[0];
+          }
         }
 
-        // If service is matched and no manual invoice or order is linked yet, generate an order
-        if (matchedService && !targetInvoiceId && !targetOrderId) {
+        // If service is matched and no order is linked yet, generate an order
+        if (matchedService && !targetOrderId) {
           let startDate = payment.paidAt;
           const existingCustomerService = await tx
             .select()
@@ -433,7 +387,6 @@ export async function reconcilePayment(
     try {
       await tx.insert(payments).values({
         id: paymentRecordId,
-        invoiceId: targetInvoiceId,
         orderId: targetOrderId,
         customerId: targetCustomerId,
         amount: payment.amount,
@@ -450,7 +403,7 @@ export async function reconcilePayment(
         taxCategory: taxCategory,
       });
     } catch (err: any) {
-      console.error('[Reconciliation] db.insert(payments) failed. InvoiceId:', targetInvoiceId, 'CustomerId:', targetCustomerId, 'Error:', err.message);
+      console.error('[Reconciliation] db.insert(payments) failed. CustomerId:', targetCustomerId, 'Error:', err.message);
       throw err;
     }
 
@@ -463,22 +416,6 @@ export async function reconcilePayment(
           .where(eq(orders.id, autoGeneratedOrderId));
       } catch (err: any) {
         console.error('[Reconciliation] Failed to link payment to auto-generated order:', err.message);
-        throw err;
-      }
-    }
-
-    // Link payment to the pre-existing matched invoice if matched and not paid yet
-    if (targetInvoiceId && !autoGeneratedOrderId) {
-      try {
-        const matchedInvoice = await tx.select().from(invoices).where(eq(invoices.id, targetInvoiceId)).get();
-        if (matchedInvoice && (matchedInvoice.status === 'pending' || matchedInvoice.status === 'partially_paid')) {
-          await tx
-            .update(invoices)
-            .set({ paymentId: paymentRecordId })
-            .where(eq(invoices.id, targetInvoiceId));
-        }
-      } catch (err) {
-        console.error('[Reconciliation] Failed to link payment to invoice:', err);
         throw err;
       }
     }
@@ -543,7 +480,7 @@ export async function reconcilePayment(
 }
 
 /**
- * Automatically scans and deducts from customer balance to pay off partially paid orders or invoices.
+ * Automatically scans and deducts from customer balance to pay off partially paid orders.
  */
 export async function reconcileCustomerWallet(db: any, customerId: string, paymentId?: string, preferredOrderId?: string): Promise<void> {
   const customer = await db.select().from(customers).where(eq(customers.id, customerId)).get();
@@ -564,71 +501,37 @@ export async function reconcileCustomerWallet(db: any, customerId: string, payme
     )
     .all();
 
-  // Fetch pending and partially paid invoices
-  const partialInvoices = await db.select()
-    .from(invoices)
-    .where(
-      and(
-        eq(invoices.customerId, customerId),
-        sql`${invoices.status} IN ('pending', 'partially_paid')`
-      )
-    )
-    .all();
-
-  // Combine items
-  const items = [
-    ...partialOrders.map((o: any) => ({ ...o, isInvoice: false })),
-    ...partialInvoices.map((i: any) => ({ ...i, isInvoice: true }))
-  ];
-
   // Sort by preferredOrderId first (if matched), then by createdAt ascending
-  items.sort((a: any, b: any) => {
+  partialOrders.sort((a: any, b: any) => {
     if (preferredOrderId) {
-      if (a.id === preferredOrderId && !a.isInvoice) return -1;
-      if (b.id === preferredOrderId && !b.isInvoice) return 1;
+      if (a.id === preferredOrderId) return -1;
+      if (b.id === preferredOrderId) return 1;
     }
     return (a.createdAt || 0) - (b.createdAt || 0);
   });
-  console.log('[DEBUG reconcileCustomerWallet items] fetched items count:', items.length);
+  console.log('[DEBUG reconcileCustomerWallet items] fetched items count:', partialOrders.length);
 
-  for (const item of items) {
+  for (const item of partialOrders) {
     console.log('[DEBUG reconcileCustomerWallet] item:', item.id, 'amount:', item.amount, 'status:', item.status, 'currentBalance:', currentBalance);
     if (currentBalance <= 0) break;
 
     // Sum paid amount for this item (only count wallet deductions to prevent double-spending)
-    let sumResult;
-    if (item.isInvoice) {
-      sumResult = await db.select({ total: sql<number>`sum(${payments.amount})` })
-        .from(payments)
-        .where(
-          and(
-            eq(payments.invoiceId, item.id),
-            eq(payments.paymentMethod, 'wallet_deduction')
-          )
+    const sumResult = await db.select({ total: sql<number>`sum(${payments.amount})` })
+      .from(payments)
+      .where(
+        and(
+          eq(payments.orderId, item.id),
+          eq(payments.paymentMethod, 'wallet_deduction')
         )
-        .get();
-    } else {
-      sumResult = await db.select({ total: sql<number>`sum(${payments.amount})` })
-        .from(payments)
-        .where(
-          and(
-            eq(payments.orderId, item.id),
-            eq(payments.paymentMethod, 'wallet_deduction')
-          )
-        )
-        .get();
-    }
+      )
+      .get();
 
     const totalPaid = sumResult?.total || 0;
     const remaining = item.amount - totalPaid;
     console.log('[DEBUG reconcileCustomerWallet] totalPaid:', totalPaid, 'remaining:', remaining);
 
     if (remaining <= 0) {
-      if (item.isInvoice) {
-        await db.update(invoices).set({ status: 'paid', paidAt: Date.now() }).where(eq(invoices.id, item.id));
-      } else {
-        await db.update(orders).set({ status: 'paid', paidAt: Date.now() }).where(eq(orders.id, item.id));
-      }
+      await db.update(orders).set({ status: 'paid', paidAt: Date.now(), updatedAt: Date.now() }).where(eq(orders.id, item.id));
       continue;
     }
 
@@ -638,23 +541,18 @@ export async function reconcileCustomerWallet(db: any, customerId: string, payme
       await db.update(customers).set({ balance: currentBalance }).where(eq(customers.id, customerId));
 
       // Update status
-      if (item.isInvoice) {
-        await db.update(invoices).set({ status: 'paid', paidAt: Date.now() }).where(eq(invoices.id, item.id));
-      } else {
-        await db.update(orders).set({ status: 'paid', paidAt: Date.now() }).where(eq(orders.id, item.id));
-      }
+      await db.update(orders).set({ status: 'paid', paidAt: Date.now(), updatedAt: Date.now() }).where(eq(orders.id, item.id));
 
       // Insert virtual payment record
       const virtualPaymentId = crypto.randomUUID();
       await db.insert(payments).values({
         id: virtualPaymentId,
-        invoiceId: item.isInvoice ? item.id : null,
-        orderId: item.isInvoice ? null : item.id,
+        orderId: item.id,
         customerId: customerId,
         amount: remaining,
         transactionId: `WALLET_DED_${item.id}_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`,
         paymentMethod: 'wallet_deduction',
-        content: `Khau tru vi doi soat cho ${item.isInvoice ? 'hoa don ' + (item.invoiceNumber || '') : 'don hang ' + (item.orderNumber || '')}`,
+        content: `Khau tru vi doi soat cho don hang ${item.orderNumber || ''}`,
         paidAt: Date.now(),
         type: 'in',
         category: 'revenue',
@@ -711,11 +609,7 @@ export async function reconcileCustomerWallet(db: any, customerId: string, payme
     } else {
       // If balance is not enough, mark the item as 'partially_paid' if it was 'pending'
       if (item.status === 'pending') {
-        if (item.isInvoice) {
-          await db.update(invoices).set({ status: 'partially_paid' }).where(eq(invoices.id, item.id));
-        } else {
-          await db.update(orders).set({ status: 'partially_paid' }).where(eq(orders.id, item.id));
-        }
+        await db.update(orders).set({ status: 'partially_paid', updatedAt: Date.now() }).where(eq(orders.id, item.id));
       }
     }
   }
@@ -724,17 +618,15 @@ export async function reconcileCustomerWallet(db: any, customerId: string, payme
 /**
  * Re-applies current rules to all existing payments that are unlinked or unclassified.
  */
-// @para-doc [sepay-integration.md#reconciliation-logic]
 export async function applyRulesToExistingPayments(db: any, rules: any[]): Promise<number> {
   const allExistingPayments = await db.select().from(payments);
   let updatedCount = 0;
 
   for (const payment of allExistingPayments) {
     const isAnonymous = payment.customerId === 'CUST-ANONYMOUS';
-    const hasNoInvoice = !payment.invoiceId;
     
-    // Only reclassify if the payment is anonymous OR if we are seeking to auto-match an invoice and it doesn't have one OR if it lacks a tag.
-    if (!isAnonymous && !hasNoInvoice && payment.taxCategory && payment.category !== 'non_revenue') {
+    // Only reclassify if the payment is anonymous OR if it lacks a tag.
+    if (!isAnonymous && payment.taxCategory && payment.category !== 'non_revenue') {
       // Already fully reconciled and tagged
       continue;
     }
@@ -749,16 +641,6 @@ export async function applyRulesToExistingPayments(db: any, rules: any[]): Promi
           matchedRule = { ...rule, resolvedCustomerId: matchedCustId };
           break;
         }
-      } else if (rule.matchType === 'auto_invoice') {
-        const matchedInv = await autoMatchInvoice(db, payment.content);
-        if (matchedInv) {
-          matchedRule = { 
-            ...rule, 
-            resolvedInvoiceId: matchedInv.invoiceId, 
-            resolvedCustomerId: matchedInv.customerId 
-          };
-          break;
-        }
       } else if (rule.pattern && paymentContentLower.includes(rule.pattern.toLowerCase())) {
         matchedRule = rule;
         break;
@@ -771,11 +653,7 @@ export async function applyRulesToExistingPayments(db: any, rules: any[]): Promi
       let paymentCategory = paymentType === 'out' ? 'non_revenue' : (matchedRule.category || 'non_revenue');
       
       let targetCustomerId = payment.customerId;
-      let targetInvoiceId = payment.invoiceId;
-
-      if (matchedRule.resolvedInvoiceId) {
-        targetInvoiceId = matchedRule.resolvedInvoiceId;
-      }
+      let targetOrderId = payment.orderId;
 
       if (matchedRule.resolvedCustomerId) {
         targetCustomerId = matchedRule.resolvedCustomerId;
@@ -785,34 +663,32 @@ export async function applyRulesToExistingPayments(db: any, rules: any[]): Promi
 
       // Check if anything actually changes before performing database operations
       const customerChanged = targetCustomerId !== payment.customerId;
-      const invoiceChanged = targetInvoiceId !== payment.invoiceId;
       const categoryChanged = paymentCategory !== payment.category;
       const taxCategoryChanged = taxCategory !== payment.taxCategory;
 
-      if (customerChanged || invoiceChanged || categoryChanged || taxCategoryChanged) {
+      if (customerChanged || categoryChanged || taxCategoryChanged) {
         // Update payment
         await db
           .update(payments)
           .set({
             customerId: targetCustomerId,
-            invoiceId: targetInvoiceId,
             category: paymentCategory,
             taxCategory: taxCategory,
           })
           .where(eq(payments.id, payment.id));
 
-        // If invoice is newly linked, update invoice status
-        if (targetInvoiceId && invoiceChanged) {
-          const invoice = await db.select().from(invoices).where(eq(invoices.id, targetInvoiceId)).get();
-          if (invoice) {
-            let status = payment.amount >= invoice.amount ? 'paid' : 'partially_paid';
+        // If order is newly linked, update order status
+        if (targetOrderId && (categoryChanged || customerChanged)) {
+          const order = await db.select().from(orders).where(eq(orders.id, targetOrderId)).get();
+          if (order) {
+            let status = payment.amount >= order.amount ? 'paid' : 'partially_paid';
             await db
-              .update(invoices)
-              .set({ status, paidAt: payment.paidAt })
-              .where(eq(invoices.id, targetInvoiceId));
+              .update(orders)
+              .set({ status, paidAt: payment.paidAt, updatedAt: Date.now() })
+              .where(eq(orders.id, targetOrderId));
 
             if (status === 'partially_paid') {
-              const isNowPaid = await checkAndUnionPartialPayments(db, targetInvoiceId);
+              const isNowPaid = await checkAndUnionPartialOrderPayments(db, targetOrderId);
               if (isNowPaid) {
                 status = 'paid';
               }

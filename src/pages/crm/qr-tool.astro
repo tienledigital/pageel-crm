@@ -2,7 +2,7 @@
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { customers, config, invoices, services, orders } from '@/lib/db/schema';
+import { customers, config, services, orders } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
 // Fetch initial data from database
@@ -20,33 +20,11 @@ const defaultAccount = defaultAccountConfig[0]?.value || '0000000000';
 const orgName = orgNameConfig[0]?.value || 'Pageel CRM';
 const orgLogo = orgLogoConfig[0]?.value || '';
 
-// URL parameter for quick customer/invoice selection
+// URL parameter for quick customer/order selection
 const url = new URL(Astro.request.url);
 const initialCustomerId = url.searchParams.get('customerId') || '';
-const invoiceId = url.searchParams.get('invoiceId') || '';
 const orderId = url.searchParams.get('orderId') || '';
 const lang = Astro.locals.lang || 'vi';
-
-let initialInvoice = null;
-if (invoiceId) {
-  const invoiceData = await db
-    .select({
-      id: invoices.id,
-      invoiceNumber: invoices.invoiceNumber,
-      amount: invoices.amount,
-      content: invoices.content,
-      customerId: invoices.customerId,
-      customerName: customers.fullName,
-    })
-    .from(invoices)
-    .leftJoin(customers, eq(invoices.customerId, customers.id))
-    .where(eq(invoices.id, invoiceId))
-    .limit(1);
-  
-  if (invoiceData.length > 0) {
-    initialInvoice = invoiceData[0];
-  }
-}
 
 let initialOrder = null;
 if (orderId) {
@@ -584,7 +562,7 @@ if (orderId) {
   </div>
 
   <!-- Client-side state & UI handling -->
-  <script is:inline define:vars={{ defaultBank, defaultAccount, orgName, initialInvoice, initialOrder, lang }}>
+  <script is:inline define:vars={{ defaultBank, defaultAccount, orgName, initialOrder, lang }}>
     // Accent helper to translate Vietnamese accents
     function removeAccents(str) {
       return str
@@ -606,10 +584,10 @@ if (orderId) {
     }
 
     // State Variables
-    let selectedCustomerId = initialInvoice ? initialInvoice.customerId : (initialOrder ? initialOrder.customerId : '');
-    let selectedCustomerName = initialInvoice ? initialInvoice.customerName : (initialOrder ? initialOrder.customerName : '');
-    let serviceName = initialInvoice ? initialInvoice.invoiceNumber : (initialOrder ? initialOrder.orderNumber : '');
-    let amount = initialInvoice ? initialInvoice.amount : (initialOrder ? initialOrder.amount : 0);
+    let selectedCustomerId = initialOrder ? initialOrder.customerId : '';
+    let selectedCustomerName = initialOrder ? initialOrder.customerName : '';
+    let serviceName = initialOrder ? initialOrder.orderNumber : '';
+    let amount = initialOrder ? initialOrder.amount : 0;
     let period = 'none';
     let qrTemplate = 'compact2';
     let qrUrl = '';
@@ -1021,18 +999,7 @@ if (orderId) {
     });
 
     // Initialize state on page load (if customerId, invoiceId or orderId parameter provided)
-    if (initialInvoice) {
-      custSelect.value = initialInvoice.customerId;
-      amountInput.value = initialInvoice.amount;
-      serviceInput.value = initialInvoice.invoiceNumber;
-      
-      selectedCustomerId = initialInvoice.customerId;
-      selectedCustomerName = initialInvoice.customerName;
-      amount = initialInvoice.amount;
-      serviceName = initialInvoice.invoiceNumber;
-      
-      updateState();
-    } else if (initialOrder) {
+    if (initialOrder) {
       custSelect.value = initialOrder.customerId;
       amountInput.value = initialOrder.amount;
       serviceInput.value = initialOrder.orderNumber;

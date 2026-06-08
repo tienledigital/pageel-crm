@@ -40,27 +40,7 @@ export const staff = sqliteTable('staff', {
   createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`),
 });
 
-// 4. invoices
-export const invoices = sqliteTable('invoices', {
-  id: text('id').primaryKey(),
-  customerId: text('customer_id').references(() => customers.id),
-  staffId: text('staff_id').references(() => staff.id),
-  invoiceNumber: text('invoice_number').notNull().unique(),
-  amount: integer('amount').notNull(), // VND
-  content: text('content').notNull(),
-  status: text('status').notNull().default('pending'), // pending, paid, partially_paid, cancelled
-  taxInvoiceNumber: text('tax_invoice_number'), // Real VAT invoice number
-  serviceId: text('service_id').references(() => services.id),
-  paymentId: text('payment_id').references((): any => payments.id),
-  startDate: integer('start_date'),
-  expiredAt: integer('expired_at'),
-  createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`),
-  paidAt: integer('paid_at'),
-}, (table) => [
-  index('idx_invoices_number').on(table.invoiceNumber)
-]);
-
-// 4b. orders
+// 4. orders
 export const orders = sqliteTable('orders', {
   id: text('id').primaryKey(),
   customerId: text('customer_id').references(() => customers.id),
@@ -73,8 +53,11 @@ export const orders = sqliteTable('orders', {
   paymentId: text('payment_id').references((): any => payments.id),
   startDate: integer('start_date'),
   expiredAt: integer('expired_at'),
+  taxInvoiceNumber: text('tax_invoice_number'), // Số hóa đơn đỏ VAT
+  taxInvoiceDate: integer('tax_invoice_date'),   // Ngày xuất hóa đơn đỏ VAT (timestamp ms)
   createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`),
   paidAt: integer('paid_at'),
+  updatedAt: integer('updated_at').default(sql`(strftime('%s', 'now') * 1000)`),
 }, (table) => [
   index('idx_orders_number').on(table.orderNumber)
 ]);
@@ -82,7 +65,6 @@ export const orders = sqliteTable('orders', {
 // 5. payments
 export const payments = sqliteTable('payments', {
   id: text('id').primaryKey(),
-  invoiceId: text('invoice_id').references((): any => invoices.id), // Nullable for direct payment without invoice
   orderId: text('order_id').references(() => orders.id), // Link to ORD-orders table
   customerId: text('customer_id').references(() => customers.id), // Assigned directly to customer
   amount: integer('amount').notNull(), // VND

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
 import { getDb } from '../src/lib/db';
-import { payments, invoices, config, users } from '../src/lib/db/schema';
+import { payments, orders, config, users } from '../src/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import path from 'path';
 import { DELETE as deletePaymentHandler } from '../src/pages/api/crm/payments/reconcile';
@@ -64,18 +64,18 @@ describe('Payments Cleanup and Deletion API - Integration Tests', () => {
 
   beforeEach(async () => {
     await db.delete(payments);
-    await db.delete(invoices);
+    await db.delete(orders);
     await db.delete(config);
   });
 
   describe('DELETE /api/crm/payments/reconcile', () => {
-    it('should delete a payment and revert linked invoice to pending', async () => {
-      // Seed invoice
-      const invoiceId = 'inv-1';
-      await db.insert(invoices).values({
-        id: invoiceId,
-        invoiceNumber: 'INV-001',
-        content: 'Invoice content 1',
+    it('should delete a payment and revert linked order to pending', async () => {
+      // Seed order
+      const orderId = 'ord-1';
+      await db.insert(orders).values({
+        id: orderId,
+        orderNumber: 'ORD-001',
+        content: 'Order content 1',
         amount: 1000,
         status: 'paid',
         paidAt: Date.now(),
@@ -89,7 +89,7 @@ describe('Payments Cleanup and Deletion API - Integration Tests', () => {
         type: 'in',
         bank: 'MB',
         accountNumber: '1111',
-        invoiceId: invoiceId,
+        orderId: orderId,
         category: 'revenue',
         paidAt: Date.now(),
       });
@@ -105,11 +105,11 @@ describe('Payments Cleanup and Deletion API - Integration Tests', () => {
       const foundPayments = await db.select().from(payments).where(eq(payments.id, paymentId));
       expect(foundPayments.length).toBe(0);
 
-      // Verify invoice reverted
-      const foundInvoices = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
-      expect(foundInvoices.length).toBe(1);
-      expect(foundInvoices[0].status).toBe('pending');
-      expect(foundInvoices[0].paidAt).toBeNull();
+      // Verify order reverted
+      const foundOrders = await db.select().from(orders).where(eq(orders.id, orderId));
+      expect(foundOrders.length).toBe(1);
+      expect(foundOrders[0].status).toBe('pending');
+      expect(foundOrders[0].paidAt).toBeNull();
     });
   });
 
@@ -140,12 +140,12 @@ describe('Payments Cleanup and Deletion API - Integration Tests', () => {
         paidAt: Date.now(),
       });
 
-      // Seed mismatched payment linked to an invoice
-      const invoiceId = 'inv-mismatched';
-      await db.insert(invoices).values({
-        id: invoiceId,
-        invoiceNumber: 'INV-002',
-        content: 'Invoice content 2',
+      // Seed mismatched payment linked to an order
+      const orderId = 'ord-mismatched';
+      await db.insert(orders).values({
+        id: orderId,
+        orderNumber: 'ORD-002',
+        content: 'Order content 2',
         amount: 2000,
         status: 'paid',
         paidAt: Date.now(),
@@ -157,7 +157,7 @@ describe('Payments Cleanup and Deletion API - Integration Tests', () => {
         type: 'in',
         bank: 'MB',
         accountNumber: '0388888888',
-        invoiceId: invoiceId,
+        orderId: orderId,
         paidAt: Date.now(),
       });
 
@@ -191,11 +191,11 @@ describe('Payments Cleanup and Deletion API - Integration Tests', () => {
       const incorrectPay = await db.select().from(payments).where(eq(payments.id, 'pay-incorrect'));
       expect(incorrectPay.length).toBe(0);
 
-      // Invoice linked to incorrect payment should be reverted
-      const revertedInvoice = await db.select().from(invoices).where(eq(invoices.id, invoiceId));
-      expect(revertedInvoice.length).toBe(1);
-      expect(revertedInvoice[0].status).toBe('pending');
-      expect(revertedInvoice[0].paidAt).toBeNull();
+      // Order linked to incorrect payment should be reverted
+      const revertedOrder = await db.select().from(orders).where(eq(orders.id, orderId));
+      expect(revertedOrder.length).toBe(1);
+      expect(revertedOrder[0].status).toBe('pending');
+      expect(revertedOrder[0].paidAt).toBeNull();
     });
   });
 });

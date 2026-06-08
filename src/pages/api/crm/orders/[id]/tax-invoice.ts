@@ -1,13 +1,14 @@
-// @para-doc [api-contracts.md#invoices-management]
+// @para-doc [api-contracts.md#orders-api]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { invoices } from '@/lib/db/schema';
+import { orders } from '@/lib/db/schema';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
+import { logDebug } from '@/lib/debug-logger';
 import { eq } from 'drizzle-orm';
 
-export const PATCH: APIRoute = async (context) => {
+export const POST: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions
     const sessionCookie = context.cookies.get('session')?.value;
@@ -21,8 +22,8 @@ export const PATCH: APIRoute = async (context) => {
     }
 
     const user = await verifySessionCookie(sessionCookie, secret);
-    if (!user) {
-      return new Response(JSON.stringify({ error: 'Forbidden: Invalid session' }), {
+    if (!user || (user.role !== 'admin' && user.role !== 'accountant')) {
+      return new Response(JSON.stringify({ error: 'Forbidden: Insufficient permissions' }), {
         status: 403,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -30,7 +31,7 @@ export const PATCH: APIRoute = async (context) => {
 
     const id = context.params.id;
     if (!id) {
-      return new Response(JSON.stringify({ error: 'Bad Request: Invoice ID is required' }), {
+      return new Response(JSON.stringify({ error: 'Bad Request: Order ID is required' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -47,25 +48,41 @@ export const PATCH: APIRoute = async (context) => {
       });
     }
 
-    const { taxInvoiceNumber } = body;
+    const { taxInvoiceNumber, taxInvoiceDate } = body;
+    if (!taxInvoiceNumber) {
+      return new Response(JSON.stringify({ error: 'Bad Request: Missing taxInvoiceNumber' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
+    let invoiceTimestamp = Date.now();
+    if (taxInvoiceDate) {
+      const parsed = new Date(taxInvoiceDate).getTime();
+      if (!isNaN(parsed)) {
+        invoiceTimestamp = parsed;
+      }
+    }
 
     const db = getDb(env);
 
-    // Check if invoice exists
-    const [existingInvoice] = await db.select().from(invoices).where(eq(invoices.id, id));
-    if (!existingInvoice) {
-      return new Response(JSON.stringify({ error: 'Not Found: Invoice does not exist' }), {
+    // Check if order exists
+    const [existingOrder] = await db.select().from(orders).where(eq(orders.id, id));
+    if (!existingOrder) {
+      return new Response(JSON.stringify({ error: 'Not Found: Order does not exist' }), {
         status: 404,
         headers: { 'Content-Type': 'application/json' },
       });
     }
 
-    // 3. Update invoice tax invoice number
-    await db.update(invoices)
+    // 3. Update order tax invoice details
+    await db.update(orders)
       .set({
-        taxInvoiceNumber: taxInvoiceNumber?.trim() || null,
+        taxInvoiceNumber: taxInvoiceNumber.trim(),
+        taxInvoiceDate: invoiceTimestamp,
+        updatedAt: Date.now(),
       })
-      .where(eq(invoices.id, id));
+      .where(eq(orders.id, id));
 
     // 4. Log the audit trail
     const ipAddress = context.clientAddress || 
@@ -76,14 +93,14 @@ export const PATCH: APIRoute = async (context) => {
     await logAudit(db, {
       userId: user.id,
       username: user.username,
-      action: 'invoice.update_tax_number',
+      action: 'order.update_tax_invoice',
       target: id,
       detail: { 
         metadata: { 
           status: 'success',
-          changes: {
-            taxInvoiceNumber: taxInvoiceNumber?.trim() || null
-          }
+          oldTaxInvoiceNumber: existingOrder.taxInvoiceNumber || null,
+          newTaxInvoiceNumber: taxInvoiceNumber,
+          taxInvoiceDate: invoiceTimestamp
         } 
       },
       ipAddress
@@ -94,6 +111,14 @@ export const PATCH: APIRoute = async (context) => {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err: any) {
+    const db = getDb(env);
+    await logDebug(db, {
+      level: 'error',
+      endpoint: context.url.pathname,
+      method: 'POST',
+      message: err.message,
+      stack: err.stack,
+    });
     return new Response(JSON.stringify({ error: 'Internal Server Error', ...(import.meta.env.DEV && { details: err.message }) }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },

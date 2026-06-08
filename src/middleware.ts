@@ -108,7 +108,7 @@ function addSecurityHeaders(response: Response): Response {
   response.headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   response.headers.set(
     'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://img.vietqr.io; font-src 'self'"
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://img.vietqr.io; font-src 'self' https://fonts.gstatic.com"
   );
   // HSTS only in production
   if (import.meta.env.PROD) {

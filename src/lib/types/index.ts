@@ -14,9 +14,17 @@ export type NewCustomer = InferInsertModel<typeof schema.customers>;
 export type Staff = InferSelectModel<typeof schema.staff>;
 export type NewStaff = InferInsertModel<typeof schema.staff>;
 
-// 4. invoices
-export type Invoice = InferSelectModel<typeof schema.invoices>;
-export type NewInvoice = InferInsertModel<typeof schema.invoices>;
+// 4. orders
+export type Order = InferSelectModel<typeof schema.orders>;
+export type NewOrder = InferInsertModel<typeof schema.orders>;
+
+// 8. services
+export type Service = InferSelectModel<typeof schema.services>;
+export type NewService = InferInsertModel<typeof schema.services>;
+
+// 9. customer_services
+export type CustomerService = InferSelectModel<typeof schema.customerServices>;
+export type NewCustomerService = InferInsertModel<typeof schema.customerServices>;
 
 // 5. payments
 export type Payment = InferSelectModel<typeof schema.payments>;
