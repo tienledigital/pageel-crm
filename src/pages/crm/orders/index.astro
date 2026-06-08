@@ -31,6 +31,9 @@ const statusFilter = url.searchParams.get('status') || ''; // 'paid', 'pending',
 const startDateParam = url.searchParams.get('startDate') || '';
 const endDateParam = url.searchParams.get('endDate') || '';
 
+// Define dynamic issued date expression
+const issuedDateSql = sql<number>`CASE WHEN (${orders.status} = 'paid' OR ${orders.status} = 'partially_paid') AND ${orders.createdAt} > ${orders.paidAt} THEN ${orders.paidAt} ELSE ${orders.createdAt} END`;
+
 // 2. Build where clause
 const conditions = [];
 
@@ -50,12 +53,12 @@ if (statusFilter) {
 
 if (startDateParam) {
   const startTs = new Date(startDateParam + 'T00:00:00+07:00').getTime();
-  conditions.push(sql`${orders.createdAt} >= ${startTs}`);
+  conditions.push(sql`${issuedDateSql} >= ${startTs}`);
 }
 
 if (endDateParam) {
   const endTs = new Date(endDateParam + 'T23:59:59+07:00').getTime();
-  conditions.push(sql`${orders.createdAt} <= ${endTs}`);
+  conditions.push(sql`${issuedDateSql} <= ${endTs}`);
 }
 
 const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
@@ -70,6 +73,8 @@ const orderList = await db
     status: orders.status,
     createdAt: orders.createdAt,
     paidAt: orders.paidAt,
+    updatedAt: orders.updatedAt,
+    issuedDate: issuedDateSql,
     customerName: customers.fullName,
     customerId: customers.id,
     staffName: staff.fullName,
@@ -83,7 +88,7 @@ const orderList = await db
   .leftJoin(customers, eq(orders.customerId, customers.id))
   .leftJoin(staff, eq(orders.staffId, staff.id))
   .where(whereClause)
-  .orderBy(desc(orders.createdAt));
+  .orderBy(desc(issuedDateSql));
 
 // Count and sum of tax invoices
 const taxInvoiceStatsQuery = await db
