@@ -2,11 +2,11 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { getDb } from '@/lib/db';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import path from 'path';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, sql, desc, or } from 'drizzle-orm';
 import { customers, staff, payments, orders, customerServices, services, users } from '@/lib/db/schema';
 import { createSessionCookie } from '@/lib/auth';
 import { createPaidOrder } from '@/lib/services/serviceManager';
-import { POST as createPaidOrderHandler, DELETE as deleteOrderHandler } from '@/pages/api/crm/orders/index';
+import { POST as createPaidOrderHandler, DELETE as deleteOrderHandler, PUT as updateOrderHandler } from '@/pages/api/crm/orders/index';
 
 describe('Quick Create Paid Order Service Logic', () => {
   const TEST_CUSTOMER = {
@@ -530,5 +530,276 @@ describe('DELETE: Delete Paid Order API Endpoint Integration Tests', () => {
     // Verify customer expiredAt reset
     const updatedCust = await db.select().from(customers).where(eq(customers.id, customerId)).get();
     expect(updatedCust.expiredAt).toBe(0);
+  });
+});
+
+describe('PUT: Update Paid Order API Endpoint Integration Tests', () => {
+  const SESSION_SECRET = 'fallback-secret-key-must-be-at-least-32-chars-long';
+  let adminToken: string;
+  let staffToken: string;
+  let salerToken: string;
+
+  beforeAll(async () => {
+    process.env.SESSION_SECRET = SESSION_SECRET;
+    adminToken = await createSessionCookie({
+      id: 'usr-admin-ord',
+      username: 'adminord',
+      role: 'admin',
+      createdAt: Date.now(),
+    }, SESSION_SECRET);
+
+    staffToken = await createSessionCookie({
+      id: 'usr-accountant-ord',
+      username: 'accountantord',
+      role: 'accountant',
+      createdAt: Date.now(),
+    }, SESSION_SECRET);
+
+    salerToken = await createSessionCookie({
+      id: 'usr-saler-ord',
+      username: 'salerord',
+      role: 'saler',
+      createdAt: Date.now(),
+    }, SESSION_SECRET);
+  });
+
+  function createMockContext(body?: any, token?: string) {
+    const cookiesMap = new Map();
+    if (token) {
+      cookiesMap.set('session', { value: token });
+    }
+    const request = new Request('http://localhost/api/crm/orders', {
+      method: 'PUT',
+      body: body ? JSON.stringify(body) : undefined,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return {
+      request,
+      url: new URL(request.url),
+      cookies: cookiesMap,
+      locals: {
+        runtime: { env: { SESSION_SECRET } },
+      },
+    } as any;
+  }
+
+  it('should return 401 Unauthorized if user session cookie is missing', async () => {
+    const context = createMockContext({ orderId: 'ORD-123', serviceId: 'srv-1', amount: 100000, startDate: Date.now(), expiredAt: Date.now() + 30 * 24 * 60 * 60 * 1000 });
+    const response = await updateOrderHandler(context);
+    expect(response.status).toBe(401);
+  });
+
+  it('should return 403 Forbidden if user role is saler', async () => {
+    const context = createMockContext({ orderId: 'ORD-123', serviceId: 'srv-1', amount: 100000, startDate: Date.now(), expiredAt: Date.now() + 30 * 24 * 60 * 60 * 1000 }, salerToken);
+    const response = await updateOrderHandler(context);
+    expect(response.status).toBe(403);
+  });
+
+  it('should return 400 Bad Request if required parameters are missing', async () => {
+    const context = createMockContext({ orderId: 'ORD-123' }, staffToken);
+    const response = await updateOrderHandler(context);
+    expect(response.status).toBe(400);
+  });
+
+  it('should successfully update order and change updatedAt to be newer than createdAt', async () => {
+    const db = getDb();
+    const customerId = 'CUST-PUT-ORD';
+    const serviceId1 = 'srv-put-ord-1';
+    const serviceId2 = 'srv-put-ord-2';
+    const orderId = 'ORD-PUT-TEST-1';
+    const createdAt = Date.now() - 10000; // 10 seconds ago
+
+    // Seed customer
+    await db.insert(customers).values({
+      id: customerId,
+      fullName: 'PUT Order Cust',
+      phone: '0908888888',
+    });
+
+    // Seed services
+    await db.insert(services).values([
+      {
+        id: serviceId1,
+        name: 'Service 1',
+        price: 100000,
+        billingCycle: 30,
+        prefix: 'SV1',
+        status: 'active',
+        createdAt: Date.now(),
+      },
+      {
+        id: serviceId2,
+        name: 'Service 2',
+        price: 200000,
+        billingCycle: 30,
+        prefix: 'SV2',
+        status: 'active',
+        createdAt: Date.now(),
+      }
+    ]);
+
+    // Seed order
+    await db.insert(orders).values({
+      id: orderId,
+      customerId,
+      orderNumber: 'ORD-PUT-01',
+      amount: 100000,
+      content: 'Original Content',
+      status: 'paid',
+      serviceId: serviceId1,
+      startDate: createdAt,
+      expiredAt: createdAt + 30 * 24 * 60 * 60 * 1000,
+      createdAt,
+      updatedAt: createdAt,
+    });
+
+    const body = {
+      orderId,
+      serviceId: serviceId2,
+      amount: 200000,
+      startDate: Date.now(),
+      expiredAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+    };
+
+    const context = createMockContext(body, staffToken);
+    const response = await updateOrderHandler(context);
+    expect(response.status).toBe(200);
+
+    const data = await response.json();
+    expect(data.success).toBe(true);
+
+    // Verify order
+    const order = await db.select().from(orders).where(eq(orders.id, orderId)).get();
+    expect(order.serviceId).toBe(serviceId2);
+    expect(order.amount).toBe(200000);
+    expect(order.updatedAt).toBeGreaterThan(createdAt);
+  });
+});
+
+describe('Orders Date Refactor - SQLite Query Logic Integration Tests', () => {
+  const customerId = 'CUST-DATE-TEST';
+  const serviceId = 'srv-date-test';
+
+  beforeAll(async () => {
+    const db = getDb();
+    // Seed customer and service if not exist
+    await db.insert(customers).values({
+      id: customerId,
+      fullName: 'Date Test Customer',
+      phone: '0907777777',
+    }).onConflictDoNothing();
+
+    await db.insert(services).values({
+      id: serviceId,
+      name: 'Date Test Service',
+      price: 100000,
+      billingCycle: 30,
+      prefix: 'DTSV',
+      status: 'active',
+      createdAt: Date.now(),
+    }).onConflictDoNothing();
+  });
+
+  it('should query issuedDate correctly using the dynamic sql expression', async () => {
+    const db = getDb();
+
+    const now = Date.now();
+    const T1 = now - 50000;
+    const T2 = now - 40000;
+    const T3 = now - 30000;
+    const T4 = now - 20000;
+    const T5 = now - 10000;
+
+    // A: status paid, createdAt > paidAt -> issuedDate = paidAt (T1)
+    const orderA = {
+      id: 'ORD-DATE-A',
+      customerId,
+      orderNumber: 'ORD-DT-A',
+      amount: 100000,
+      content: 'Order A paid',
+      status: 'paid',
+      serviceId,
+      createdAt: T2,
+      paidAt: T1,
+    };
+
+    // B: status partially_paid, createdAt > paidAt -> issuedDate = paidAt (T3)
+    const orderB = {
+      id: 'ORD-DATE-B',
+      customerId,
+      orderNumber: 'ORD-DT-B',
+      amount: 100000,
+      content: 'Order B partial',
+      status: 'partially_paid',
+      serviceId,
+      createdAt: T4,
+      paidAt: T3,
+    };
+
+    // C: status pending -> issuedDate = createdAt (T5)
+    const orderC = {
+      id: 'ORD-DATE-C',
+      customerId,
+      orderNumber: 'ORD-DT-C',
+      amount: 100000,
+      content: 'Order C pending',
+      status: 'pending',
+      serviceId,
+      createdAt: T5,
+      paidAt: null,
+    };
+
+    await db.insert(orders).values([orderA, orderB, orderC]);
+
+    const issuedDateSql = sql<number>`CASE WHEN (${orders.status} = 'paid' OR ${orders.status} = 'partially_paid') AND ${orders.createdAt} > ${orders.paidAt} THEN ${orders.paidAt} ELSE ${orders.createdAt} END`;
+
+    const results = await db.select({
+      id: orders.id,
+      issuedDate: issuedDateSql,
+    })
+    .from(orders)
+    .where(or(
+      eq(orders.id, 'ORD-DATE-A'),
+      eq(orders.id, 'ORD-DATE-B'),
+      eq(orders.id, 'ORD-DATE-C')
+    ))
+    .orderBy(desc(issuedDateSql))
+    .all();
+
+    expect(results).toHaveLength(3);
+    
+    // Order C: issuedDate = T5
+    // Order B: issuedDate = T3
+    // Order A: issuedDate = T1
+    // Sorted descending by issuedDate: C -> B -> A
+    expect(results[0].id).toBe('ORD-DATE-C');
+    expect(results[0].issuedDate).toBe(T5);
+
+    expect(results[1].id).toBe('ORD-DATE-B');
+    expect(results[1].issuedDate).toBe(T3);
+
+    expect(results[2].id).toBe('ORD-DATE-A');
+    expect(results[2].issuedDate).toBe(T1);
+
+    // Test date range filter
+    // Filter with startDate = T2 and endDate = T4 (should only return Order B since T3 is inside, C is T5 > T4, A is T1 < T2)
+    const filteredResults = await db.select({
+      id: orders.id,
+      issuedDate: issuedDateSql,
+    })
+    .from(orders)
+    .where(and(
+      or(
+        eq(orders.id, 'ORD-DATE-A'),
+        eq(orders.id, 'ORD-DATE-B'),
+        eq(orders.id, 'ORD-DATE-C')
+      ),
+      sql`${issuedDateSql} >= ${T2}`,
+      sql`${issuedDateSql} <= ${T4}`
+    ))
+    .all();
+
+    expect(filteredResults).toHaveLength(1);
+    expect(filteredResults[0].id).toBe('ORD-DATE-B');
   });
 });

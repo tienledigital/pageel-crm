@@ -170,6 +170,7 @@ export const PUT: APIRoute = async (context) => {
         amount: Number(amount),
         startDate: Number(startDate),
         expiredAt: Number(expiredAt),
+        updatedAt: Date.now(),
       })
       .where(eq(orders.id, orderId));
 
