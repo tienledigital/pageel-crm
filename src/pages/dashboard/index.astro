@@ -3,7 +3,7 @@ import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { users, syncLogs, customers, payments } from '@/lib/db/schema';
-import { desc, eq } from 'drizzle-orm';
+import { desc, eq, sql } from 'drizzle-orm';
 
 // Initialize database client to query analytics metrics
 const db = getDb(env);
@@ -54,6 +54,24 @@ const recentPayments = await db
   .leftJoin(customers, eq(payments.customerId, customers.id))
   .orderBy(desc(payments.paidAt))
   .limit(5);
+
+// Tính doanh thu tháng hiện tại và năm hiện tại theo múi giờ Việt Nam (+7)
+const now = new Date();
+const currentYear = now.getFullYear();
+const currentMonth = now.getMonth();
+
+const startOfMonth = new Date(currentYear, currentMonth, 1).getTime();
+const startOfYear = new Date(currentYear, 0, 1).getTime();
+
+const revenueStats = await db
+  .select({
+    monthlyRevenue: sql<number>`SUM(CASE WHEN ${payments.type} = 'in' AND ${payments.category} = 'revenue' AND ${payments.customerId} IS NOT NULL AND ${payments.customerId} != 'CUST-ANONYMOUS' AND ${payments.paidAt} >= ${startOfMonth} THEN ${payments.amount} ELSE 0 END)`,
+    yearlyRevenue: sql<number>`SUM(CASE WHEN ${payments.type} = 'in' AND ${payments.category} = 'revenue' AND ${payments.customerId} IS NOT NULL AND ${payments.customerId} != 'CUST-ANONYMOUS' AND ${payments.paidAt} >= ${startOfYear} THEN ${payments.amount} ELSE 0 END)`,
+  })
+  .from(payments);
+
+const monthlyRev = Number(revenueStats[0]?.monthlyRevenue || 0);
+const yearlyRev = Number(revenueStats[0]?.yearlyRevenue || 0);
 ---
 
 <DashboardLayout title="System Overview">
@@ -370,15 +388,27 @@ const recentPayments = await db
       </span>
     </div>
 
-    <!-- Active Users -->
+    <!-- Monthly Revenue -->
     <div class="metric-card">
-      <span class="metric-label">System Users</span>
-      <span class="metric-value">{totalUsers}</span>
+      <span class="metric-label">Doanh thu tháng này</span>
+      <span class="metric-value" style="color: var(--success);">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(monthlyRev)}</span>
       <span class="metric-change change-up">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width: 12px; height: 12px;">
           <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
         </svg>
-        Active
+        Tháng {currentMonth + 1}/{currentYear}
+      </span>
+    </div>
+
+    <!-- Yearly Revenue -->
+    <div class="metric-card">
+      <span class="metric-label">Doanh thu năm nay</span>
+      <span class="metric-value" style="color: var(--success);">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(yearlyRev)}</span>
+      <span class="metric-change change-up">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2.5" stroke="currentColor" style="width: 12px; height: 12px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 19.5l15-15m0 0H8.25m11.25 0v11.25" />
+        </svg>
+        Năm {currentYear}
       </span>
     </div>
 
@@ -579,46 +609,7 @@ const recentPayments = await db
         </div>
       </div>
 
-      <!-- Panel: Recent Backup Logs -->
-      <div class="panel">
-        <div class="panel-header">
-          <h2 class="panel-title">Recent Backup Logs</h2>
-        </div>
-        <div class="data-table-container table-scroll-container">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Status</th>
-                <th>Details</th>
-              </tr>
-            </thead>
-            <tbody>
-              {recentLogs.length === 0 ? (
-                <tr>
-                  <td colspan="3" style="text-align: center; color: var(--text-secondary); padding: 1.5rem;">No logs found</td>
-                </tr>
-              ) : (
-                recentLogs.map((log: any) => (
-                  <tr>
-                    <td style="white-space: nowrap;">
-                      {new Date(log.runAt || Date.now()).toLocaleTimeString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                    </td>
-                    <td>
-                      <span class={`badge ${log.status === 'success' ? 'badge-success' : 'badge-danger'}`}>
-                        {log.status === 'success' ? 'success' : 'failed'}
-                      </span>
-                    </td>
-                    <td style="max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title={log.message || ''}>
-                      {log.message || 'N/A'}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+
     </div>
   </div>
 </DashboardLayout>

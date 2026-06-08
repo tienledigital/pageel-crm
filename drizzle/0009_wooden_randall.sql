@@ -1,4 +1,4 @@
-PRAGMA foreign_keys=OFF;--> statement-breakpoint
+PRAGMA defer_foreign_keys=ON;--> statement-breakpoint
 DROP TABLE `invoices`;--> statement-breakpoint
 CREATE TABLE `__new_payments` (
 	`id` text PRIMARY KEY NOT NULL,
@@ -25,8 +25,9 @@ CREATE TABLE `__new_payments` (
 INSERT INTO `__new_payments`("id", "order_id", "customer_id", "amount", "transaction_id", "payment_method", "bank", "account_number", "sender_account", "sender_name", "sender_bank", "type", "category", "tax_category", "content", "paid_at", "created_at") SELECT "id", "order_id", "customer_id", "amount", "transaction_id", "payment_method", "bank", "account_number", "sender_account", "sender_name", "sender_bank", "type", "category", "tax_category", "content", "paid_at", "created_at" FROM `payments`;--> statement-breakpoint
 DROP TABLE `payments`;--> statement-breakpoint
 ALTER TABLE `__new_payments` RENAME TO `payments`;--> statement-breakpoint
-PRAGMA foreign_keys=ON;--> statement-breakpoint
+PRAGMA defer_foreign_keys=OFF;--> statement-breakpoint
 CREATE UNIQUE INDEX `payments_transaction_id_unique` ON `payments` (`transaction_id`);--> statement-breakpoint
 ALTER TABLE `orders` ADD `tax_invoice_number` text;--> statement-breakpoint
 ALTER TABLE `orders` ADD `tax_invoice_date` integer;--> statement-breakpoint
-ALTER TABLE `orders` ADD `updated_at` integer DEFAULT (strftime('%s', 'now') * 1000);
+ALTER TABLE `orders` ADD `updated_at` integer;--> statement-breakpoint
+UPDATE `orders` SET `updated_at` = (strftime('%s', 'now') * 1000) WHERE `updated_at` IS NULL;
