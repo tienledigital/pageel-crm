@@ -121,20 +121,22 @@ export const POST: APIRoute = async (context) => {
           headers: { 'Content-Type': 'application/json' },
         });
       }
+      const wasDeposit = currentPayment.customerId && currentPayment.category === 'non_revenue';
+      if (wasDeposit) {
+        // Verify customer wallet balance
+        const customerInfo = await db.select().from(customers).where(eq(customers.id, targetCustomerId)).get();
+        if (!customerInfo || customerInfo.balance < currentPayment.amount) {
+          return new Response(JSON.stringify({ error: 'Insufficient wallet balance' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
 
-      // Verify customer wallet balance
-      const customerInfo = await db.select().from(customers).where(eq(customers.id, targetCustomerId)).get();
-      if (!customerInfo || customerInfo.balance < currentPayment.amount) {
-        return new Response(JSON.stringify({ error: 'Insufficient wallet balance' }), {
-          status: 400,
-          headers: { 'Content-Type': 'application/json' },
-        });
+        // Deduct customer balance
+        await db.update(customers)
+          .set({ balance: customerInfo.balance - currentPayment.amount })
+          .where(eq(customers.id, targetCustomerId));
       }
-
-      // Deduct customer balance
-      await db.update(customers)
-        .set({ balance: customerInfo.balance - currentPayment.amount })
-        .where(eq(customers.id, targetCustomerId));
     }
 
     if (currentPayment.orderId && currentPayment.orderId !== orderId) {

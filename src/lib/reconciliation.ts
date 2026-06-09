@@ -297,6 +297,9 @@ export async function reconcilePayment(
         paymentType = matchedRule.type || payment.type || 'in';
         taxCategory = matchedRule.taxCategory || null;
         paymentCategory = paymentType === 'out' ? 'non_revenue' : (matchedRule.category || 'non_revenue');
+        if (paymentCategory === 'revenue') {
+          isDirectPayment = true;
+        }
 
         if (matchedRule.resolvedCustomerId) {
           targetCustomerId = matchedRule.resolvedCustomerId;
