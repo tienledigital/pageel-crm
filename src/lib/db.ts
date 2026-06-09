@@ -39,12 +39,19 @@ export async function runTransaction<T>(
   callback: (tx: any) => Promise<T>,
   options?: { maxAttempts?: number; delayMs?: number }
 ): Promise<T> {
+  const isD1 = !db.session?.client?.transaction;
   const maxAttempts = options?.maxAttempts ?? 5;
   const baseDelay = options?.delayMs ?? 50;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      return await db.transaction(callback);
+      if (isD1) {
+        return await db.transaction(callback);
+      } else {
+        // BetterSQLite3: run callback directly to support async functions
+        // since better-sqlite3's db.transaction does not support Promise returns.
+        return await callback(db);
+      }
     } catch (err: any) {
       const errorStr = (err.message || String(err)).toLowerCase();
       const isLockError =
@@ -69,6 +76,7 @@ export async function runTransaction<T>(
 
   throw new Error('Transaction failed after maximum attempts');
 }
+
 
 
 

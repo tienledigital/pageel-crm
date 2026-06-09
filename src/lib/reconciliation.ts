@@ -1,6 +1,8 @@
 // @para-doc [sepay-integration.md#reconciliation-logic]
 import { eq, sql, and } from 'drizzle-orm';
 import { customers, payments, config, services, customerServices, orders } from './db/schema';
+import { runTransaction } from './db';
+
 
 /**
  * Parses customer ID from payment transfer memo content.
@@ -230,7 +232,7 @@ export async function reconcilePayment(
     type?: string;
   }
 ): Promise<ReconcileResult> {
-  const isD1 = !db.session?.client?.transaction;
+
 
   // @para-doc [sepay-integration.md#2-ghi-nhan-giao-dich-reconciliation-logic]
   const executeReconcile = async (tx: any) => {
@@ -582,21 +584,9 @@ export async function reconcilePayment(
     };
   };
 
-  if (isD1) {
-    try {
-      return await db.transaction(async (tx: any) => {
-        return await executeReconcile(tx);
-      });
-    } catch (err: any) {
-      if (err.message.includes('begin') || err.message.includes('transaction')) {
-        console.warn('[D1 Transaction Fallback] Transaction not supported. Running sequentially on db client...');
-        return await executeReconcile(db);
-      }
-      throw err;
-    }
-  } else {
-    return await executeReconcile(db);
-  }
+  return await runTransaction(db, async (tx: any) => {
+    return await executeReconcile(tx);
+  });
 }
 
 // @para-doc [spec.md#automated-revenue-reconciliation]

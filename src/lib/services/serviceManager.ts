@@ -1,6 +1,7 @@
 // @para-doc [services-payments-spec.md#5-project-structure-cau-truc-file-anh-huong]
 import { eq, and, or, desc, inArray, sql } from 'drizzle-orm';
 import { services, customerServices, payments, customers, orders } from '@/lib/db/schema';
+import { runTransaction } from '@/lib/db';
 
 // @para-doc [services-payments-spec.md#63-cac-ham-tien-ich-dich-vu-service-helpers]
 export interface CreateServiceParams {
@@ -80,132 +81,7 @@ export async function createOrderFromPayment(
   db: any,
   params: CreateOrderFromPaymentParams
 ): Promise<{ success: boolean; orderId: string }> {
-  const isD1 = !db.session?.client?.transaction;
 
-  if (!isD1) {
-    // BetterSQLite3 (local / test) - synchronous transaction
-    return db.transaction((tx: any) => {
-      // 1. Check if the payment has already been reconciled
-      const existingPayment = tx
-        .select()
-        .from(payments)
-        .where(eq(payments.id, params.paymentId))
-        .get();
-        
-      if (!existingPayment || existingPayment.invoiceId || existingPayment.orderId) {
-        throw new Error('PAYMENT_ALREADY_RECONCILED');
-      }
-
-      // 2. Fetch service information
-      const targetService = tx
-        .select()
-        .from(services)
-        .where(eq(services.id, params.serviceId))
-        .get();
-
-      if (!targetService) {
-        throw new Error('SERVICE_NOT_FOUND');
-      }
-
-      const orderAmount = params.customPrice !== undefined ? params.customPrice : targetService.price;
-      const paidAmount = existingPayment.amount;
-
-      let status: 'paid' | 'partially_paid' = 'paid';
-      if (paidAmount < orderAmount) {
-        status = 'partially_paid';
-      }
-
-      // 3. Create a new order
-      const orderId = crypto.randomUUID();
-      const orderNumber = `ORD-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      
-      tx.insert(orders).values({
-        id: orderId,
-        customerId: params.customerId,
-        staffId: params.staffId,
-        orderNumber,
-        amount: orderAmount,
-        content: `Thanh toan dich vu ${targetService.name}`,
-        status,
-        serviceId: params.serviceId,
-        paymentId: params.paymentId,
-        startDate: params.startDate,
-        expiredAt: params.expiredAt,
-        createdAt: Date.now(),
-        paidAt: existingPayment.paidAt || Date.now(),
-      }).run();
-
-      // 4. Update the relationship in payments table
-      tx.update(payments)
-        .set({
-          orderId,
-          customerId: params.customerId,
-        })
-        .where(eq(payments.id, params.paymentId))
-        .run();
-
-      // 5. If fully paid, activate or extend customer service
-      if (status === 'paid') {
-        const existingCustomerService = tx
-          .select()
-          .from(customerServices)
-          .where(
-            and(
-              eq(customerServices.customerId, params.customerId),
-              eq(customerServices.serviceId, params.serviceId)
-            )
-          )
-          .get();
-
-        if (existingCustomerService) {
-          tx.update(customerServices)
-            .set({
-              status: 'active',
-              startDate: params.startDate,
-              expiredAt: params.expiredAt,
-            })
-            .where(eq(customerServices.id, existingCustomerService.id))
-            .run();
-        } else {
-          tx.insert(customerServices).values({
-            id: crypto.randomUUID(),
-            customerId: params.customerId,
-            serviceId: params.serviceId,
-            status: 'active',
-            startDate: params.startDate,
-            expiredAt: params.expiredAt,
-            createdAt: Date.now(),
-          }).run();
-        }
-
-        // 6. Sync max expiredAt to customers.expiredAt
-        const activeServices = tx
-          .select()
-          .from(customerServices)
-          .where(
-            and(
-              eq(customerServices.customerId, params.customerId),
-              eq(customerServices.status, 'active')
-            )
-          )
-          .all();
-
-        const maxExpiredAt = activeServices.reduce(
-          (max: number, current: any) => (current.expiredAt > max ? current.expiredAt : max),
-          0
-        );
-
-        if (maxExpiredAt > 0) {
-          tx.update(customers)
-            .set({ expiredAt: maxExpiredAt })
-            .where(eq(customers.id, params.customerId))
-            .run();
-        }
-      }
-
-      return { success: true, orderId };
-    });
-  } else {
     // D1 (production) - asynchronous transaction with fallback if D1 mock does not support it
     // @para-doc [services-payments-spec.md#62-logic-xu-ly-late-association-voi-transaction-nguyen-tu]
     const executeInTx = async (tx: any) => {
@@ -330,16 +206,7 @@ export async function createOrderFromPayment(
       return { success: true, orderId };
     };
 
-    try {
-      return await db.transaction(executeInTx);
-    } catch (err: any) {
-      if (err.message.includes('begin') || err.message.includes('transaction')) {
-        console.warn('[D1 Transaction Fallback] Transaction not supported. Running sequentially on db client...');
-        return await executeInTx(db);
-      }
-      throw err;
-    }
-  }
+    return await runTransaction(db, executeInTx);
 }
 
 // @para-doc [spec-2026-06-05-quick-create-paid-order.md#4-code-style]
@@ -359,145 +226,7 @@ export async function createPaidOrder(
   db: any,
   params: CreatePaidOrderParams
 ): Promise<{ success: boolean; orderId: string; orderNumber: string }> {
-  const isD1 = !db.session?.client?.transaction;
 
-  if (!isD1) {
-    // BetterSQLite3 (local / test) - synchronous transaction
-    return db.transaction((tx: any) => {
-      // 1. Fetch service information
-      const targetService = tx
-        .select()
-        .from(services)
-        .where(eq(services.id, params.serviceId))
-        .get();
-
-      if (!targetService) {
-        throw new Error('SERVICE_NOT_FOUND');
-      }
-
-      // 2. Fetch active customer service for sequence calculation
-      const existingCS = tx
-        .select()
-        .from(customerServices)
-        .where(
-          and(
-            eq(customerServices.customerId, params.customerId),
-            eq(customerServices.serviceId, params.serviceId),
-            eq(customerServices.status, 'active')
-          )
-        )
-        .get();
-
-      let startDate = params.paidAt;
-      if (!params.startDateFromPayment && existingCS && existingCS.expiredAt > params.paidAt) {
-        startDate = existingCS.expiredAt;
-      }
-      const expiredAt = startDate + (targetService.billingCycle ?? 30) * 24 * 60 * 60 * 1000;
-
-      // 3. Generate IDs
-      const orderId = crypto.randomUUID();
-      const paymentId = crypto.randomUUID();
-      const orderNumber = `ORD-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
-      const transactionId = `TX-MANUAL-${orderNumber}`;
-
-      // 4. Create order (with paymentId as null first to avoid FOREIGN KEY failure)
-      tx.insert(orders).values({
-        id: orderId,
-        customerId: params.customerId,
-        staffId: params.staffId,
-        orderNumber,
-        amount: params.amount,
-        content: params.content,
-        status: 'paid',
-        serviceId: params.serviceId,
-        paymentId: null,
-        startDate,
-        expiredAt,
-        createdAt: Date.now(),
-        paidAt: params.paidAt,
-      }).run();
-
-      // 5. Create payment
-      tx.insert(payments).values({
-        id: paymentId,
-        orderId,
-        customerId: params.customerId,
-        amount: params.amount,
-        transactionId,
-        paymentMethod: params.paymentMethod,
-        type: 'in',
-        category: 'revenue',
-        content: params.content,
-        paidAt: params.paidAt,
-        createdAt: Date.now(),
-      }).run();
-
-      // 5b. Update order with paymentId
-      tx.update(orders)
-        .set({ paymentId })
-        .where(eq(orders.id, orderId))
-        .run();
-
-      // 6. Update or create customer service
-      const existingCustomerService = tx
-        .select()
-        .from(customerServices)
-        .where(
-          and(
-            eq(customerServices.customerId, params.customerId),
-            eq(customerServices.serviceId, params.serviceId)
-          )
-        )
-        .get();
-
-      if (existingCustomerService) {
-        tx.update(customerServices)
-          .set({
-            status: 'active',
-            startDate,
-            expiredAt,
-          })
-          .where(eq(customerServices.id, existingCustomerService.id))
-          .run();
-      } else {
-        tx.insert(customerServices).values({
-          id: crypto.randomUUID(),
-          customerId: params.customerId,
-          serviceId: params.serviceId,
-          status: 'active',
-          startDate,
-          expiredAt,
-          createdAt: Date.now(),
-        }).run();
-      }
-
-      // 7. Sync max expiredAt to customers table
-      const activeServices = tx
-        .select()
-        .from(customerServices)
-        .where(
-          and(
-            eq(customerServices.customerId, params.customerId),
-            eq(customerServices.status, 'active')
-          )
-        )
-        .all();
-
-      const maxExpiredAt = activeServices.reduce(
-        (max: number, current: any) => (current.expiredAt > max ? current.expiredAt : max),
-        0
-      );
-
-      if (maxExpiredAt > 0) {
-        tx.update(customers)
-          .set({ expiredAt: maxExpiredAt })
-          .where(eq(customers.id, params.customerId))
-          .run();
-      }
-
-      return { success: true, orderId, orderNumber };
-    });
-  } else {
     // D1 (production) - asynchronous transaction with fallback if D1 mock does not support it
     // @para-doc [services-payments-spec.md#63-cac-ham-tien-ich-dich-vu-service-helpers]
     const executeInTx = async (tx: any) => {
@@ -634,16 +363,7 @@ export async function createPaidOrder(
       return { success: true, orderId, orderNumber };
     };
 
-    try {
-      return await db.transaction(executeInTx);
-    } catch (err: any) {
-      if (err.message.includes('begin') || err.message.includes('transaction')) {
-        console.warn('[D1 Transaction Fallback] Transaction not supported. Running sequentially on db client...');
-        return await executeInTx(db);
-      }
-      throw err;
-    }
-  }
+    return await runTransaction(db, executeInTx);
 }
 
 // @para-doc [services-payments-spec.md#63-cac-ham-tien-ich-dich-vu-service-helpers]
