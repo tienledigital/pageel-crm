@@ -42,16 +42,27 @@ export async function runTransaction<T>(
   const isD1 = !db.session?.client?.transaction;
   const maxAttempts = options?.maxAttempts ?? 5;
   const baseDelay = options?.delayMs ?? 50;
+  let useD1Fallback = false;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      if (isD1) {
-        return await db.transaction(callback);
-      } else {
-        // BetterSQLite3: run callback directly to support async functions
-        // since better-sqlite3's db.transaction does not support Promise returns.
-        return await callback(db);
+      if (isD1 && !useD1Fallback) {
+        try {
+          return await db.transaction(callback);
+        } catch (err: any) {
+          const errorStr = (err.message || String(err)).toLowerCase();
+          if (errorStr.includes('begin') || errorStr.includes('transaction')) {
+            console.warn('[D1 Transaction Fallback] Transaction not supported. Running sequentially on db client...');
+            useD1Fallback = true;
+            // Fallthrough to run callback(db) directly
+          } else {
+            throw err;
+          }
+        }
       }
+
+      // If not D1 or D1 transaction is not supported, run callback directly on db client
+      return await callback(db);
     } catch (err: any) {
       const errorStr = (err.message || String(err)).toLowerCase();
       const isLockError =
