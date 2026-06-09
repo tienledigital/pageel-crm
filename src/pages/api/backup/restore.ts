@@ -90,6 +90,7 @@ export async function POST(context: any) {
 
     const CHUNK_SIZE = 5;
 
+    // @para-doc [spec.md#sao-luu-du-lieu-tu-dong-len-github-git-database-backup-pipeline]
     // 6. Perform the restore inside a transaction (handled conditionally per driver type)
     const executeRestore = async (tx: any) => {
       // Break cyclic/foreign key references before delete
