@@ -54,3 +54,7 @@ scripts/*.sql
 # TypeScript build cache
 *.tsbuildinfo
 
+# Vitest cache and coverage
+.vitest/
+coverage/
+
