@@ -34,3 +34,41 @@ export function getDb(platformEnv?: { DB: any }) {
   return sqliteDb;
 }
 
+export async function runTransaction<T>(
+  db: any,
+  callback: (tx: any) => Promise<T>,
+  options?: { maxAttempts?: number; delayMs?: number }
+): Promise<T> {
+  const maxAttempts = options?.maxAttempts ?? 5;
+  const baseDelay = options?.delayMs ?? 50;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await db.transaction(callback);
+    } catch (err: any) {
+      const errorStr = (err.message || String(err)).toLowerCase();
+      const isLockError =
+        err.code === 'SQLITE_BUSY' ||
+        errorStr.includes('database is locked') ||
+        errorStr.includes('sqlite_busy') ||
+        errorStr.includes('locked') ||
+        errorStr.includes('busy');
+
+      if (!isLockError || attempt === maxAttempts - 1) {
+        throw err;
+      }
+
+      // Exponential backoff with jitter
+      const backoff = baseDelay * Math.pow(2, attempt);
+      const jitter = Math.random() * (backoff * 0.5); // jitter up to 50%
+      const delay = backoff + jitter;
+
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw new Error('Transaction failed after maximum attempts');
+}
+
+
+
