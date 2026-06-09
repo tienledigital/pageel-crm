@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import { getDb } from '../src/lib/db';
+import { getDb, runTransaction } from '../src/lib/db';
+
 
 describe('DB Router Client (getDb)', () => {
   it('should return in-memory SQLite connection for testing environment', () => {
@@ -64,3 +65,54 @@ describe('DB Schema Verification', () => {
     expect((orders as any).taxInvoiceDate).toBeDefined();
   });
 });
+
+describe('runTransaction retry logic with mocking', () => {
+  it('should retry when transaction fails with SQLite lock error and succeed eventually', async () => {
+    let attempts = 0;
+    const mockDb = {
+      transaction: vi.fn(async (callback) => {
+        attempts++;
+        if (attempts < 4) {
+          const err = new Error('database is locked');
+          (err as any).code = 'SQLITE_BUSY';
+          throw err;
+        }
+        return await callback({} as any);
+      })
+    };
+
+    const mockCallback = vi.fn(async (tx) => {
+      return { result: 'success' };
+    });
+
+    // We set maxAttempts to 5 and delayMs to 1ms to make tests run fast
+    const result = await runTransaction(mockDb, mockCallback, { maxAttempts: 5, delayMs: 1 });
+    
+    expect(result).toEqual({ result: 'success' });
+    expect(attempts).toBe(4);
+    expect(mockCallback).toHaveBeenCalledTimes(1);
+  });
+
+  it('should fail after maxAttempts exceeded', async () => {
+    let attempts = 0;
+    const mockDb = {
+      transaction: vi.fn(async (callback) => {
+        attempts++;
+        const err = new Error('database is locked');
+        (err as any).code = 'SQLITE_BUSY';
+        throw err;
+      })
+    };
+
+    const mockCallback = vi.fn(async (tx) => {
+      return { result: 'success' };
+    });
+
+    await expect(
+      runTransaction(mockDb, mockCallback, { maxAttempts: 3, delayMs: 1 })
+    ).rejects.toThrow('database is locked');
+
+    expect(attempts).toBe(3);
+  });
+});
+

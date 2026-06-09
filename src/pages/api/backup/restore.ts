@@ -1,6 +1,6 @@
 // @para-doc [operations-guide.md#5-huong-dan-khoi-phuc-du-lieu-database-disaster-recovery]
 import { env } from 'cloudflare:workers';
-import { getDb } from '@/lib/db';
+import { getDb, runTransaction } from '@/lib/db';
 import { fetchBackupContent } from '@/lib/backup/githubClient';
 import { users, staff, customers, orders, payments, config, syncLogs, services, customerServices, auditLogs } from '@/lib/db/schema';
 import { logDebug } from '@/lib/debug-logger';
@@ -91,64 +91,61 @@ export async function POST(context: any) {
     const CHUNK_SIZE = 5;
 
     // 6. Perform the restore inside a transaction (handled conditionally per driver type)
-    const isD1 = !!(env && env.DB);
-
-    if (isD1) {
+    const executeRestore = async (tx: any) => {
       // Break cyclic/foreign key references before delete
-      await db.update(orders).set({ paymentId: null });
-      await db.update(auditLogs).set({ userId: null });
+      await tx.update(orders).set({ paymentId: null });
+      await tx.update(auditLogs).set({ userId: null });
 
-      // In production Cloudflare D1 environment, execute queries sequentially without big batching
-      // to avoid combined 'too many SQL variables' limits across multiple chunks.
-      await db.delete(payments);
-      await db.delete(orders);
-      await db.delete(customerServices);
-      await db.delete(customers);
-      await db.delete(staff);
-      await db.delete(users);
-      await db.delete(services);
-      await db.delete(config);
+      // Clear tables in reverse-dependency order
+      await tx.delete(payments);
+      await tx.delete(orders);
+      await tx.delete(customerServices);
+      await tx.delete(customers);
+      await tx.delete(staff);
+      await tx.delete(users);
+      await tx.delete(services);
+      await tx.delete(config);
 
       // Bulk insert in dependency order sequentially
       if (backupData.config.length > 0) {
         for (let i = 0; i < backupData.config.length; i += CHUNK_SIZE) {
           const chunk = backupData.config.slice(i, i + CHUNK_SIZE);
-          await db.insert(config).values(chunk);
+          await tx.insert(config).values(chunk);
         }
       }
 
       if (backupData.users.length > 0) {
         for (let i = 0; i < backupData.users.length; i += CHUNK_SIZE) {
           const chunk = backupData.users.slice(i, i + CHUNK_SIZE);
-          await db.insert(users).values(chunk);
+          await tx.insert(users).values(chunk);
         }
       }
 
       if (backupData.staff.length > 0) {
         for (let i = 0; i < backupData.staff.length; i += CHUNK_SIZE) {
           const chunk = backupData.staff.slice(i, i + CHUNK_SIZE);
-          await db.insert(staff).values(chunk);
+          await tx.insert(staff).values(chunk);
         }
       }
 
       if (backupData.services.length > 0) {
         for (let i = 0; i < backupData.services.length; i += CHUNK_SIZE) {
           const chunk = backupData.services.slice(i, i + CHUNK_SIZE);
-          await db.insert(services).values(chunk);
+          await tx.insert(services).values(chunk);
         }
       }
 
       if (backupData.customers.length > 0) {
         for (let i = 0; i < backupData.customers.length; i += CHUNK_SIZE) {
           const chunk = backupData.customers.slice(i, i + CHUNK_SIZE);
-          await db.insert(customers).values(chunk);
+          await tx.insert(customers).values(chunk);
         }
       }
 
       if (backupData.customerServices.length > 0) {
         for (let i = 0; i < backupData.customerServices.length; i += CHUNK_SIZE) {
           const chunk = backupData.customerServices.slice(i, i + CHUNK_SIZE);
-          await db.insert(customerServices).values(chunk);
+          await tx.insert(customerServices).values(chunk);
         }
       }
 
@@ -156,113 +153,29 @@ export async function POST(context: any) {
         for (let i = 0; i < backupData.orders.length; i += CHUNK_SIZE) {
           const chunk = backupData.orders.slice(i, i + CHUNK_SIZE);
           const chunkWithNullPayments = chunk.map((order: any) => ({ ...order, paymentId: null }));
-          await db.insert(orders).values(chunkWithNullPayments);
+          await tx.insert(orders).values(chunkWithNullPayments);
         }
       }
 
       if (backupData.payments.length > 0) {
         for (let i = 0; i < backupData.payments.length; i += CHUNK_SIZE) {
           const chunk = backupData.payments.slice(i, i + CHUNK_SIZE);
-          await db.insert(payments).values(chunk);
+          await tx.insert(payments).values(chunk);
         }
       }
 
       if (backupData.orders.length > 0) {
         for (const order of backupData.orders) {
           if (order.paymentId) {
-            await db.update(orders)
+            await tx.update(orders)
               .set({ paymentId: order.paymentId })
               .where(eq(orders.id, order.id));
           }
         }
       }
-    } else {
-      // In better-sqlite3 environment (testing / local fallback), transactions are fully synchronous
-      db.transaction((tx: any) => {
-        // Break references first
-        tx.update(orders).set({ paymentId: null }).run();
-        tx.update(auditLogs).set({ userId: null }).run();
+    };
 
-        // Clear tables in reverse-dependency order
-        tx.delete(payments).run();
-        tx.delete(orders).run();
-        tx.delete(customerServices).run();
-        tx.delete(customers).run();
-        tx.delete(staff).run();
-        tx.delete(users).run();
-        tx.delete(services).run();
-        tx.delete(config).run();
-
-        // Bulk insert in dependency order
-        if (backupData.config.length > 0) {
-          for (let i = 0; i < backupData.config.length; i += CHUNK_SIZE) {
-            const chunk = backupData.config.slice(i, i + CHUNK_SIZE);
-            tx.insert(config).values(chunk).run();
-          }
-        }
-
-        if (backupData.users.length > 0) {
-          for (let i = 0; i < backupData.users.length; i += CHUNK_SIZE) {
-            const chunk = backupData.users.slice(i, i + CHUNK_SIZE);
-            tx.insert(users).values(chunk).run();
-          }
-        }
-
-        if (backupData.staff.length > 0) {
-          for (let i = 0; i < backupData.staff.length; i += CHUNK_SIZE) {
-            const chunk = backupData.staff.slice(i, i + CHUNK_SIZE);
-            tx.insert(staff).values(chunk).run();
-          }
-        }
-
-        if (backupData.services.length > 0) {
-          for (let i = 0; i < backupData.services.length; i += CHUNK_SIZE) {
-            const chunk = backupData.services.slice(i, i + CHUNK_SIZE);
-            tx.insert(services).values(chunk).run();
-          }
-        }
-
-        if (backupData.customers.length > 0) {
-          for (let i = 0; i < backupData.customers.length; i += CHUNK_SIZE) {
-            const chunk = backupData.customers.slice(i, i + CHUNK_SIZE);
-            tx.insert(customers).values(chunk).run();
-          }
-        }
-
-        if (backupData.customerServices.length > 0) {
-          for (let i = 0; i < backupData.customerServices.length; i += CHUNK_SIZE) {
-            const chunk = backupData.customerServices.slice(i, i + CHUNK_SIZE);
-            tx.insert(customerServices).values(chunk).run();
-          }
-        }
-
-        if (backupData.orders.length > 0) {
-          for (let i = 0; i < backupData.orders.length; i += CHUNK_SIZE) {
-            const chunk = backupData.orders.slice(i, i + CHUNK_SIZE);
-            const chunkWithNullPayments = chunk.map((order: any) => ({ ...order, paymentId: null }));
-            tx.insert(orders).values(chunkWithNullPayments).run();
-          }
-        }
-
-        if (backupData.payments.length > 0) {
-          for (let i = 0; i < backupData.payments.length; i += CHUNK_SIZE) {
-            const chunk = backupData.payments.slice(i, i + CHUNK_SIZE);
-            tx.insert(payments).values(chunk).run();
-          }
-        }
-
-        if (backupData.orders.length > 0) {
-          for (const order of backupData.orders) {
-            if (order.paymentId) {
-              tx.update(orders)
-                .set({ paymentId: order.paymentId })
-                .where(eq(orders.id, order.id))
-                .run();
-            }
-          }
-        }
-      });
-    }
+    await runTransaction(db, executeRestore);
 
     // 6.5. Ensure CUST-ANONYMOUS exists after restoration (except in unit tests to preserve assertion counts)
     if (process.env.NODE_ENV !== 'test') {
