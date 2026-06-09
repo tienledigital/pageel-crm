@@ -2,7 +2,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { payments, orders } from '@/lib/db/schema';
+import { payments, orders, customers, services } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { syncCustomerServices } from '@/lib/services/serviceManager';
@@ -58,19 +58,47 @@ export const POST: APIRoute = async (context) => {
       const orderId = currentPayment.orderId;
       const paymentCustId = currentPayment.customerId;
 
+      // Revert linked order status to pending (not deleted!)
+      let order = null;
+      if (orderId) {
+        order = await db.select().from(orders).where(eq(orders.id, orderId)).get();
+        await db
+          .update(orders)
+          .set({ status: 'pending', paidAt: null, paymentId: null })
+          .where(eq(orders.id, orderId));
+      }
+
+      // Check if it is a Direct Payment
+      let isDirectPayment = false;
+      if (order && currentPayment.content) {
+        const contentLower = currentPayment.content.toLowerCase();
+        if (order.orderNumber && contentLower.includes(order.orderNumber.toLowerCase())) {
+          isDirectPayment = true;
+        } else if (order.serviceId) {
+          const service = await db.select().from(services).where(eq(services.id, order.serviceId)).get();
+          if (service && service.prefix && contentLower.includes(service.prefix.toLowerCase())) {
+            isDirectPayment = true;
+          }
+        }
+      }
+
       // Revert payment linkage
       await db
         .update(payments)
         .set({
           orderId: null,
-          customerId: null,
           category: 'non_revenue'
         })
         .where(eq(payments.id, paymentId));
 
-      // Delete the corresponding order if exists
-      if (orderId) {
-        await db.delete(orders).where(eq(orders.id, orderId));
+      // Refund customer wallet balance if NOT a Direct Payment (Deposit Payment)
+      if (!isDirectPayment && paymentCustId) {
+        const customerInfo = await db.select().from(customers).where(eq(customers.id, paymentCustId)).get();
+        if (customerInfo) {
+          await db.update(customers)
+            .set({ balance: customerInfo.balance + currentPayment.amount })
+            .where(eq(customers.id, paymentCustId));
+        }
       }
 
       // Sync customer services
@@ -84,8 +112,33 @@ export const POST: APIRoute = async (context) => {
       });
     }
 
-    // If the payment was previously linked to an order, we might want to revert that order to 'pending'
-    // if the user is unlinking it or linking to a different order.
+    // Handle order linking
+    if (orderId) {
+      const targetCustomerId = customerId || currentPayment.customerId;
+      if (!targetCustomerId) {
+        return new Response(JSON.stringify({ error: 'Customer ID is required to link payment' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      const wasDeposit = currentPayment.customerId && currentPayment.category === 'non_revenue';
+      if (wasDeposit) {
+        // Verify customer wallet balance
+        const customerInfo = await db.select().from(customers).where(eq(customers.id, targetCustomerId)).get();
+        if (!customerInfo || customerInfo.balance < currentPayment.amount) {
+          return new Response(JSON.stringify({ error: 'Insufficient wallet balance' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Deduct customer balance
+        await db.update(customers)
+          .set({ balance: customerInfo.balance - currentPayment.amount })
+          .where(eq(customers.id, targetCustomerId));
+      }
+    }
+
     if (currentPayment.orderId && currentPayment.orderId !== orderId) {
       await db
         .update(orders)

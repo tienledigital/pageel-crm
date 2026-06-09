@@ -375,8 +375,8 @@ describe('Database Reconciliation Integration Tests', () => {
       expect(activeCustServices[0].status).toBe('active');
     });
 
-    it('should reconcile underpayment by adding full amount to balance and not extending service', async () => {
-      const { services: servicesTable, customerServices: customerServicesTable, orders: ordersTable } = await import('@/lib/db/schema');
+    it('should reconcile underpayment as direct payment without adding to customer balance', async () => {
+      const { services: servicesTable, customerServices: customerServicesTable, orders: ordersTable, payments: paymentsTable } = await import('@/lib/db/schema');
       const serviceId = 'srv-phase3-2';
       await db.insert(servicesTable).values({
         id: serviceId,
@@ -399,15 +399,22 @@ describe('Database Reconciliation Integration Tests', () => {
       const result = await reconcilePayment(db, payment);
       expect(result.success).toBe(true);
 
-      // Verify balance has the full payment amount (150k)
+      // Verify balance is unchanged (remains 0)
       const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
-      expect(customerInfo.balance).toBe(150000);
+      expect(customerInfo.balance).toBe(0);
 
       // Verify order is created in orders table and status is partially_paid
       const generatedOrders = await db.select().from(ordersTable).where(eq(ordersTable.serviceId, serviceId)).all();
       expect(generatedOrders).toHaveLength(1);
-      expect(generatedOrders[0].status).toBe('partially_paid');
-      expect(generatedOrders[0].amount).toBe(200000);
+      const order = generatedOrders[0];
+      expect(order.status).toBe('partially_paid');
+      expect(order.amount).toBe(200000);
+
+      // Verify payment is linked directly to order and has category = 'revenue'
+      const linkedPayments = await db.select().from(paymentsTable).where(eq(paymentsTable.orderId, order.id)).all();
+      expect(linkedPayments).toHaveLength(1);
+      expect(linkedPayments[0].amount).toBe(150000);
+      expect(linkedPayments[0].category).toBe('revenue');
 
       // Verify customer service was NOT activated
       const activeCustServices = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
@@ -427,7 +434,7 @@ describe('Database Reconciliation Integration Tests', () => {
         createdAt: Date.now()
       });
 
-      // 1. Initial underpayment: 150k for 200k service
+      // 1. Initial underpayment: 150k for 200k service (Direct Payment)
       const payment1 = {
         transactionId: 'TX_PHASE3_3_A',
         amount: 150000,
@@ -437,10 +444,14 @@ describe('Database Reconciliation Integration Tests', () => {
       };
       await reconcilePayment(db, payment1);
 
-      // 2. Top-up payment: 100k cash / bank transfer (without matching prefix)
-      // This should bring the customer's balance to 150k + 100k = 250k.
+      // Verify customer balance is 0
+      let customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+      expect(customerInfo.balance).toBe(0);
+
+      // 2. Top-up payment: 100k cash / bank transfer (without matching prefix -> Deposit)
+      // This should bring the customer's balance to 0 + 100k = 100k.
       // 50k should be automatically deducted to pay off the 50k remaining for the partially paid order.
-      // Remainder (200k) should stay in the customer's balance.
+      // Remainder (50k) should stay in the customer's balance.
       const payment2 = {
         transactionId: 'TX_PHASE3_3_B',
         amount: 100000,
@@ -452,8 +463,8 @@ describe('Database Reconciliation Integration Tests', () => {
       const result = await reconcilePayment(db, payment2);
       expect(result.success).toBe(true);
 
-      // Verify balance is now 50k (250k - 200k)
-      const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+      // Verify balance is now 50k (100k - 50k)
+      customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
       expect(customerInfo.balance).toBe(50000);
 
       // Verify order is now paid
@@ -465,11 +476,87 @@ describe('Database Reconciliation Integration Tests', () => {
       expect(activeCustServices).toHaveLength(1);
       expect(activeCustServices[0].status).toBe('active');
 
-      // Verify virtual payment was created with paymentMethod = 'wallet_deduction'
+      // Verify virtual payment was created with paymentMethod = 'wallet_deduction' and amount = 50k
       const virtualPayments = await db.select().from(paymentsTable).where(eq(paymentsTable.paymentMethod, 'wallet_deduction')).all();
       expect(virtualPayments).toHaveLength(1);
-      expect(virtualPayments[0].amount).toBe(200000);
+      expect(virtualPayments[0].amount).toBe(50000); // 50k deduction
       expect(virtualPayments[0].orderId).toBe(order.id);
+    });
+
+    it('should reconcile direct payment with exact amount and not touch wallet balance', async () => {
+      const { services: servicesTable, orders: ordersTable, customerServices: customerServicesTable } = await import('@/lib/db/schema');
+      const serviceId = 'srv-direct-exact';
+      await db.insert(servicesTable).values({
+        id: serviceId,
+        name: 'Direct Exact Service',
+        price: 200000,
+        billingCycle: 30,
+        prefix: 'DIRECT_EXACT',
+        status: 'active',
+        createdAt: Date.now()
+      });
+
+      const payment = {
+        transactionId: 'TX_DIRECT_EXACT',
+        amount: 200000,
+        content: '1005 - DIRECT_EXACT',
+        bank: 'Techcombank',
+        paidAt: Date.now(),
+      };
+
+      const result = await reconcilePayment(db, payment);
+      expect(result.success).toBe(true);
+
+      // Verify customer balance is 0 (unchanged)
+      const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+      expect(customerInfo.balance).toBe(0);
+
+      // Verify order status is paid
+      const ords = await db.select().from(ordersTable).where(eq(ordersTable.serviceId, serviceId)).all();
+      expect(ords).toHaveLength(1);
+      expect(ords[0].status).toBe('paid');
+
+      // Verify service was activated
+      const activeCS = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+      expect(activeCS).toHaveLength(1);
+    });
+
+    it('should reconcile direct payment with overpayment, setting order to paid and adding only surplus to wallet balance', async () => {
+      const { services: servicesTable, orders: ordersTable, customerServices: customerServicesTable } = await import('@/lib/db/schema');
+      const serviceId = 'srv-direct-over';
+      await db.insert(servicesTable).values({
+        id: serviceId,
+        name: 'Direct Over Service',
+        price: 200000,
+        billingCycle: 30,
+        prefix: 'DIRECT_OVER',
+        status: 'active',
+        createdAt: Date.now()
+      });
+
+      const payment = {
+        transactionId: 'TX_DIRECT_OVER',
+        amount: 250000, // overpaid by 50k
+        content: '1005 - DIRECT_OVER',
+        bank: 'Techcombank',
+        paidAt: Date.now(),
+      };
+
+      const result = await reconcilePayment(db, payment);
+      expect(result.success).toBe(true);
+
+      // Verify customer balance has only the surplus (50k)
+      const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+      expect(customerInfo.balance).toBe(50000);
+
+      // Verify order status is paid
+      const ords = await db.select().from(ordersTable).where(eq(ordersTable.serviceId, serviceId)).all();
+      expect(ords).toHaveLength(1);
+      expect(ords[0].status).toBe('paid');
+
+      // Verify service was activated
+      const activeCS = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+      expect(activeCS).toHaveLength(1);
     });
   });
 
@@ -976,6 +1063,226 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
       const data = await response.json();
       expect(data).toHaveLength(1);
       expect(data[0].orderNumber).toBe('ORD-20260604-0001');
+    });
+
+    describe('Manual Reconcile API Tests', () => {
+      it('should link a deposit payment to an order, deduct customer wallet balance, and set category to revenue', async () => {
+        const { orders: ordersTable, payments: paymentsTable } = await import('@/lib/db/schema');
+        
+        // 1. Seed a pending order of 200,000 VND
+        await db.insert(ordersTable).values({
+          id: 'ord-manual-link-1',
+          orderNumber: 'ORD-MANUAL-1',
+          amount: 200000,
+          content: 'Order manual link 1',
+          status: 'pending',
+          customerId: '1005',
+        });
+
+        // 2. Seed a deposit payment of 200,000 VND (non_revenue, not linked to order)
+        await db.insert(paymentsTable).values({
+          id: 'pay-manual-link-1',
+          transactionId: 'TX_MANUAL_LINK_1',
+          amount: 200000,
+          content: '1005 - top up',
+          bank: 'Techcombank',
+          paidAt: Date.now(),
+          category: 'non_revenue',
+          customerId: '1005',
+        });
+
+        // 3. Set customer balance to 250,000 VND (simulating that the customer has funded their wallet)
+        await db.update(customers).set({ balance: 250000 }).where(eq(customers.id, '1005'));
+
+        const { POST: reconcilePostHandler } = await import('../src/pages/api/crm/payments/reconcile');
+        const context = createMockContextForApi('POST', {
+          paymentId: 'pay-manual-link-1',
+          customerId: '1005',
+          orderId: 'ord-manual-link-1',
+          category: 'revenue',
+        }, adminToken);
+
+        const response = await reconcilePostHandler(context);
+        expect(response.status).toBe(200);
+
+        // 4. Verify customer balance is deducted by 200,000 VND -> remains 50,000 VND
+        const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+        expect(customerInfo.balance).toBe(50000);
+
+        // 5. Verify payment is updated (orderId linked, category is revenue)
+        const [payment] = await db.select().from(paymentsTable).where(eq(paymentsTable.id, 'pay-manual-link-1'));
+        expect(payment.orderId).toBe('ord-manual-link-1');
+        expect(payment.category).toBe('revenue');
+
+        // 6. Verify order status is updated to paid
+        const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, 'ord-manual-link-1'));
+        expect(order.status).toBe('paid');
+        expect(order.paymentId).toBe('pay-manual-link-1');
+      });
+
+      it('should fail to link a payment if customer wallet balance is insufficient', async () => {
+        const { orders: ordersTable, payments: paymentsTable } = await import('@/lib/db/schema');
+        
+        await db.insert(ordersTable).values({
+          id: 'ord-manual-link-2',
+          orderNumber: 'ORD-MANUAL-2',
+          amount: 200000,
+          content: 'Order manual link 2',
+          status: 'pending',
+          customerId: '1005',
+        });
+
+        await db.insert(paymentsTable).values({
+          id: 'pay-manual-link-2',
+          transactionId: 'TX_MANUAL_LINK_2',
+          amount: 200000,
+          content: '1005 - top up 2',
+          bank: 'Techcombank',
+          paidAt: Date.now(),
+          category: 'non_revenue',
+          customerId: '1005',
+        });
+
+        // Customer balance is only 50k, which is less than 200k required
+        await db.update(customers).set({ balance: 50000 }).where(eq(customers.id, '1005'));
+
+        const { POST: reconcilePostHandler } = await import('../src/pages/api/crm/payments/reconcile');
+        const context = createMockContextForApi('POST', {
+          paymentId: 'pay-manual-link-2',
+          customerId: '1005',
+          orderId: 'ord-manual-link-2',
+          category: 'revenue',
+        }, adminToken);
+
+        const response = await reconcilePostHandler(context);
+        expect(response.status).toBe(400);
+        const data = await response.json();
+        expect(data.error).toContain('Insufficient wallet balance');
+
+        // Verify balance remains 50k
+        const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+        expect(customerInfo.balance).toBe(50000);
+
+        // Verify order remains pending
+        const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, 'ord-manual-link-2'));
+        expect(order.status).toBe('pending');
+      });
+
+      it('should manually unlink a deposit payment from an order, refund customer wallet balance, and set category to non_revenue', async () => {
+        const { orders: ordersTable, payments: paymentsTable } = await import('@/lib/db/schema');
+        
+        // Seed payment first with orderId null
+        await db.insert(paymentsTable).values({
+          id: 'pay-manual-unlink-1',
+          transactionId: 'TX_MANUAL_UNLINK_1',
+          amount: 200000,
+          content: '1005 - top up deposit', // does not match ORD-MANUAL-UNLINK-1
+          bank: 'Techcombank',
+          paidAt: Date.now(),
+          category: 'revenue',
+          customerId: '1005',
+          orderId: null,
+        });
+
+        await db.insert(ordersTable).values({
+          id: 'ord-manual-unlink-1',
+          orderNumber: 'ORD-MANUAL-UNLINK-1',
+          amount: 200000,
+          content: 'Order manual unlink 1',
+          status: 'paid',
+          customerId: '1005',
+          paymentId: 'pay-manual-unlink-1',
+        });
+
+        // Link payment to order
+        await db.update(paymentsTable)
+          .set({ orderId: 'ord-manual-unlink-1' })
+          .where(eq(paymentsTable.id, 'pay-manual-unlink-1'));
+
+        // Set customer balance to 50k
+        await db.update(customers).set({ balance: 50000 }).where(eq(customers.id, '1005'));
+
+        const { POST: reconcilePostHandler } = await import('../src/pages/api/crm/payments/reconcile');
+        const context = createMockContextForApi('POST', {
+          paymentId: 'pay-manual-unlink-1',
+          unlinkOrder: true,
+        }, adminToken);
+
+        const response = await reconcilePostHandler(context);
+        expect(response.status).toBe(200);
+
+        // Verify customer balance is refunded with 200k -> becomes 250k
+        const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+        expect(customerInfo.balance).toBe(250000);
+
+        // Verify payment linkage is removed and category is reverted to non_revenue
+        const [payment] = await db.select().from(paymentsTable).where(eq(paymentsTable.id, 'pay-manual-unlink-1'));
+        expect(payment.orderId).toBeNull();
+        expect(payment.category).toBe('non_revenue');
+
+        // Verify order status is reverted to pending (not deleted!)
+        const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, 'ord-manual-unlink-1'));
+        expect(order.status).toBe('pending');
+        expect(order.paymentId).toBeNull();
+      });
+
+      it('should manually unlink a direct payment from an order without refunding wallet balance', async () => {
+        const { orders: ordersTable, payments: paymentsTable } = await import('@/lib/db/schema');
+        
+        // Seed payment first with orderId null
+        await db.insert(paymentsTable).values({
+          id: 'pay-manual-unlink-2',
+          transactionId: 'TX_MANUAL_UNLINK_2',
+          amount: 200000,
+          content: '1005 - NGUYEN VAN A - ORD-MANUAL-UNLINK-2', // matches order number
+          bank: 'Techcombank',
+          paidAt: Date.now(),
+          category: 'revenue',
+          customerId: '1005',
+          orderId: null,
+        });
+
+        await db.insert(ordersTable).values({
+          id: 'ord-manual-unlink-2',
+          orderNumber: 'ORD-MANUAL-UNLINK-2',
+          amount: 200000,
+          content: 'Order manual unlink 2',
+          status: 'paid',
+          customerId: '1005',
+          paymentId: 'pay-manual-unlink-2',
+        });
+
+        // Link payment to order
+        await db.update(paymentsTable)
+          .set({ orderId: 'ord-manual-unlink-2' })
+          .where(eq(paymentsTable.id, 'pay-manual-unlink-2'));
+
+        // Set customer balance to 50k
+        await db.update(customers).set({ balance: 50000 }).where(eq(customers.id, '1005'));
+
+        const { POST: reconcilePostHandler } = await import('../src/pages/api/crm/payments/reconcile');
+        const context = createMockContextForApi('POST', {
+          paymentId: 'pay-manual-unlink-2',
+          unlinkOrder: true,
+        }, adminToken);
+
+        const response = await reconcilePostHandler(context);
+        expect(response.status).toBe(200);
+
+        // Verify customer balance remains 50k (no refund!)
+        const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+        expect(customerInfo.balance).toBe(50000);
+
+        // Verify payment linkage is removed and category becomes non_revenue
+        const [payment] = await db.select().from(paymentsTable).where(eq(paymentsTable.id, 'pay-manual-unlink-2'));
+        expect(payment.orderId).toBeNull();
+        expect(payment.category).toBe('non_revenue');
+
+        // Verify order status is reverted to pending (not deleted!)
+        const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, 'ord-manual-unlink-2'));
+        expect(order.status).toBe('pending');
+        expect(order.paymentId).toBeNull();
+      });
     });
   });
 });
