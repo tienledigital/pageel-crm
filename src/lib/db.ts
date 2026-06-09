@@ -34,6 +34,7 @@ export function getDb(platformEnv?: { DB: any }) {
   return sqliteDb;
 }
 
+// @para-doc [spec.md#relational-database]
 export async function runTransaction<T>(
   db: any,
   callback: (tx: any) => Promise<T>,
