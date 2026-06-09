@@ -1,6 +1,8 @@
+// @para-doc [spec.md#automated-revenue-reconciliation]
 import type { APIRoute } from 'astro';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 
+// @para-doc [spec.md#automated-revenue-reconciliation]
 export const GET: APIRoute = async (context) => {
   try {
     // 1. Verify user session

@@ -1,8 +1,8 @@
-// @para-doc [services-payments-spec.md#project-structure]
+// @para-doc [services-payments-spec.md#5-project-structure-cau-truc-file-anh-huong]
 import { eq, and, or, desc, inArray, sql } from 'drizzle-orm';
 import { services, customerServices, payments, customers, orders } from '@/lib/db/schema';
 
-// @para-doc [services-payments-spec.md#service-helpers]
+// @para-doc [services-payments-spec.md#63-cac-ham-tien-ich-dich-vu-service-helpers]
 export interface CreateServiceParams {
   name: string;
   price: number;
@@ -11,7 +11,7 @@ export interface CreateServiceParams {
   description?: string;
 }
 
-// @para-doc [services-payments-spec.md#service-helpers]
+// @para-doc [services-payments-spec.md#63-cac-ham-tien-ich-dich-vu-service-helpers]
 export interface UpdateServiceParams {
   name?: string;
   price?: number;
@@ -21,7 +21,7 @@ export interface UpdateServiceParams {
   description?: string;
 }
 
-// @para-doc [services-payments-spec.md#service-helpers]
+// @para-doc [services-payments-spec.md#63-cac-ham-tien-ich-dich-vu-service-helpers]
 export async function createService(db: any, params: CreateServiceParams): Promise<any> {
   const id = crypto.randomUUID();
   const newService = {
@@ -38,13 +38,13 @@ export async function createService(db: any, params: CreateServiceParams): Promi
   return newService;
 }
 
-// @para-doc [services-payments-spec.md#service-helpers]
+// @para-doc [services-payments-spec.md#63-cac-ham-tien-ich-dich-vu-service-helpers]
 export async function getService(db: any, id: string): Promise<any> {
   const result = await db.select().from(services).where(eq(services.id, id)).get();
   return result || null;
 }
 
-// @para-doc [services-payments-spec.md#service-helpers]
+// @para-doc [services-payments-spec.md#63-cac-ham-tien-ich-dich-vu-service-helpers]
 export async function updateService(db: any, id: string, params: UpdateServiceParams): Promise<any> {
   const updateData: any = {};
   if (params.name !== undefined) updateData.name = params.name;
@@ -63,8 +63,8 @@ export async function listServices(db: any): Promise<any[]> {
   return await db.select().from(services).all();
 }
 
-// @para-doc [services-payments-spec.md#late-association]
-// @para-doc [services-payments-spec.md#late-association]
+// @para-doc [services-payments-spec.md#62-logic-xu-ly-late-association-voi-transaction-nguyen-tu]
+// @para-doc [services-payments-spec.md#62-logic-xu-ly-late-association-voi-transaction-nguyen-tu]
 export interface CreateOrderFromPaymentParams {
   paymentId: string;
   customerId: string;
@@ -75,7 +75,7 @@ export interface CreateOrderFromPaymentParams {
   customPrice?: number;
 }
 
-// @para-doc [services-payments-spec.md#late-association]
+// @para-doc [services-payments-spec.md#62-logic-xu-ly-late-association-voi-transaction-nguyen-tu]
 export async function createOrderFromPayment(
   db: any,
   params: CreateOrderFromPaymentParams
@@ -207,6 +207,7 @@ export async function createOrderFromPayment(
     });
   } else {
     // D1 (production) - asynchronous transaction with fallback if D1 mock does not support it
+    // @para-doc [services-payments-spec.md#62-logic-xu-ly-late-association-voi-transaction-nguyen-tu]
     const executeInTx = async (tx: any) => {
       // 1. Check if the payment has already been reconciled
       const existingPayment = await tx
@@ -353,6 +354,7 @@ export interface CreatePaidOrderParams {
   staffId: string | null;
 }
 
+// @para-doc [services-payments-spec.md#63-cac-ham-tien-ich-dich-vu-service-helpers]
 export async function createPaidOrder(
   db: any,
   params: CreatePaidOrderParams
@@ -497,6 +499,7 @@ export async function createPaidOrder(
     });
   } else {
     // D1 (production) - asynchronous transaction with fallback if D1 mock does not support it
+    // @para-doc [services-payments-spec.md#63-cac-ham-tien-ich-dich-vu-service-helpers]
     const executeInTx = async (tx: any) => {
       // 1. Fetch service information
       const targetService = await tx
@@ -643,6 +646,7 @@ export async function createPaidOrder(
   }
 }
 
+// @para-doc [services-payments-spec.md#63-cac-ham-tien-ich-dich-vu-service-helpers]
 export async function syncCustomerServices(db: any, customerId: string): Promise<void> {
   // 1. Get all paid orders for the customer
   const paidOrders = await db
@@ -755,6 +759,7 @@ export async function syncCustomerServices(db: any, customerId: string): Promise
     .where(eq(customers.id, customerId));
 }
 
+// @para-doc [services-payments-spec.md#63-cac-ham-tien-ich-dich-vu-service-helpers]
 export async function autoAssignMainService(db: any): Promise<void> {
   // 1. Find all customers where serviceId is null or empty
   const unassignedCustomers = await db

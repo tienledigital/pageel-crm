@@ -1,4 +1,4 @@
-// @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
+// @para-doc [tax-reporting-spec.md#4-thuat-toan-dien-du-lieu-template-s1a-excel-generation-algorithm]
 import type { APIContext } from 'astro';
 import { getDb } from '@/lib/db';
 import { payments, customers, orders, services } from '@/lib/db/schema';
@@ -10,6 +10,7 @@ import { TEMPLATE_BASE64 } from '@/lib/reports/excelTemplateBase64';
 
 // Lazy Singleton Cache for Excel template in RAM
 let cachedTemplateBuffer: ArrayBuffer | null = null;
+// @para-doc [tax-reporting-spec.md#4-thuat-toan-dien-du-lieu-template-s1a-excel-generation-algorithm]
 const getTemplateBuffer = (): ArrayBuffer => {
   if (!cachedTemplateBuffer) {
     const buffer = Buffer.from(TEMPLATE_BASE64, 'base64');
@@ -18,7 +19,7 @@ const getTemplateBuffer = (): ArrayBuffer => {
   return cachedTemplateBuffer;
 };
 
-// @para-doc [tax-reporting-spec.md#zip]
+// @para-doc [tax-reporting-spec.md#5-xuat-bao-cao-zip-quan-ly-phan-trang-api]
 export const GET = async (context: APIContext): Promise<Response> => {
   try {
     // 1. Verify user session and permissions

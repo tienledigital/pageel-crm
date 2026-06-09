@@ -1,3 +1,4 @@
+// @para-doc [reconciliation-spec.md#2-thiet-ke-api-doi-soat-srcpagesapicrmaudit]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -5,9 +6,10 @@ import { orders, payments } from '@/lib/db/schema';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { eq, and, isNotNull, isNull, ne } from 'drizzle-orm';
 
+// @para-doc [reconciliation-spec.md#21-api-quet-du-lieu-lech-get-apicrmauditcheck]
 export const GET: APIRoute = async (context) => {
   try {
-    // 1. Xác thực session và kiểm tra quyền admin/accountant
+    // 1. Verify user session and roles (admin/accountant)
     const sessionCookie = context.cookies.get('session')?.value;
     const secret = getSessionSecret();
     
@@ -29,10 +31,10 @@ export const GET: APIRoute = async (context) => {
     const db = getDb(env);
 
     // -------------------------------------------------------------
-    // 1. Đối soát Đơn hàng (Orders)
+    // 1. Order Reconciliation
     // -------------------------------------------------------------
 
-    // 1.1 Đơn hàng có paymentId mồ côi
+    // 1.1 Orders with orphaned paymentId
     const orderOrphans = await db.select({
       id: orders.id,
       orderNumber: orders.orderNumber,
@@ -45,7 +47,7 @@ export const GET: APIRoute = async (context) => {
     .leftJoin(payments, eq(orders.paymentId, payments.id))
     .where(and(isNotNull(orders.paymentId), isNull(payments.id)));
 
-    // 1.2 Đơn hàng status = 'paid' nhưng paymentId là NULL
+    // 1.2 Orders with status 'paid' but NULL paymentId
     const orderPaidNullPayment = await db.select({
       id: orders.id,
       orderNumber: orders.orderNumber,
@@ -56,7 +58,7 @@ export const GET: APIRoute = async (context) => {
     .from(orders)
     .where(and(eq(orders.status, 'paid'), isNull(orders.paymentId)));
 
-    // 1.3 Đơn hàng paid nhưng lệch tiền với Giao dịch liên kết
+    // 1.3 Paid orders with mismatched amounts compared to linked payment
     const orderMismatchedAmount = await db.select({
       id: orders.id,
       orderNumber: orders.orderNumber,
@@ -71,7 +73,7 @@ export const GET: APIRoute = async (context) => {
 
 
     // -------------------------------------------------------------
-    // 2. Đối soát chéo 2 bên (Payments - Orders)
+    // 2. Cross-reconciliation (Payments - Orders)
     // -------------------------------------------------------------
     const mismatchedLinks: any[] = [];
     const mismatchedCustomers: any[] = [];
@@ -82,7 +84,7 @@ export const GET: APIRoute = async (context) => {
       let isLinkMismatched = false;
       let orderLinkedPaymentId = null;
 
-      // 2.1 Đối soát liên kết Đơn hàng
+      // 2.1 Order Link Reconciliation
       if (p.orderId) {
         const [o] = await db.select().from(orders).where(eq(orders.id, p.orderId));
         if (!o || o.paymentId !== p.id) {
@@ -90,7 +92,7 @@ export const GET: APIRoute = async (context) => {
           orderLinkedPaymentId = o ? o.paymentId : null;
         }
 
-        // 2.2 Đối soát lệch Khách hàng
+        // 2.2 Customer Mismatch Reconciliation
         if (o && o.customerId !== p.customerId) {
           mismatchedCustomers.push({
             paymentId: p.id,

@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 
-// @para-doc [auth-spec.md#secret-management]
+// @para-doc [auth-spec.md#41-quan-ly-khoa-bi-mat-tap-trung-centralized-secret-management]
 export function getSessionSecret(): string {
   const secret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || (typeof process !== 'undefined' ? process.env.SESSION_SECRET : undefined);
   if (!secret) {
@@ -20,7 +20,7 @@ export interface SessionPayload {
 }
 
 // Helper to convert Uint8Array to Hex string
-// @para-doc [auth-spec.md#22-cac-ham-tien-ich-ma-hoa-crypto-encoding-helpers]
+// @para-doc [auth-spec.md#24-cac-ham-tien-ich-ma-hoa-crypto-encoding-helpers]
 function toHex(buffer: Uint8Array): string {
   return Array.from(buffer)
     .map((b) => b.toString(16).padStart(2, '0'))
@@ -28,7 +28,7 @@ function toHex(buffer: Uint8Array): string {
 }
 
 // Helper to convert Hex string to Uint8Array
-// @para-doc [auth-spec.md#22-cac-ham-tien-ich-ma-hoa-crypto-encoding-helpers]
+// @para-doc [auth-spec.md#24-cac-ham-tien-ich-ma-hoa-crypto-encoding-helpers]
 function fromHex(hex: string): Uint8Array {
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i++) {
@@ -38,7 +38,7 @@ function fromHex(hex: string): Uint8Array {
 }
 
 // Helper to decode Base64URL to string
-// @para-doc [auth-spec.md#22-cac-ham-tien-ich-ma-hoa-crypto-encoding-helpers]
+// @para-doc [auth-spec.md#24-cac-ham-tien-ich-ma-hoa-crypto-encoding-helpers]
 function base64urlDecode(str: string): string {
   let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
   while (base64.length % 4) {
@@ -51,7 +51,7 @@ function base64urlDecode(str: string): string {
 }
 
 // Helper to encode string to Base64URL
-// @para-doc [auth-spec.md#22-cac-ham-tien-ich-ma-hoa-crypto-encoding-helpers]
+// @para-doc [auth-spec.md#24-cac-ham-tien-ich-ma-hoa-crypto-encoding-helpers]
 function base64urlEncode(str: string): string {
   let base64 = '';
   if (typeof Buffer !== 'undefined') {
@@ -144,7 +144,7 @@ export async function verifyPassword(password: string, storedHash: string): Prom
   return diff === 0;
 }
 
-// @para-doc [auth-spec.md#quy-trinh-ky-va-xac-thuc-hmac-signature-flow]
+// @para-doc [auth-spec.md#23-quy-trinh-ky-va-xac-thuc-hmac-signature-flow]
 export async function createSessionCookie(payload: SessionPayload, secret: string): Promise<string> {
   const encoder = new TextEncoder();
   const payloadStr = JSON.stringify(payload);
@@ -166,7 +166,7 @@ export async function createSessionCookie(payload: SessionPayload, secret: strin
   return `${payloadBase64}.${signatureHex}`;
 }
 
-// @para-doc [auth-spec.md#quy-trinh-ky-va-xac-thuc-hmac-signature-flow]
+// @para-doc [auth-spec.md#23-quy-trinh-ky-va-xac-thuc-hmac-signature-flow]
 export async function verifySessionCookie(cookieValue: string, secret: string): Promise<SessionPayload | null> {
   const parts = cookieValue.split('.');
   if (parts.length !== 2) {

@@ -1,7 +1,7 @@
-// @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
+// @para-doc [tax-reporting-spec.md#4-thuat-toan-dien-du-lieu-template-s1a-excel-generation-algorithm]
 import JSZip from 'jszip';
 
-// @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
+// @para-doc [tax-reporting-spec.md#4-thuat-toan-dien-du-lieu-template-s1a-excel-generation-algorithm]
 export interface ExportPayment {
   paidAt: number; // Unix timestamp in milliseconds
   amount: number;
@@ -21,7 +21,7 @@ export interface ExportPayment {
   serviceName?: string | null;
 }
 
-// @para-doc [tax-reporting-spec.md#sanitize-formula]
+// @para-doc [tax-reporting-spec.md#32-lam-sach-cong-thuc-excel-sanitizeformula]
 const sanitizeFormula = (value: string | null | undefined): string => {
   if (!value) return '';
   const firstChar = value.charAt(0);
@@ -31,7 +31,7 @@ const sanitizeFormula = (value: string | null | undefined): string => {
   return value;
 };
 
-// @para-doc [tax-reporting-spec.md#get-payment-description]
+// @para-doc [tax-reporting-spec.md#33-tu-dong-chuan-hoa-noi-dung-dien-giai-getpaymentdescription]
 const getPaymentDescription = (payment: ExportPayment): string => {
   if (payment.customer) {
     const id = payment.customer.id;
@@ -79,7 +79,7 @@ const loadExcelJS = async () => {
   return (ExcelJS as any).default || ExcelJS;
 };
 
-// @para-doc [tax-reporting-spec.md#excel-generation-algorithm]
+// @para-doc [tax-reporting-spec.md#4-thuat-toan-dien-du-lieu-template-s1a-excel-generation-algorithm]
 export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportPayment[]): Promise<ArrayBuffer> => {
   const ExcelJS = await loadExcelJS();
   const workbook = new ExcelJS.Workbook();
@@ -207,7 +207,7 @@ export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportP
   return uint8Array.buffer.slice(uint8Array.byteOffset, uint8Array.byteOffset + uint8Array.byteLength) as ArrayBuffer;
 };
 
-// @para-doc [tax-reporting-spec.md#zip]
+// @para-doc [tax-reporting-spec.md#5-xuat-bao-cao-zip-quan-ly-phan-trang-api]
 export const exportYearlyS1aZip = async (
   payments: ExportPayment[],
   year: number,
