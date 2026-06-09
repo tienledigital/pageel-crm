@@ -1,11 +1,11 @@
-// @para-doc [api-contracts.md#13-api-quan-ly-danh-muc-dich-vu-services-crud-apis]
+// @para-doc [api-contracts.md#12-api-quan-ly-danh-muc-dich-vu-services-crud-apis]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { createService, listServices } from '@/lib/services/serviceManager';
 
-// @para-doc [api-contracts.md#13-api-quan-ly-danh-muc-dich-vu-services-crud-apis]
+// @para-doc [api-contracts.md#121-lay-danh-sach-dich-vu]
 export const GET: APIRoute = async (context) => {
   try {
     const sessionCookie = context.cookies.get('session')?.value;
@@ -42,7 +42,7 @@ export const GET: APIRoute = async (context) => {
   }
 };
 
-// @para-doc [api-contracts.md#13-api-quan-ly-danh-muc-dich-vu-services-crud-apis]
+// @para-doc [api-contracts.md#122-tao-dich-vu-moi]
 export const POST: APIRoute = async (context) => {
   try {
     const sessionCookie = context.cookies.get('session')?.value;

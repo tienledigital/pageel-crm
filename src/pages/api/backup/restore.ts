@@ -2,7 +2,7 @@
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
 import { fetchBackupContent } from '@/lib/backup/githubClient';
-import { users, staff, customers, orders, payments, config, syncLogs, services, customerServices } from '@/lib/db/schema';
+import { users, staff, customers, orders, payments, config, syncLogs, services, customerServices, auditLogs } from '@/lib/db/schema';
 import { logDebug } from '@/lib/debug-logger';
 import { eq } from 'drizzle-orm';
 
@@ -94,6 +94,10 @@ export async function POST(context: any) {
     const isD1 = !!(env && env.DB);
 
     if (isD1) {
+      // Break cyclic/foreign key references before delete
+      await db.update(orders).set({ paymentId: null });
+      await db.update(auditLogs).set({ userId: null });
+
       // In production Cloudflare D1 environment, execute queries sequentially without big batching
       // to avoid combined 'too many SQL variables' limits across multiple chunks.
       await db.delete(payments);
@@ -151,7 +155,8 @@ export async function POST(context: any) {
       if (backupData.orders.length > 0) {
         for (let i = 0; i < backupData.orders.length; i += CHUNK_SIZE) {
           const chunk = backupData.orders.slice(i, i + CHUNK_SIZE);
-          await db.insert(orders).values(chunk);
+          const chunkWithNullPayments = chunk.map((order: any) => ({ ...order, paymentId: null }));
+          await db.insert(orders).values(chunkWithNullPayments);
         }
       }
 
@@ -161,9 +166,23 @@ export async function POST(context: any) {
           await db.insert(payments).values(chunk);
         }
       }
+
+      if (backupData.orders.length > 0) {
+        for (const order of backupData.orders) {
+          if (order.paymentId) {
+            await db.update(orders)
+              .set({ paymentId: order.paymentId })
+              .where(eq(orders.id, order.id));
+          }
+        }
+      }
     } else {
       // In better-sqlite3 environment (testing / local fallback), transactions are fully synchronous
       db.transaction((tx: any) => {
+        // Break references first
+        tx.update(orders).set({ paymentId: null }).run();
+        tx.update(auditLogs).set({ userId: null }).run();
+
         // Clear tables in reverse-dependency order
         tx.delete(payments).run();
         tx.delete(orders).run();
@@ -220,7 +239,8 @@ export async function POST(context: any) {
         if (backupData.orders.length > 0) {
           for (let i = 0; i < backupData.orders.length; i += CHUNK_SIZE) {
             const chunk = backupData.orders.slice(i, i + CHUNK_SIZE);
-            tx.insert(orders).values(chunk).run();
+            const chunkWithNullPayments = chunk.map((order: any) => ({ ...order, paymentId: null }));
+            tx.insert(orders).values(chunkWithNullPayments).run();
           }
         }
 
@@ -228,6 +248,17 @@ export async function POST(context: any) {
           for (let i = 0; i < backupData.payments.length; i += CHUNK_SIZE) {
             const chunk = backupData.payments.slice(i, i + CHUNK_SIZE);
             tx.insert(payments).values(chunk).run();
+          }
+        }
+
+        if (backupData.orders.length > 0) {
+          for (const order of backupData.orders) {
+            if (order.paymentId) {
+              tx.update(orders)
+                .set({ paymentId: order.paymentId })
+                .where(eq(orders.id, order.id))
+                .run();
+            }
           }
         }
       });

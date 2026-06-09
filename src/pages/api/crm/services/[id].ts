@@ -1,4 +1,4 @@
-// @para-doc [api-contracts.md#13-api-quan-ly-danh-muc-dich-vu-services-crud-apis]
+// @para-doc [api-contracts.md#12-api-quan-ly-danh-muc-dich-vu-services-crud-apis]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -7,7 +7,7 @@ import { updateService } from '@/lib/services/serviceManager';
 import { services } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 
-// @para-doc [api-contracts.md#13-api-quan-ly-danh-muc-dich-vu-services-crud-apis]
+// @para-doc [api-contracts.md#123-cap-nhat-dich-vu]
 export const PUT: APIRoute = async (context) => {
   try {
     const sessionCookie = context.cookies.get('session')?.value;
@@ -77,7 +77,7 @@ export const PUT: APIRoute = async (context) => {
   }
 };
 
-// @para-doc [api-contracts.md#13-api-quan-ly-danh-muc-dich-vu-services-crud-apis]
+// @para-doc [api-contracts.md#124-xoa-dich-vu]
 export const DELETE: APIRoute = async (context) => {
   try {
     const sessionCookie = context.cookies.get('session')?.value;

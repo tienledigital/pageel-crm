@@ -12,6 +12,7 @@ const ALLOWED_HOSTS = [
  * Validate that a restore download URL is safe (not an SSRF vector).
  * Returns true only for HTTPS URLs pointing to allowed GitHub domains.
  */
+// @para-doc [auth-spec.md#45-bao-ve-api-restore-chong-tan-cong-ssrf-server-side-request-forgery]
 export function validateRestoreUrl(url: string): boolean {
   try {
     const parsed = new URL(url);

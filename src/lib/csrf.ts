@@ -16,6 +16,7 @@ const CSRF_EXEMPT_PATHS = [
  * - If Origin matches the host, allow.
  * - Otherwise, block.
  */
+// @para-doc [auth-spec.md#44-phong-chong-tan-cong-csrf-bang-origin-validation-csrf-protection]
 export function validateOrigin(
   origin: string | null,
   host: string,

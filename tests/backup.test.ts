@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { getDb } from '../src/lib/db';
-import { customers } from '../src/lib/db/schema';
+import { customers, orders, payments, users, auditLogs, staff, services, customerServices } from '../src/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import path from 'path';
 import { pushBackupToGit, exportDatabaseToJson } from '../src/lib/backup/githubClient';
-import { desc } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 
 describe('GitHub Backup Client', () => {
   let db: any;
@@ -604,6 +604,73 @@ describe('Astro API Endpoint - POST /api/backup/restore', () => {
     expect(logs.length).toBe(1);
     expect(logs[0].action).toBe('github_restore');
     expect(logs[0].status).toBe('success');
+  });
+
+  it('should successfully clear and restore tables with cyclic foreign key dependencies (orders and payments) and audit logs', async () => {
+    const mockFetch = vi.fn();
+    globalThis.fetch = mockFetch;
+
+    // 1. Seed database with circular references and foreign keys
+    // Insert user and staff
+    await testDb.insert(users).values({ id: 'USR-TEST-1', username: 'testuser', passwordHash: 'hash', role: 'admin' });
+    await testDb.insert(staff).values({ id: 'STAFF-TEST-1', userId: 'USR-TEST-1', fullName: 'Staff Test' });
+    // Insert customer
+    await testDb.insert(customers).values({ id: 'CUST-TEST-1', fullName: 'Cust Test', phone: '333333', assignedStaffId: 'STAFF-TEST-1' });
+    // Insert order (paymentId is null first)
+    await testDb.insert(orders).values({ id: 'ORD-TEST-1', customerId: 'CUST-TEST-1', staffId: 'STAFF-TEST-1', orderNumber: 'ORD-TEST-1', amount: 1000, content: 'Test order', status: 'pending' });
+    // Insert payment pointing to order
+    await testDb.insert(payments).values({ id: 'PAY-TEST-1', orderId: 'ORD-TEST-1', customerId: 'CUST-TEST-1', amount: 1000, transactionId: 'TX-TEST-1', paidAt: Date.now() });
+    // Update order to point to payment (circular reference established!)
+    await testDb.update(orders).set({ paymentId: 'PAY-TEST-1' }).where(eq(orders.id, 'ORD-TEST-1'));
+    // Insert audit log referencing user
+    await testDb.insert(auditLogs).values({ id: 'AUDIT-TEST-1', userId: 'USR-TEST-1', username: 'testuser', action: 'test.action' });
+
+    // 2. Mock restore API JSON with new cyclic relationship
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      text: async () => JSON.stringify({
+        users: [{ id: 'USR-RESTORED', username: 'restoreduser', passwordHash: 'hash', role: 'admin' }],
+        staff: [{ id: 'STAFF-RESTORED', userId: 'USR-RESTORED', fullName: 'Restored Staff' }],
+        customers: [{ id: 'CUST-RESTORED', fullName: 'Restored Customer', phone: '444444', email: null, idCard: null, taxCode: null, address: null, expiredAt: null, assignedStaffId: 'STAFF-RESTORED', notes: null }],
+        services: [],
+        customerServices: [],
+        orders: [{ id: 'ORD-RESTORED', customerId: 'CUST-RESTORED', staffId: 'STAFF-RESTORED', orderNumber: 'ORD-REST', amount: 2000, content: 'Restored order', status: 'paid', serviceId: null, paymentId: 'PAY-RESTORED', startDate: null, expiredAt: null, taxInvoiceNumber: null, taxInvoiceDate: null, paidAt: null, updatedAt: null }],
+        payments: [{ id: 'PAY-RESTORED', orderId: 'ORD-RESTORED', customerId: 'CUST-RESTORED', amount: 2000, transactionId: 'TX-RESTORED', paymentMethod: 'bank_transfer', bank: 'VCB', accountNumber: '123', senderAccount: null, senderName: null, senderBank: null, type: 'in', category: 'revenue', taxCategory: null, content: 'Payment for order', paidAt: Date.now() }],
+        config: []
+      })
+    });
+
+    const request = new Request('http://localhost/api/backup/restore', {
+      method: 'POST',
+      body: JSON.stringify({ downloadUrl: 'https://api.github.com/repos/mock-owner/mock-repo/contents/backup-test.json', filename: 'backup-test.json' })
+    });
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'USR-TEST-1', username: 'testuser', role: 'admin' },
+      },
+    };
+
+    const response = await restoreApiHandler(context);
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.success).toBe(true);
+
+    // Verify database tables cleared and restored correctly
+    const currentCustomers = await testDb.select().from(customers);
+    expect(currentCustomers.length).toBe(1);
+    expect(currentCustomers[0].id).toBe('CUST-RESTORED');
+
+    const currentOrders = await testDb.select().from(orders);
+    expect(currentOrders.length).toBe(1);
+    expect(currentOrders[0].id).toBe('ORD-RESTORED');
+    expect(currentOrders[0].paymentId).toBe('PAY-RESTORED');
+
+    const currentPayments = await testDb.select().from(payments);
+    expect(currentPayments.length).toBe(1);
+    expect(currentPayments[0].id).toBe('PAY-RESTORED');
+    expect(currentPayments[0].orderId).toBe('ORD-RESTORED');
   });
 });
 

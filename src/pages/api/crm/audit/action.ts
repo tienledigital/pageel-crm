@@ -1,3 +1,4 @@
+// @para-doc [reconciliation-spec.md#2-thiet-ke-api-doi-soat-srcpagesapicrmaudit]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -6,9 +7,10 @@ import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { eq } from 'drizzle-orm';
 
+// @para-doc [reconciliation-spec.md#22-api-thuc-thi-don-dep-post-apicrmauditaction]
 export const POST: APIRoute = async (context) => {
   try {
-    // 1. Xác thực session và kiểm tra quyền admin/accountant
+    // 1. Verify user session and roles (admin/accountant)
     const sessionCookie = context.cookies.get('session')?.value;
     const secret = getSessionSecret();
     
@@ -50,6 +52,7 @@ export const POST: APIRoute = async (context) => {
     const db = getDb(env);
 
     // Execute actions helper for both D1 and better-sqlite3
+    // @para-doc [reconciliation-spec.md#22-api-thuc-thi-don-dep-post-apicrmauditaction]
     const executeAction = async (tx: any) => {
       for (const id of ids) {
         if (action === 'unlink_orphan') {
@@ -87,7 +90,7 @@ export const POST: APIRoute = async (context) => {
     // and Node.js better-sqlite3 (strictly synchronous transaction in unit tests).
     await executeAction(db);
 
-    // 4. Ghi log Audit để theo dõi lịch sử chỉnh sửa
+    // 4. Write audit log to trace modification history
     const ipAddress = context.clientAddress || 
                       context.request.headers.get('cf-connecting-ip') || 
                       context.request.headers.get('x-real-ip') || 

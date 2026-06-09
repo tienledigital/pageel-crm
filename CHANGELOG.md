@@ -6,6 +6,33 @@ order: 1
 
 All notable changes to this project will be documented in this file.
 
+## [0.11.2] - 2026-06-09
+
+### Added
+- **Direct Payment Reconciliation Engine**: Implemented Option 2 (Direct Payment + Deposit Remainder) reconciliation logic for SePay webhook matching. Direct payments are mapped to 'revenue' categories and set orders directly to `paid` status without charging the customer wallet balance.
+- **Deposit Surplus Wallet Topup**: Overpaid payments automatically deposit only the surplus amount (payment amount minus order amount) to the customer wallet.
+- **Manual Payment Link/Unlink API**: Refactored `/api/crm/payments/reconcile` to support manual gán/hủy gán with wallet refunds for deposit payments and no-refunds for direct payments.
+- **Service Extension Engine**: Unified service period extension and expiration timestamp calculations under `extendCustomerService`.
+- **Modularized User Guide**: Partitioned the legacy single `user-guide.md` file into 8 specialized modular documentation files (`01-dashboard.md` through `08-audit.md`) corresponding to the Sidebar navigation items of Pageel CRM.
+- **Double-Binding Documentation Links**: Integrated reverse anchor comments (`// @para-doc [user-manual/xx-name.md]`) in the frontmatter of all 8 Astro page files and graph-node markers in markdown files to ensure full bidirectional traceability.
+- **Settings Login Documentation**: Documented the system login procedure (`/login` path) as section 1 of the Settings & Auth manual (`07-settings.md`).
+
+### Changed
+- **Documentation index update**: Updated [README.md](file:///media/tienle/DATA/WORKSPACE/para/Projects/pageel-crm/docs/README.md) file index list and compiled Notion-themed static HTML files in `docs/.html`.
+
+## [0.11.1] - 2026-06-08
+
+### Added
+- **UI Reconciliation Dashboard Page**: Created `/crm/settings/audit` page featuring statistical overview cards for orphaned orders and cross-linking discrepancies.
+- **Reconciliation Check & Action APIs**: Implemented `/api/crm/audit/check` (GET) to query data discrepancies and `/api/crm/audit/action` (POST) to execute bulk/single data fixes.
+- **Order Edit & Date Updates**: Displayed order issued date and last updated timestamp on UI tables and mobile views. Implemented automated `updatedAt` field updates during order edits.
+
+## [0.11.0] - 2026-06-06
+
+### Changed
+- **Renamed Invoices to Orders (Schema Drop)**: Dropped legacy invoices table structurally from the schema and database migrations. Transitioned the billing engine to utilize the `orders` table directly.
+- **Completed Order Management Layout**: Hardened order creation layout, customized the navigation icons, and fixed CSP headers for security compliance.
+
 ## [0.10.2] - 2026-06-05
 
 ### Added

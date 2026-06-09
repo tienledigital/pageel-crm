@@ -71,6 +71,7 @@ export async function autoMatchCustomer(db: any, content: string): Promise<strin
  * Sums up all payments associated with a given order.
  * If the sum of payments equals or exceeds the order amount, updates status to 'paid'.
  */
+// @para-doc [sepay-integration.md#2-ghi-nhan-giao-dich-reconciliation-logic]
 export async function checkAndUnionPartialOrderPayments(db: any, orderId: string): Promise<boolean> {
   const order = await db.select().from(orders).where(eq(orders.id, orderId)).get();
   if (!order) return false;
@@ -231,6 +232,7 @@ export async function reconcilePayment(
 ): Promise<ReconcileResult> {
   const isD1 = !db.session?.client?.transaction;
 
+  // @para-doc [sepay-integration.md#2-ghi-nhan-giao-dich-reconciliation-logic]
   const executeReconcile = async (tx: any) => {
     // Check if payment with same transactionId already exists to prevent duplicate error logs
     if (payment.transactionId) {
@@ -597,6 +599,7 @@ export async function reconcilePayment(
   }
 }
 
+// @para-doc [spec.md#automated-revenue-reconciliation]
 /**
  * Automatically scans and deducts from customer balance to pay off partially paid orders.
  */
@@ -691,6 +694,7 @@ export async function reconcileCustomerWallet(
   }
 }
 
+// @para-doc [spec.md#i18n]
 /**
  * Re-applies current rules to all existing payments that are unlinked or unclassified.
  */
