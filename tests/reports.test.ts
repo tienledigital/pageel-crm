@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { generateS1a, exportYearlyS1aZip, type ExportPayment } from '../src/lib/reports/excelGenerator';
+import { generateS1a, exportYearlyS1aZip, parseReportTemplate, type ExportPayment } from '../src/lib/reports/excelGenerator';
 import { GET as exportS1aHandler } from '../src/pages/api/export/s1a';
 import { GET as previewS1aHandler } from '../src/pages/api/export/s1a-preview';
+import { GET as configGetHandler, POST as configPostHandler } from '../src/pages/api/crm/reports/config';
+import { GET as previewGetHandler } from '../src/pages/api/crm/reports/preview';
 import { getDb } from '../src/lib/db';
 import { customers, orders, payments } from '../src/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
@@ -382,6 +384,103 @@ describe('Export S1a API Endpoint - GET /api/export/s1a', () => {
     expect(row13.getCell(3).value).toBe('Tổng cộng:');
     expect((row13.getCell(4).value as any).result).toBe(200000);
   });
+
+  it('should return a single Excel sheet if custom startMonth matches endMonth', async () => {
+    const request = new Request('http://localhost/api/export/s1a?year=2026&startMonth=5&endMonth=5');
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' }
+      },
+    };
+
+    const response = await exportS1aHandler(context);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(response.headers.get('Content-Disposition')).toContain('S1a-HKD_Thang_05_2026.xlsx');
+  });
+
+  it('should return a ZIP archive with monthly Excel sheets for different startMonth and endMonth range', async () => {
+    const request = new Request('http://localhost/api/export/s1a?year=2026&startMonth=4&endMonth=6');
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' }
+      },
+    };
+
+    const response = await exportS1aHandler(context);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('application/zip');
+    expect(response.headers.get('Content-Disposition')).toContain('S1a-HKD_Thang_04_den_06_2026.zip');
+
+    const zipBuffer = await response.arrayBuffer();
+    const zip = await JSZip.loadAsync(zipBuffer);
+    expect(zip.file('S1a-HKD_Thang_04_2026.xlsx')).toBeDefined();
+    expect(zip.file('S1a-HKD_Thang_05_2026.xlsx')).toBeDefined();
+    expect(zip.file('S1a-HKD_Thang_06_2026.xlsx')).toBeDefined();
+  });
+
+  it('should return a single Excel sheet instead of a ZIP if singleFile=true for custom startMonth and endMonth range', async () => {
+    const request = new Request('http://localhost/api/export/s1a?year=2026&startMonth=4&endMonth=6&singleFile=true');
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' }
+      },
+    };
+
+    const response = await exportS1aHandler(context);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(response.headers.get('Content-Disposition')).toContain('S1a-HKD_Thang_04_den_06_2026_Gop.xlsx');
+
+    const buffer = await response.arrayBuffer();
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const worksheet = workbook.worksheets[0];
+    
+    // Verify row count or row values
+    // payment should be loaded
+    const row12 = worksheet.getRow(12);
+    expect(row12.getCell(3).value).toBe('1005 - Nguyễn Văn A - Gia hạn CRM');
+    expect(row12.getCell(4).value).toBe(200000);
+  });
+
+  it('should return a single Excel sheet instead of a ZIP if singleFile=true for quarter filter', async () => {
+    const request = new Request('http://localhost/api/export/s1a?year=2026&quarter=2&singleFile=true');
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' }
+      },
+    };
+
+    const response = await exportS1aHandler(context);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(response.headers.get('Content-Disposition')).toContain('S1a-HKD_Quy_02_2026_Gop.xlsx');
+  });
+
+  it('should return a single Excel sheet instead of a ZIP if singleFile=true for yearly export', async () => {
+    const request = new Request('http://localhost/api/export/s1a?year=2026&singleFile=true');
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: {
+        user: { id: 'usr-1', username: 'admin1', role: 'admin' }
+      },
+    };
+
+    const response = await exportS1aHandler(context);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Content-Type')).toBe('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    expect(response.headers.get('Content-Disposition')).toContain('S1a-HKD_Nam_2026_Gop.xlsx');
+  });
 });
 
 describe('Preview S1a API Endpoint - GET /api/export/s1a-preview', () => {
@@ -457,5 +556,126 @@ describe('Preview S1a API Endpoint - GET /api/export/s1a-preview', () => {
     expect(data.payments.length).toBe(1);
     expect(data.payments[0].id).toBe('PAY-1');
     expect(data.payments[0].customer.fullName).toBe('Nguyễn Văn A');
+  });
+});
+
+describe('Report Template Parser - parseReportTemplate', () => {
+  it('should parse placeholders correctly', () => {
+    const template = '{customerId} - {customerName} - {serviceName}';
+    const placeholders = {
+      customerId: 'CUST001',
+      customerName: 'Nguyen Van A',
+      serviceName: 'Premium Hosting'
+    };
+    const result = parseReportTemplate(template, placeholders);
+    expect(result).toBe('CUST001 - Nguyen Van A - Premium Hosting');
+  });
+
+  it('should cleanup empty placeholders and double separators', () => {
+    const template = '{customerId} - {customerName} - {serviceName}';
+    const placeholders = {
+      customerId: 'CUST001',
+      customerName: '',
+      serviceName: 'Premium Hosting'
+    };
+    const result = parseReportTemplate(template, placeholders);
+    expect(result).toBe('CUST001 - Premium Hosting');
+  });
+
+  it('should parse serviceDescription placeholder correctly', () => {
+    const template = '{customerId} - {customerName} - {serviceDescription}';
+    const placeholders = {
+      customerId: 'CUST001',
+      customerName: 'Nguyen Van A',
+      serviceDescription: 'Unlimited storage and high speed hosting'
+    };
+    const result = parseReportTemplate(template, placeholders);
+    expect(result).toBe('CUST001 - Nguyen Van A - Unlimited storage and high speed hosting');
+  });
+
+  it('should fallback to default if result is empty', () => {
+    const template = '{customerId}';
+    const placeholders = {};
+    const result = parseReportTemplate(template, placeholders);
+    expect(result).toBe('KHÁCH VÃNG LAI - THANH TOÁN');
+  });
+});
+
+describe('CRM Reports Configuration API - GET/POST /api/crm/reports/config', () => {
+  it('should save and return configuration', async () => {
+    const testConfig = {
+      orgName: 'Mock Hộ Kinh Doanh',
+      mst: '123456789',
+      address: 'Test Address',
+      businessLocation: 'Test Location',
+      reportingPeriod: 'Tháng 06 năm 2026',
+      serviceTemplate: '{customerId} - {customerName} - {serviceName}',
+      orderTemplate: '{orderNumber} - {customerName} - {orderContent}',
+      dateFormat: 'YYYY-MM-DD'
+    };
+
+    // Post mock request
+    const postRequest = new Request('http://localhost/api/crm/reports/config', {
+      method: 'POST',
+      body: JSON.stringify(testConfig),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const postContext: any = {
+      request: postRequest,
+      url: new URL(postRequest.url),
+      locals: { user: { id: 'usr-1', username: 'admin', role: 'admin' } }
+    };
+    const postResponse = await configPostHandler(postContext);
+    expect(postResponse.status).toBe(200);
+
+    // Get mock request
+    const getRequest = new Request('http://localhost/api/crm/reports/config');
+    const getContext: any = {
+      request: getRequest,
+      url: new URL(getRequest.url),
+      locals: { user: { id: 'usr-1', username: 'admin', role: 'admin' } }
+    };
+    const getResponse = await configGetHandler(getContext);
+    expect(getResponse.status).toBe(200);
+    const data = await getResponse.json();
+    expect(data.success).toBe(true);
+    expect(data.config.orgName).toBe('Mock Hộ Kinh Doanh');
+    expect(data.config.businessLocation).toBe('Test Location');
+    expect(data.config.reportingPeriod).toBe('Tháng 06 năm 2026');
+  });
+});
+
+describe('CRM Reports Preview API - GET /api/crm/reports/preview', () => {
+  it('should return processed payment list matching dynamic configuration', async () => {
+    const request = new Request('http://localhost/api/crm/reports/preview?year=2026&month=5');
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: { user: { id: 'usr-1', username: 'admin', role: 'admin' } }
+    };
+    const response = await previewGetHandler(context);
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.payments.length).toBeGreaterThan(0);
+    // Since we seeded customer 1005 with PAYMENT-1 (200000)
+    expect(data.payments[0].amount).toBe(200000);
+    expect(data.payments[0].description).toBeDefined();
+  });
+
+  it('should return processed payment list matching custom startMonth and endMonth range', async () => {
+    const request = new Request('http://localhost/api/crm/reports/preview?year=2026&startMonth=4&endMonth=6');
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: { user: { id: 'usr-1', username: 'admin', role: 'admin' } }
+    };
+    const response = await previewGetHandler(context);
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.startMonth).toBe(4);
+    expect(data.endMonth).toBe(6);
+    expect(data.payments.length).toBeGreaterThan(0);
   });
 });
