@@ -1,5 +1,9 @@
 // @para-doc [tax-reporting-spec.md#4-thuat-toan-dien-du-lieu-template-s1a-excel-generation-algorithm]
 import JSZip from 'jszip';
+import { getDb } from '@/lib/db';
+import { config as dbConfigTable } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
+import { env } from 'cloudflare:workers';
 
 // @para-doc [tax-reporting-spec.md#4-thuat-toan-dien-du-lieu-template-s1a-excel-generation-algorithm]
 export interface ExportPayment {
@@ -32,17 +36,37 @@ const sanitizeFormula = (value: string | null | undefined): string => {
 };
 
 // @para-doc [tax-reporting-spec.md#33-tu-dong-chuan-hoa-noi-dung-dien-giai-getpaymentdescription]
-const getPaymentDescription = (payment: ExportPayment): string => {
+const formatDateUTC = (timestamp: number, formatStr: string): string => {
+  const d = new Date(timestamp);
+  const year = d.getUTCFullYear();
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const date = String(d.getUTCDate()).padStart(2, '0');
+  
+  return formatStr
+    .replace('YYYY', String(year))
+    .replace('MM', month)
+    .replace('DD', date)
+    .replace('YYYY', String(year))
+    .replace('mm', month)
+    .replace('dd', date);
+};
+
+// @para-doc [tax-reporting-spec.md#33-tu-dong-chuan-hoa-noi-dung-dien-giai-getpaymentdescription]
+export const getPaymentDescription = (payment: ExportPayment, config: any): string => {
+  const placeholders = {
+    customerId: payment.customer?.id || null,
+    customerName: payment.customer?.fullName || null,
+    serviceName: payment.serviceName || (payment.order ? payment.order.content : 'TT GIA HAN'),
+    orderNumber: payment.order?.orderNumber || null,
+    orderContent: payment.order?.content || null,
+    rawContent: payment.content || null
+  };
+
   if (payment.customer) {
-    const id = payment.customer.id;
-    const name = payment.customer.fullName;
-    const service = payment.order 
-      ? payment.order.content 
-      : (payment.serviceName ? payment.serviceName : 'TT GIA HAN');
-    return `${id} - ${name} - ${service}`;
+    return parseReportTemplate(config.serviceTemplate || '{customerId} - {customerName} - {serviceName}', placeholders);
   }
   if (payment.order) {
-    return `ORDER ${payment.order.orderNumber} - ${payment.order.content}`;
+    return parseReportTemplate(config.orderTemplate || 'ORDER {orderNumber} - {orderContent}', placeholders);
   }
   return payment.content ? payment.content : 'KHACH VANG LAI - THANH TOAN';
 };
@@ -80,7 +104,7 @@ const loadExcelJS = async () => {
 };
 
 // @para-doc [tax-reporting-spec.md#4-thuat-toan-dien-du-lieu-template-s1a-excel-generation-algorithm]
-export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportPayment[]): Promise<ArrayBuffer> => {
+export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportPayment[], config?: any): Promise<ArrayBuffer> => {
   const ExcelJS = await loadExcelJS();
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(templateBuffer);
@@ -88,6 +112,45 @@ export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportP
   const worksheet = workbook.worksheets[0];
   if (!worksheet) {
     throw new Error('Template is empty or invalid.');
+  }
+
+  // Load and apply configurations
+  let activeConfig = {
+    orgName: 'HỘ KINH DOANH',
+    mst: '',
+    address: '',
+    serviceTemplate: '{customerId} - {customerName} - {serviceName}',
+    orderTemplate: 'ORDER {orderNumber} - {orderContent}',
+    dateFormat: 'DD/MM/YYYY'
+  };
+
+  if (config) {
+    activeConfig = { ...activeConfig, ...config };
+  } else {
+    try {
+      const db = getDb(env);
+      const dbRows = await db.select().from(dbConfigTable).where(eq(dbConfigTable.key, 'report_config_s1a')).limit(1);
+      if (dbRows.length > 0) {
+        const parsed = JSON.parse(dbRows[0].value);
+        activeConfig = { ...activeConfig, ...parsed };
+      }
+    } catch (e) {
+      // Fail silently and use default configurations
+    }
+  }
+
+  // Dynamically write HKD profile (Name, MST, Address) into headers
+  const cellA1 = worksheet.getCell('A1');
+  if (cellA1) {
+    cellA1.value = `HỘ, CÁ NHÂN KINH DOANH: ${activeConfig.orgName || ''}`;
+  }
+  const cellA2 = worksheet.getCell('A2');
+  if (cellA2) {
+    cellA2.value = `Địa chỉ: ${activeConfig.address || ''}`;
+  }
+  const cellA3 = worksheet.getCell('A3');
+  if (cellA3) {
+    cellA3.value = `Mã số thuế: ${activeConfig.mst || ''}`;
   }
 
   // Force Excel to calculate formulas on load
@@ -127,10 +190,9 @@ export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportP
     const row = worksheet.getRow(currentRow);
     
     // 3 columns: Document date (B), Description (C), Revenue (D)
-    // format date: YYYY-MM-DD
-    const dateStr = new Date(payment.paidAt).toISOString().split('T')[0];
+    const dateStr = formatDateUTC(payment.paidAt, activeConfig.dateFormat || 'DD/MM/YYYY');
     row.getCell(2).value = dateStr;
-    row.getCell(3).value = sanitizeFormula(getPaymentDescription(payment));
+    row.getCell(3).value = sanitizeFormula(getPaymentDescription(payment, activeConfig));
     row.getCell(4).value = payment.amount;
 
     // Apply basic styles for columns 2, 3, 4
@@ -212,6 +274,7 @@ export const exportYearlyS1aZip = async (
   payments: ExportPayment[],
   year: number,
   templateBuffer: ArrayBuffer,
+  config?: any,
   onProgress?: (percent: number) => void
 ): Promise<Blob> => {
   const zip = new JSZip();
@@ -227,7 +290,7 @@ export const exportYearlyS1aZip = async (
     });
 
     // Still generate file even if no transactions (monthPayments is empty)
-    const buffer = await generateS1a(templateBuffer, monthPayments);
+    const buffer = await generateS1a(templateBuffer, monthPayments, config);
     
     // Add to zip archive
     const monthStr = month.toString().padStart(2, '0');
@@ -243,3 +306,33 @@ export const exportYearlyS1aZip = async (
   const blob = await zip.generateAsync({ type: 'blob' });
   return blob;
 };
+
+// @para-doc [tax-reporting-spec.md#4-thuat-toan-dien-du-lieu-template-s1a-excel-generation-algorithm]
+export function parseReportTemplate(
+  template: string,
+  placeholders: {
+    customerId?: string | null;
+    customerName?: string | null;
+    serviceName?: string | null;
+    orderNumber?: string | null;
+    orderContent?: string | null;
+    rawContent?: string | null;
+  },
+): string {
+  // 1. Replace placeholders of format {key}
+  let result = template.replace(/\{(\w+)\}/g, (match, key) => {
+    const value = placeholders[key as keyof typeof placeholders];
+    return value !== undefined && value !== null ? String(value) : "";
+  });
+
+  // 2. Clean up duplicate or trailing separators and collapse extra whitespaces
+  result = result
+    .replace(/\s*-\s*-\s*/g, " - ") // Collapse consecutive hyphen separators
+    .replace(/^\s*-\s*/, "")        // Remove leading hyphen
+    .replace(/\s*-\s*$/, "")        // Remove trailing hyphen
+    .replace(/\s+/g, " ")           // Collapse duplicate spaces
+    .trim();
+
+  return result || "KHÁCH VÃNG LAI - THANH TOÁN";
+}
+

@@ -1,7 +1,7 @@
 // @para-doc [tax-reporting-spec.md#4-thuat-toan-dien-du-lieu-template-s1a-excel-generation-algorithm]
 import type { APIContext } from 'astro';
 import { getDb } from '@/lib/db';
-import { payments, customers, orders, services } from '@/lib/db/schema';
+import { payments, customers, orders, services, config as configTable } from '@/lib/db/schema';
 import { eq, and, gte, lte, isNotNull } from 'drizzle-orm';
 import { env } from 'cloudflare:workers';
 import JSZip from 'jszip';
@@ -143,13 +143,24 @@ export const GET = async (context: APIContext): Promise<Response> => {
       serviceName: row.service ? row.service.name : null,
     }));
 
+    // 4.5 Fetch configuration from DB
+    let activeConfig: any = null;
+    try {
+      const dbRows = await db.select().from(configTable).where(eq(configTable.key, 'report_config_s1a')).limit(1);
+      if (dbRows.length > 0) {
+        activeConfig = JSON.parse(dbRows[0].value);
+      }
+    } catch (e) {
+      // Ignore
+    }
+
     // 5. Generate and return response
     const headers = new Headers();
 
     if (month !== null) {
       const monthStr = month.toString().padStart(2, '0');
       const filename = `S1a-HKD_Thang_${monthStr}_${year}.xlsx`;
-      const xlsxBuffer = await generateS1a(templateBuffer, exportPayments);
+      const xlsxBuffer = await generateS1a(templateBuffer, exportPayments, activeConfig);
       
       headers.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       headers.set('Content-Disposition', `attachment; filename="${filename}"`);
@@ -169,7 +180,7 @@ export const GET = async (context: APIContext): Promise<Response> => {
           return date.getUTCMonth() + 1 === m;
         });
 
-        const xlsxBuffer = await generateS1a(templateBuffer, monthPayments);
+        const xlsxBuffer = await generateS1a(templateBuffer, monthPayments, activeConfig);
         const mStr = m.toString().padStart(2, '0');
         zip.file(`S1a-HKD_Thang_${mStr}_${year}.xlsx`, xlsxBuffer);
       }
@@ -182,7 +193,7 @@ export const GET = async (context: APIContext): Promise<Response> => {
 
     // Yearly export (All 12 months in ZIP)
     const filename = `S1a-HKD_Nam_${year}.zip`;
-    const zipBlob = await exportYearlyS1aZip(exportPayments, year, templateBuffer);
+    const zipBlob = await exportYearlyS1aZip(exportPayments, year, templateBuffer, activeConfig);
     const zipArrayBuffer = await zipBlob.arrayBuffer();
 
     headers.set('Content-Type', 'application/zip');

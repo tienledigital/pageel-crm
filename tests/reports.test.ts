@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'fs';
 import path from 'path';
-import { generateS1a, exportYearlyS1aZip, type ExportPayment } from '../src/lib/reports/excelGenerator';
+import { generateS1a, exportYearlyS1aZip, parseReportTemplate, type ExportPayment } from '../src/lib/reports/excelGenerator';
 import { GET as exportS1aHandler } from '../src/pages/api/export/s1a';
 import { GET as previewS1aHandler } from '../src/pages/api/export/s1a-preview';
+import { GET as configGetHandler, POST as configPostHandler } from '../src/pages/api/crm/reports/config';
+import { GET as previewGetHandler } from '../src/pages/api/crm/reports/preview';
 import { getDb } from '../src/lib/db';
 import { customers, orders, payments } from '../src/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
@@ -457,5 +459,95 @@ describe('Preview S1a API Endpoint - GET /api/export/s1a-preview', () => {
     expect(data.payments.length).toBe(1);
     expect(data.payments[0].id).toBe('PAY-1');
     expect(data.payments[0].customer.fullName).toBe('Nguyễn Văn A');
+  });
+});
+
+describe('Report Template Parser - parseReportTemplate', () => {
+  it('should parse placeholders correctly', () => {
+    const template = '{customerId} - {customerName} - {serviceName}';
+    const placeholders = {
+      customerId: 'CUST001',
+      customerName: 'Nguyen Van A',
+      serviceName: 'Premium Hosting'
+    };
+    const result = parseReportTemplate(template, placeholders);
+    expect(result).toBe('CUST001 - Nguyen Van A - Premium Hosting');
+  });
+
+  it('should cleanup empty placeholders and double separators', () => {
+    const template = '{customerId} - {customerName} - {serviceName}';
+    const placeholders = {
+      customerId: 'CUST001',
+      customerName: '',
+      serviceName: 'Premium Hosting'
+    };
+    const result = parseReportTemplate(template, placeholders);
+    expect(result).toBe('CUST001 - Premium Hosting');
+  });
+
+  it('should fallback to default if result is empty', () => {
+    const template = '{customerId}';
+    const placeholders = {};
+    const result = parseReportTemplate(template, placeholders);
+    expect(result).toBe('KHÁCH VÃNG LAI - THANH TOÁN');
+  });
+});
+
+describe('CRM Reports Configuration API - GET/POST /api/crm/reports/config', () => {
+  it('should save and return configuration', async () => {
+    const testConfig = {
+      orgName: 'Mock Hộ Kinh Doanh',
+      mst: '123456789',
+      address: 'Test Address',
+      serviceTemplate: '{customerId} - {customerName} - {serviceName}',
+      orderTemplate: '{orderNumber} - {customerName} - {orderContent}',
+      dateFormat: 'YYYY-MM-DD'
+    };
+
+    // Post mock request
+    const postRequest = new Request('http://localhost/api/crm/reports/config', {
+      method: 'POST',
+      body: JSON.stringify(testConfig),
+      headers: { 'Content-Type': 'application/json' }
+    });
+    const postContext: any = {
+      request: postRequest,
+      url: new URL(postRequest.url),
+      locals: { user: { id: 'usr-1', username: 'admin', role: 'admin' } }
+    };
+    const postResponse = await configPostHandler(postContext);
+    expect(postResponse.status).toBe(200);
+
+    // Get mock request
+    const getRequest = new Request('http://localhost/api/crm/reports/config');
+    const getContext: any = {
+      request: getRequest,
+      url: new URL(getRequest.url),
+      locals: { user: { id: 'usr-1', username: 'admin', role: 'admin' } }
+    };
+    const getResponse = await configGetHandler(getContext);
+    expect(getResponse.status).toBe(200);
+    const data = await getResponse.json();
+    expect(data.success).toBe(true);
+    expect(data.config.orgName).toBe('Mock Hộ Kinh Doanh');
+  });
+});
+
+describe('CRM Reports Preview API - GET /api/crm/reports/preview', () => {
+  it('should return processed payment list matching dynamic configuration', async () => {
+    const request = new Request('http://localhost/api/crm/reports/preview?year=2026&month=5');
+    const context: any = {
+      request,
+      url: new URL(request.url),
+      locals: { user: { id: 'usr-1', username: 'admin', role: 'admin' } }
+    };
+    const response = await previewGetHandler(context);
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.payments.length).toBeGreaterThan(0);
+    // Since we seeded customer 1005 with PAYMENT-1 (200000)
+    expect(data.payments[0].amount).toBe(200000);
+    expect(data.payments[0].description).toBeDefined();
   });
 });
