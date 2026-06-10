@@ -438,15 +438,6 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
   </style>
 
   <div class="reports-container">
-    <div>
-      <h2 class="header-title" style="font-size: 1.5rem; font-weight: 700; color: var(--text-primary);">
-        {lang === 'vi' ? 'Báo cáo & Cấu hình xuất Excel' : 'Reports & Excel Export Config'}
-      </h2>
-      <p class="header-description">
-        {lang === 'vi' ? 'Xem trước doanh thu và cấu hình công thức, triggers tự động điền dữ liệu sổ S1a-HKD' : 'Preview revenue reports and configure auto-mapping logic for S1a-HKD excel export'}
-      </p>
-    </div>
-
     <!-- Tab navigation -->
     <nav class="tabs-nav" aria-label="Reports subpages">
       <button class="tab-btn active" id="tabViewerBtn" aria-controls="panelViewer" aria-selected="true" type="button">
@@ -610,11 +601,11 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
             <div class="input-group span-full">
               <span class="input-label">{lang === 'vi' ? 'Chèn nhanh placeholders (Nhấp để chèn tại vị trí con trỏ)' : 'Insert Placeholder (Click to insert at cursor)'}</span>
               <div class="placeholders-list">
-                <button type="button" class="placeholder-tag" data-tag="{"customerId"}">{`{customerId}`}</button>
-                <button type="button" class="placeholder-tag" data-tag="{"customerName"}">{`{customerName}`}</button>
-                <button type="button" class="placeholder-tag" data-tag="{"serviceName"}">{`{serviceName}`}</button>
-                <button type="button" class="placeholder-tag" data-tag="{"orderNumber"}">{`{orderNumber}`}</button>
-                <button type="button" class="placeholder-tag" data-tag="{"orderContent"}">{`{orderContent}`}</button>
+                <button type="button" class="placeholder-tag" data-tag="{'{customerId}'}">{`{customerId}`}</button>
+                <button type="button" class="placeholder-tag" data-tag="{'{customerName}'}">{`{customerName}`}</button>
+                <button type="button" class="placeholder-tag" data-tag="{'{serviceName}'}">{`{serviceName}`}</button>
+                <button type="button" class="placeholder-tag" data-tag="{'{orderNumber}'}">{`{orderNumber}`}</button>
+                <button type="button" class="placeholder-tag" data-tag="{'{orderContent}'}">{`{orderContent}`}</button>
               </div>
             </div>
           </div>
