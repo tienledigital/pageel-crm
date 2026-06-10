@@ -77,7 +77,23 @@ export const GET = async (context: APIContext): Promise<Response> => {
     let month: number | null = null;
     let quarter: number | null = null;
 
-    if (monthParam) {
+    const startMonthParam = url.searchParams.get('startMonth');
+    const endMonthParam = url.searchParams.get('endMonth');
+    let startMonth: number | null = null;
+    let endMonth: number | null = null;
+
+    if (startMonthParam && endMonthParam) {
+      startMonth = parseInt(startMonthParam);
+      endMonth = parseInt(endMonthParam);
+      if (isNaN(startMonth) || startMonth < 1 || startMonth > 12 || isNaN(endMonth) || endMonth < 1 || endMonth > 12 || startMonth > endMonth) {
+        return new Response(JSON.stringify({ error: 'Invalid month range' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      startTime = new Date(Date.UTC(year, startMonth - 1, 1)).getTime();
+      endTime = new Date(Date.UTC(year, endMonth, 1)).getTime() - 1;
+    } else if (monthParam) {
       month = parseInt(monthParam);
       if (isNaN(month) || month < 1 || month > 12) {
         return new Response(JSON.stringify({ error: 'Invalid month parameter' }), {
@@ -95,9 +111,9 @@ export const GET = async (context: APIContext): Promise<Response> => {
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      const startMonth = (quarter - 1) * 3;
-      startTime = new Date(Date.UTC(year, startMonth, 1)).getTime();
-      endTime = new Date(Date.UTC(year, startMonth + 3, 1)).getTime() - 1;
+      const startMonthVal = (quarter - 1) * 3;
+      startTime = new Date(Date.UTC(year, startMonthVal, 1)).getTime();
+      endTime = new Date(Date.UTC(year, startMonthVal + 3, 1)).getTime() - 1;
     } else {
       startTime = new Date(Date.UTC(year, 0, 1)).getTime();
       endTime = new Date(Date.UTC(year + 1, 0, 1)).getTime() - 1;
@@ -141,6 +157,7 @@ export const GET = async (context: APIContext): Promise<Response> => {
         taxInvoiceDate: row.order.taxInvoiceDate,
       } : null,
       serviceName: row.service ? row.service.name : null,
+      serviceDescription: row.service ? row.service.description : null,
     }));
 
     // 4.5 Fetch configuration from DB
@@ -156,6 +173,61 @@ export const GET = async (context: APIContext): Promise<Response> => {
 
     // 5. Generate and return response
     const headers = new Headers();
+    const singleFileParam = url.searchParams.get('singleFile');
+    const isSingleFile = singleFileParam === 'true';
+
+    if (isSingleFile) {
+      let filename = `S1a-HKD_Nam_${year}_Gop.xlsx`;
+      if (month !== null) {
+        const monthStr = month.toString().padStart(2, '0');
+        filename = `S1a-HKD_Thang_${monthStr}_${year}.xlsx`;
+      } else if (quarter !== null) {
+        const quarterStr = quarter.toString().padStart(2, '0');
+        filename = `S1a-HKD_Quy_${quarterStr}_${year}_Gop.xlsx`;
+      } else if (startMonth !== null && endMonth !== null) {
+        const startStr = startMonth.toString().padStart(2, '0');
+        const endStr = endMonth.toString().padStart(2, '0');
+        filename = `S1a-HKD_Thang_${startStr}_den_${endStr}_${year}_Gop.xlsx`;
+      }
+      
+      const xlsxBuffer = await generateS1a(templateBuffer, exportPayments, activeConfig);
+      headers.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      headers.set('Content-Disposition', `attachment; filename="${filename}"`);
+      return new Response(xlsxBuffer, { status: 200, headers });
+    }
+
+    if (startMonth !== null && endMonth !== null) {
+      if (startMonth === endMonth) {
+        const monthStr = startMonth.toString().padStart(2, '0');
+        const filename = `S1a-HKD_Thang_${monthStr}_${year}.xlsx`;
+        const xlsxBuffer = await generateS1a(templateBuffer, exportPayments, activeConfig);
+        
+        headers.set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        headers.set('Content-Disposition', `attachment; filename="${filename}"`);
+        return new Response(xlsxBuffer, { status: 200, headers });
+      } else {
+        const startStr = startMonth.toString().padStart(2, '0');
+        const endStr = endMonth.toString().padStart(2, '0');
+        const filename = `S1a-HKD_Thang_${startStr}_den_${endStr}_${year}.zip`;
+        
+        const zip = new JSZip();
+        for (let m = startMonth; m <= endMonth; m++) {
+          const monthPayments = exportPayments.filter(p => {
+            const date = new Date(p.paidAt);
+            return date.getUTCMonth() + 1 === m;
+          });
+
+          const xlsxBuffer = await generateS1a(templateBuffer, monthPayments, activeConfig);
+          const mStr = m.toString().padStart(2, '0');
+          zip.file(`S1a-HKD_Thang_${mStr}_${year}.xlsx`, xlsxBuffer);
+        }
+
+        const zipArrayBuffer = await zip.generateAsync({ type: 'arraybuffer' });
+        headers.set('Content-Type', 'application/zip');
+        headers.set('Content-Disposition', `attachment; filename="${filename}"`);
+        return new Response(zipArrayBuffer, { status: 200, headers });
+      }
+    }
 
     if (month !== null) {
       const monthStr = month.toString().padStart(2, '0');

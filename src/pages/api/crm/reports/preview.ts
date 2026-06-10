@@ -9,6 +9,8 @@ const DEFAULT_CONFIG = {
   orgName: 'HỘ KINH DOANH',
   mst: '',
   address: '',
+  businessLocation: '',
+  reportingPeriod: '',
   serviceTemplate: '{customerId} - {customerName} - {serviceName}',
   orderTemplate: 'ORDER {orderNumber} - {orderContent}',
   dateFormat: 'DD/MM/YYYY'
@@ -71,8 +73,24 @@ export const GET = async (context: APIContext): Promise<Response> => {
     let endTime = 0;
     let month: number | null = null;
     let quarter: number | null = null;
+    let startMonth: number | null = null;
+    let endMonth: number | null = null;
 
-    if (monthParam) {
+    const startMonthParam = url.searchParams.get('startMonth');
+    const endMonthParam = url.searchParams.get('endMonth');
+
+    if (startMonthParam && endMonthParam) {
+      startMonth = parseInt(startMonthParam);
+      endMonth = parseInt(endMonthParam);
+      if (isNaN(startMonth) || startMonth < 1 || startMonth > 12 || isNaN(endMonth) || endMonth < 1 || endMonth > 12 || startMonth > endMonth) {
+        return new Response(JSON.stringify({ error: 'Invalid month range' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+      startTime = new Date(Date.UTC(year, startMonth - 1, 1)).getTime();
+      endTime = new Date(Date.UTC(year, endMonth, 1)).getTime() - 1;
+    } else if (monthParam) {
       month = parseInt(monthParam);
       if (isNaN(month) || month < 1 || month > 12) {
         return new Response(JSON.stringify({ error: 'Invalid month parameter' }), {
@@ -90,9 +108,9 @@ export const GET = async (context: APIContext): Promise<Response> => {
           headers: { 'Content-Type': 'application/json' },
         });
       }
-      const startMonth = (quarter - 1) * 3;
-      startTime = new Date(Date.UTC(year, startMonth, 1)).getTime();
-      endTime = new Date(Date.UTC(year, startMonth + 3, 1)).getTime() - 1;
+      const startMonthVal = (quarter - 1) * 3;
+      startTime = new Date(Date.UTC(year, startMonthVal, 1)).getTime();
+      endTime = new Date(Date.UTC(year, startMonthVal + 3, 1)).getTime() - 1;
     } else {
       startTime = new Date(Date.UTC(year, 0, 1)).getTime();
       endTime = new Date(Date.UTC(year + 1, 0, 1)).getTime() - 1;
@@ -139,6 +157,7 @@ export const GET = async (context: APIContext): Promise<Response> => {
           taxInvoiceDate: row.order.taxInvoiceDate,
         } : null,
         serviceName: row.service ? row.service.name : null,
+        serviceDescription: row.service ? row.service.description : null,
       };
 
       return {
@@ -155,6 +174,8 @@ export const GET = async (context: APIContext): Promise<Response> => {
         year,
         month,
         quarter,
+        startMonth,
+        endMonth,
         totalCount: previewPayments.length,
         totalAmount,
         payments: previewPayments,

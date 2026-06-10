@@ -9,6 +9,8 @@ const DEFAULT_CONFIG = {
   orgName: 'HỘ KINH DOANH',
   mst: '',
   address: '',
+  businessLocation: '',
+  reportingPeriod: '',
   serviceTemplate: '{customerId} - {customerName} - {serviceName}',
   orderTemplate: 'ORDER {orderNumber} - {orderContent}',
   dateFormat: 'DD/MM/YYYY'

@@ -23,6 +23,7 @@ export interface ExportPayment {
     taxInvoiceDate?: number | null;
   } | null;
   serviceName?: string | null;
+  serviceDescription?: string | null;
 }
 
 // @para-doc [tax-reporting-spec.md#32-lam-sach-cong-thuc-excel-sanitizeformula]
@@ -57,6 +58,7 @@ export const getPaymentDescription = (payment: ExportPayment, config: any): stri
     customerId: payment.customer?.id || null,
     customerName: payment.customer?.fullName || null,
     serviceName: payment.serviceName || (payment.order ? payment.order.content : 'TT GIA HAN'),
+    serviceDescription: payment.serviceDescription || null,
     orderNumber: payment.order?.orderNumber || null,
     orderContent: payment.order?.content || null,
     rawContent: payment.content || null
@@ -119,6 +121,8 @@ export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportP
     orgName: 'HỘ KINH DOANH',
     mst: '',
     address: '',
+    businessLocation: '',
+    reportingPeriod: '',
     serviceTemplate: '{customerId} - {customerName} - {serviceName}',
     orderTemplate: 'ORDER {orderNumber} - {orderContent}',
     dateFormat: 'DD/MM/YYYY'
@@ -151,6 +155,15 @@ export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportP
   const cellA3 = worksheet.getCell('A3');
   if (cellA3) {
     cellA3.value = `Mã số thuế: ${activeConfig.mst || ''}`;
+  }
+
+  const cellB7 = worksheet.getCell('B7');
+  if (cellB7) {
+    cellB7.value = `Địa điểm kinh doanh: ${activeConfig.businessLocation || ''}`;
+  }
+  const cellB8 = worksheet.getCell('B8');
+  if (cellB8) {
+    cellB8.value = `Kỳ kê khai: ${activeConfig.reportingPeriod || ''}`;
   }
 
   // Force Excel to calculate formulas on load
@@ -314,6 +327,7 @@ export function parseReportTemplate(
     customerId?: string | null;
     customerName?: string | null;
     serviceName?: string | null;
+    serviceDescription?: string | null;
     orderNumber?: string | null;
     orderContent?: string | null;
     rawContent?: string | null;

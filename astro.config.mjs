@@ -8,12 +8,12 @@ export default defineConfig({
   output: 'server',
   adapter: cloudflare(),
   vite: {
+    optimizeDeps: {
+      exclude: ['exceljs', 'jszip']
+    },
     ssr: {
       external: ['better-sqlite3', '@libsql/client'],
       noExternal: ['exceljs', 'jszip'],
-      optimizeDeps: {
-        include: ['exceljs', 'jszip']
-      }
     }
   }
 });

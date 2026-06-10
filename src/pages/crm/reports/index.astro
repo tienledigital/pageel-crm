@@ -34,6 +34,8 @@ const DEFAULT_CONFIG = {
   orgName: 'HỘ KINH DOANH',
   mst: '',
   address: '',
+  businessLocation: '',
+  reportingPeriod: '',
   serviceTemplate: '{customerId} - {customerName} - {serviceName}',
   orderTemplate: 'ORDER {orderNumber} - {orderContent}',
   dateFormat: 'DD/MM/YYYY'
@@ -58,19 +60,19 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
     .reports-container {
       display: flex;
       flex-direction: column;
-      gap: 2rem;
+      gap: 1.5rem;
+      animation: fadeIn 0.4s ease-out;
     }
 
-    .header-description {
-      color: var(--text-secondary);
-      font-size: 0.875rem;
-      margin-top: -0.5rem;
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     /* Tabs Layout */
     .tabs-nav {
       display: flex;
-      gap: 0.5rem;
+      gap: 0.25rem;
       border-bottom: 1px solid var(--border-color);
       padding-bottom: 0px;
       margin-bottom: 1rem;
@@ -80,55 +82,94 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
       padding: 0.75rem 1.25rem;
       background: transparent;
       border: none;
-      border-bottom: 2px solid transparent;
-      color: var(--text-muted);
+      border-bottom: 3px solid transparent;
+      color: var(--text-secondary);
       font-family: inherit;
-      font-size: 0.875rem;
+      font-size: 0.9rem;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
       display: flex;
       align-items: center;
       gap: 0.5rem;
+      border-radius: 8px 8px 0 0;
     }
 
     .tab-btn:hover {
       color: var(--text-primary);
+      background-color: var(--bg-hover);
     }
 
     .tab-btn.active {
       color: var(--primary);
       border-bottom-color: var(--primary);
+      background-color: var(--primary-glow);
     }
 
     .tab-panel {
       display: none;
+      animation: slideUp 0.3s ease-out;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .tab-panel.active {
       display: block;
     }
 
-    /* Card standard styling */
+    /* Card styling */
     .card {
       background-color: var(--bg-card);
       border: 1px solid var(--border-color);
       border-radius: 16px;
-      padding: 1.75rem;
-      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+      padding: 2rem;
+      box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.02), 0 2px 8px -1px rgba(0, 0, 0, 0.01);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       margin-bottom: 1.5rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 4px;
+      height: 100%;
+      background: linear-gradient(180deg, var(--primary), transparent);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+
+    .card:hover {
+      box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.04), 0 4px 12px -2px rgba(0, 0, 0, 0.02);
+      transform: translateY(-2px);
+    }
+
+    .card:hover::before {
+      opacity: 1;
     }
 
     .card-title {
-      font-size: 0.75rem;
+      font-size: 0.8rem;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--text-secondary);
-      margin-bottom: 1.25rem;
+      letter-spacing: 1.2px;
+      color: var(--text-primary);
+      margin-bottom: 1.5rem;
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.6rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .card-title svg {
+      color: var(--primary);
     }
 
     /* Forms */
@@ -154,30 +195,31 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
     }
 
     .input-label {
-      font-size: 0.75rem;
-      font-weight: 600;
+      font-size: 0.7rem;
+      font-weight: 700;
       color: var(--text-secondary);
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.8px;
     }
 
     .text-input, .select-input {
       width: 100%;
-      padding: 0.75rem 1rem;
+      padding: 0.8rem 1.1rem;
       background-color: var(--bg-main);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
+      border: 1.5px solid var(--border-color);
+      border-radius: 10px;
       color: var(--text-primary);
       font-family: inherit;
-      font-size: 0.875rem;
+      font-size: 0.9rem;
       font-weight: 500;
       outline: none;
-      transition: all 0.2s ease;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .text-input:focus, .select-input:focus {
       border-color: var(--primary);
-      box-shadow: 0 0 0 2px var(--primary-glow);
+      background-color: var(--bg-card);
+      box-shadow: 0 0 0 4px var(--primary-glow);
     }
 
     /* Quick placeholders */
@@ -186,56 +228,71 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
       flex-wrap: wrap;
       gap: 0.5rem;
       margin-top: 0.5rem;
+      padding: 0.85rem;
+      background-color: var(--bg-main);
+      border-radius: 10px;
+      border: 1px dashed var(--border-color);
     }
 
     .placeholder-tag {
-      padding: 0.35rem 0.65rem;
-      background-color: var(--bg-main);
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
+      padding: 0.4rem 0.75rem;
+      background-color: var(--bg-card);
+      border: 1.5px solid var(--border-color);
+      border-radius: 8px;
       font-size: 0.75rem;
       font-family: monospace;
       font-weight: 600;
-      color: var(--primary);
+      color: var(--text-primary);
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
     }
 
     .placeholder-tag:hover {
       background-color: var(--primary-glow);
       border-color: var(--primary);
+      color: var(--primary);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px var(--primary-glow);
     }
 
     /* Action bar */
     .action-bar {
       display: flex;
       justify-content: flex-end;
-      margin-top: 1rem;
+      margin-top: 1.5rem;
     }
 
     .btn-primary {
-      padding: 0.75rem 1.5rem;
-      background-color: var(--primary);
+      padding: 0.8rem 1.6rem;
+      background: linear-gradient(135deg, var(--primary) 0%, #ff781f 100%);
       color: white;
       border: none;
-      border-radius: 8px;
+      border-radius: 10px;
       font-family: inherit;
-      font-size: 0.875rem;
+      font-size: 0.9rem;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.25s ease;
       display: flex;
       align-items: center;
       gap: 0.5rem;
+      box-shadow: 0 4px 12px rgba(255, 93, 1, 0.15);
     }
 
-    .btn-primary:hover {
-      opacity: 0.9;
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 16px rgba(255, 93, 1, 0.25);
+    }
+
+    .btn-primary:active:not(:disabled) {
+      transform: translateY(0);
     }
 
     .btn-primary:disabled {
       opacity: 0.5;
       cursor: not-allowed;
+      box-shadow: none;
     }
 
     /* Filter Panel */
@@ -247,57 +304,47 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
       margin-bottom: 1.5rem;
       background-color: var(--bg-card);
       border: 1px solid var(--border-color);
-      border-radius: 12px;
+      border-radius: 16px;
       padding: 1.25rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
     }
 
     .filter-item {
       display: flex;
       flex-direction: column;
-      gap: 0.4rem;
-      min-width: 120px;
+      gap: 0.5rem;
+      min-width: 130px;
+      flex-grow: 1;
+    }
+
+    @media (min-width: 640px) {
+      .filter-item {
+        flex-grow: 0;
+      }
     }
 
     .btn-filter {
-      padding: 0.7rem 1.25rem;
-      background-color: var(--primary);
+      padding: 0.8rem 1.4rem;
+      background: linear-gradient(135deg, var(--primary) 0%, #ff781f 100%);
       color: white;
       border: none;
-      border-radius: 8px;
+      border-radius: 10px;
       font-family: inherit;
-      font-size: 0.875rem;
+      font-size: 0.9rem;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s ease;
-      height: 40px;
+      transition: all 0.25s ease;
+      height: 44px;
       display: flex;
       align-items: center;
       justify-content: center;
+      gap: 0.5rem;
+      box-shadow: 0 4px 10px rgba(255, 93, 1, 0.12);
     }
 
-    .btn-filter:hover {
-      opacity: 0.9;
-    }
-
-    .btn-secondary {
-      padding: 0.7rem 1.25rem;
-      background-color: var(--bg-main);
-      color: var(--text-primary);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      font-family: inherit;
-      font-size: 0.875rem;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      height: 40px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .btn-secondary:hover {
-      background-color: var(--bg-hover);
+    .btn-filter:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 14px rgba(255, 93, 1, 0.2);
     }
 
     /* Export actions layout */
@@ -309,71 +356,81 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
     }
 
     .btn-export {
-      padding: 0.65rem 1.25rem;
+      padding: 0.7rem 1.4rem;
       background-color: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
+      border: 1.5px solid var(--border-color);
+      border-radius: 10px;
       color: var(--text-primary);
       font-family: inherit;
-      font-size: 0.825rem;
+      font-size: 0.85rem;
       font-weight: 600;
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
       display: flex;
       align-items: center;
       gap: 0.5rem;
-      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.01);
     }
 
     .btn-export:hover:not(:disabled) {
       border-color: var(--primary);
       color: var(--primary);
+      background-color: var(--primary-glow);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(255, 93, 1, 0.08);
     }
 
     .btn-export:disabled {
       opacity: 0.5;
       cursor: not-allowed;
+      box-shadow: none;
     }
 
     /* Grid Table styling */
-    .table-container {
-      width: 100%;
-      overflow-x: auto;
+    .card-container {
       background-color: var(--bg-card);
       border: 1px solid var(--border-color);
-      border-radius: 12px;
+      border-radius: 16px;
+      padding: 1.5rem;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
       margin-top: 1rem;
     }
 
-    .report-table {
+    .table-responsive {
+      overflow-x: auto;
+    }
+
+    .custom-table {
       width: 100%;
       border-collapse: collapse;
       text-align: left;
-      font-size: 0.875rem;
     }
 
-    .report-table th {
-      background-color: var(--bg-main);
-      padding: 0.85rem 1rem;
-      font-weight: 700;
-      color: var(--text-secondary);
-      border-bottom: 1px solid var(--border-color);
+    .custom-table th {
+      padding: 1rem;
       font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-secondary);
       text-transform: uppercase;
       letter-spacing: 0.5px;
+      border-bottom: 1px solid var(--border-color);
     }
 
-    .report-table td {
-      padding: 0.85rem 1rem;
+    .custom-table td {
+      padding: 1.25rem 1rem;
+      font-size: 0.875rem;
       border-bottom: 1px solid var(--border-color);
       color: var(--text-primary);
+      vertical-align: middle;
+      transition: background-color 0.2s ease;
     }
 
-    .report-table tr:last-child td {
+    .custom-table tr:last-child td {
       border-bottom: none;
     }
 
-    .report-table tr:hover {
+    .custom-table tbody tr:hover td {
       background-color: var(--bg-hover);
     }
 
@@ -386,17 +443,19 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
     }
 
     .table-empty {
-      padding: 3rem;
+      padding: 3.5rem 1.5rem;
       text-align: center;
       color: var(--text-muted);
+      font-size: 0.925rem;
     }
 
     .table-footer-info {
-      padding: 0.75rem 1rem;
-      font-size: 0.75rem;
+      padding: 0.9rem 1.2rem;
+      font-size: 0.775rem;
       color: var(--text-muted);
       background-color: var(--bg-main);
-      border-top: 1px solid var(--border-color);
+      border-top: 1.5px solid var(--border-color);
+      border-radius: 0 0 16px 16px;
     }
 
     /* Loading Spinner */
@@ -463,8 +522,18 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
           </select>
         </div>
         <div class="filter-item">
-          <span class="input-label">{lang === 'vi' ? 'Tháng báo cáo' : 'Report Month'}</span>
-          <select id="filterMonth" class="select-input">
+          <span class="input-label">{lang === 'vi' ? 'Từ tháng' : 'From Month'}</span>
+          <select id="filterStartMonth" class="select-input">
+            {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+              <option value={m} selected={m === new Date().getMonth() + 1}>
+                {lang === 'vi' ? `Tháng ${m}` : `Month ${m}`}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div class="filter-item">
+          <span class="input-label">{lang === 'vi' ? 'Đến tháng' : 'To Month'}</span>
+          <select id="filterEndMonth" class="select-input">
             {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
               <option value={m} selected={m === new Date().getMonth() + 1}>
                 {lang === 'vi' ? `Tháng ${m}` : `Month ${m}`}
@@ -478,14 +547,14 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
       </div>
 
       <!-- Export Actions -->
-      <div class="export-actions">
+      <div class="export-actions" style="margin-top: 1.5rem;">
         <button id="btnExportExcel" class="btn-export" type="button">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg>
-          {lang === 'vi' ? 'Tải Excel Tháng (.xlsx)' : 'Download Excel Month'}
+          {lang === 'vi' ? 'Xuất Báo cáo (.xlsx)' : 'Export Report (.xlsx)'}
         </button>
-        <button id="btnExportZipQuarter" class="btn-export" type="button">
+        <button id="btnExportZipRange" class="btn-export" type="button">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
-          {lang === 'vi' ? 'Tải ZIP Quý (.zip)' : 'Download ZIP Quarter'}
+          {lang === 'vi' ? 'Tải ZIP các tháng đã chọn (.zip)' : 'Download ZIP selected months'}
         </button>
         <button id="btnExportZipYear" class="btn-export" type="button">
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" style="width: 16px; height: 16px;"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" /></svg>
@@ -494,25 +563,27 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
       </div>
 
       <!-- Preview Grid -->
-      <div class="table-container">
-        <table class="report-table" id="reportPreviewTable">
-          <thead>
-            <tr>
-              <th style="width: 15%;">{lang === 'vi' ? 'Ngày chứng từ' : 'Document Date'}</th>
-              <th style="width: 65%;">{lang === 'vi' ? 'Diễn giải nội dung doanh thu' : 'Revenue Description'}</th>
-              <th style="width: 20%;" class="text-right">{lang === 'vi' ? 'Số tiền thực thu (VND)' : 'Revenue Amount (VND)'}</th>
-            </tr>
-          </thead>
-          <tbody id="previewTableBody">
-            <tr>
-              <td colspan="3" class="table-empty">
-                {lang === 'vi' ? 'Nhấp "Xem số liệu" để nạp bảng kê khai.' : 'Click "Apply Filter" to load preview records.'}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        <div class="table-footer-info">
-          {lang === 'vi' ? '⚠️ Hệ thống xem trước giới hạn hiển thị tối đa 100 bản ghi dòng tiền. Hãy xuất file Excel đầy đủ để xem toàn bộ.' : '⚠️ Preview grid displays up to 100 payments. Please export Excel for complete reporting.'}
+      <div class="card-container">
+        <div class="table-responsive table-scroll-container">
+          <table class="custom-table" id="reportPreviewTable">
+            <thead>
+              <tr>
+                <th style="width: 15%;">{lang === 'vi' ? 'Ngày chứng từ' : 'Document Date'}</th>
+                <th style="width: 65%;">{lang === 'vi' ? 'Diễn giải nội dung doanh thu' : 'Revenue Description'}</th>
+                <th style="width: 20%;" class="text-right">{lang === 'vi' ? 'Số tiền thực thu (VND)' : 'Revenue Amount (VND)'}</th>
+              </tr>
+            </thead>
+            <tbody id="previewTableBody">
+              <tr>
+                <td colspan="3" class="table-empty">
+                  {lang === 'vi' ? 'Nhấp "Xem số liệu" để nạp bảng kê khai.' : 'Click "Apply Filter" to load preview records.'}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="table-footer-info">
+            {lang === 'vi' ? '⚠️ Hệ thống xem trước giới hạn hiển thị tối đa 100 bản ghi dòng tiền. Hãy xuất file Excel đầy đủ để xem toàn bộ.' : '⚠️ Preview grid displays up to 100 payments. Please export Excel for complete reporting.'}
+          </div>
         </div>
       </div>
     </div>
@@ -563,6 +634,28 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
                 placeholder="Ví dụ: 123 Nguyen Trai, Q.5, TP. Hồ Chí Minh"
               />
             </div>
+
+            <div class="input-group">
+              <span class="input-label">{lang === 'vi' ? 'Địa điểm kinh doanh' : 'Business Location'}</span>
+              <input 
+                type="text" 
+                name="businessLocation" 
+                class="text-input" 
+                value={reportsConfig.businessLocation || ''}
+                placeholder="Ví dụ: Cửa hàng số 1, chợ Trung Tâm"
+              />
+            </div>
+
+            <div class="input-group">
+              <span class="input-label">{lang === 'vi' ? 'Kỳ kê khai' : 'Reporting Period'}</span>
+              <input 
+                type="text" 
+                name="reportingPeriod" 
+                class="text-input" 
+                value={reportsConfig.reportingPeriod || ''}
+                placeholder="Ví dụ: Tháng 06 năm 2026 hoặc Quý II/2026"
+              />
+            </div>
           </div>
         </div>
 
@@ -601,11 +694,12 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
             <div class="input-group span-full">
               <span class="input-label">{lang === 'vi' ? 'Chèn nhanh placeholders (Nhấp để chèn tại vị trí con trỏ)' : 'Insert Placeholder (Click to insert at cursor)'}</span>
               <div class="placeholders-list">
-                <button type="button" class="placeholder-tag" data-tag="{'{customerId}'}">{`{customerId}`}</button>
-                <button type="button" class="placeholder-tag" data-tag="{'{customerName}'}">{`{customerName}`}</button>
-                <button type="button" class="placeholder-tag" data-tag="{'{serviceName}'}">{`{serviceName}`}</button>
-                <button type="button" class="placeholder-tag" data-tag="{'{orderNumber}'}">{`{orderNumber}`}</button>
-                <button type="button" class="placeholder-tag" data-tag="{'{orderContent}'}">{`{orderContent}`}</button>
+                <button type="button" class="placeholder-tag" data-tag={"{customerId}"}>{`{customerId}`}</button>
+                <button type="button" class="placeholder-tag" data-tag={"{customerName}"}>{`{customerName}`}</button>
+                <button type="button" class="placeholder-tag" data-tag={"{serviceName}"}>{`{serviceName}`}</button>
+                <button type="button" class="placeholder-tag" data-tag={"{serviceDescription}"}>{`{serviceDescription}`}</button>
+                <button type="button" class="placeholder-tag" data-tag={"{orderNumber}"}>{`{orderNumber}`}</button>
+                <button type="button" class="placeholder-tag" data-tag={"{orderContent}"}>{`{orderContent}`}</button>
               </div>
             </div>
           </div>
@@ -645,6 +739,17 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
 
   <!-- Client-side logic script -->
   <script is:inline define:vars={{ lang }}>
+    // Helper to escape HTML to prevent XSS
+    function escapeHtml(unsafe) {
+      if (unsafe === null || unsafe === undefined) return '';
+      return String(unsafe)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
     // UI Tab switching logic
     const tabViewerBtn = document.getElementById('tabViewerBtn');
     const tabSettingsBtn = document.getElementById('tabSettingsBtn');
@@ -757,14 +862,16 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
     // Fetch and populate preview grid
     const btnLoadPreview = document.getElementById('btnLoadPreview');
     const filterYear = document.getElementById('filterYear');
-    const filterMonth = document.getElementById('filterMonth');
+    const filterStartMonth = document.getElementById('filterStartMonth');
+    const filterEndMonth = document.getElementById('filterEndMonth');
     const previewTableBody = document.getElementById('previewTableBody');
 
     btnLoadPreview.addEventListener('click', loadReportPreview);
 
     async function loadReportPreview() {
       const year = filterYear.value;
-      const month = filterMonth.value;
+      const startMonth = filterStartMonth.value;
+      const endMonth = filterEndMonth.value;
       
       btnLoadPreview.setAttribute('disabled', 'true');
       btnLoadPreview.textContent = lang === 'vi' ? 'Đang nạp...' : 'Loading...';
@@ -779,7 +886,7 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
       `;
 
       try {
-        const res = await fetch(`/api/crm/reports/preview?year=${year}&month=${month}`);
+        const res = await fetch(`/api/crm/reports/preview?year=${year}&startMonth=${startMonth}&endMonth=${endMonth}`);
         if (!res.ok) {
           throw new Error('Failed to fetch preview');
         }
@@ -833,7 +940,7 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
           previewTableBody.innerHTML = `
             <tr>
               <td colspan="3" class="table-empty">
-                ${lang === 'vi' ? 'Không có giao dịch doanh thu chịu thuế nào trong tháng được chọn.' : 'No taxable revenue transactions found for this month.'}
+                ${lang === 'vi' ? 'Không có giao dịch doanh thu chịu thuế nào trong khoảng tháng được chọn.' : 'No taxable revenue transactions found for this month range.'}
               </td>
             </tr>
           `;
@@ -856,26 +963,30 @@ const filterYears = [currentYear - 1, currentYear, currentYear + 1];
     // Trigger initial preview load
     loadReportPreview();
 
-    // Export Excel Month download
-    document.getElementById('btnExportExcel').addEventListener('click', () => {
+    const btnExportExcel = document.getElementById('btnExportExcel');
+    const btnExportZipRange = document.getElementById('btnExportZipRange');
+    const btnExportZipYear = document.getElementById('btnExportZipYear');
+
+    // Export merged Excel download (Month or Month Range gộp chung)
+    btnExportExcel.addEventListener('click', () => {
       const year = filterYear.value;
-      const month = filterMonth.value;
-      window.location.href = `/api/export/s1a?year=${year}&month=${month}`;
+      const startMonth = filterStartMonth.value;
+      const endMonth = filterEndMonth.value;
+      window.location.href = '/api/export/s1a?year=' + year + '&startMonth=' + startMonth + '&endMonth=' + endMonth + '&singleFile=true';
     });
 
-    // Export ZIP Quarter download
-    document.getElementById('btnExportZipQuarter').addEventListener('click', () => {
+    // Export ZIP for selected months (ZIP chứa các file Excel riêng lẻ)
+    btnExportZipRange.addEventListener('click', () => {
       const year = filterYear.value;
-      const month = Number(filterMonth.value);
-      // Math.floor((month - 1) / 3) + 1 gives the quarter (1 to 4)
-      const quarter = Math.floor((month - 1) / 3) + 1;
-      window.location.href = `/api/export/s1a?year=${year}&quarter=${quarter}`;
+      const startMonth = filterStartMonth.value;
+      const endMonth = filterEndMonth.value;
+      window.location.href = '/api/export/s1a?year=' + year + '&startMonth=' + startMonth + '&endMonth=' + endMonth;
     });
 
-    // Export ZIP Year download
-    document.getElementById('btnExportZipYear').addEventListener('click', () => {
+    // Export ZIP for all 12 months (ZIP chứa 12 file Excel riêng lẻ)
+    btnExportZipYear.addEventListener('click', () => {
       const year = filterYear.value;
-      window.location.href = `/api/export/s1a?year=${year}`;
+      window.location.href = '/api/export/s1a?year=' + year;
     });
   </script>
 </DashboardLayout>

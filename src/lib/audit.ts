@@ -1,5 +1,6 @@
 // @para-doc [administration-guide.md#system-logs]
-import { auditLogs } from '@/lib/db/schema';
+import { auditLogs, users } from '@/lib/db/schema';
+import { eq } from 'drizzle-orm';
 
 // @para-doc [administration-guide.md#system-logs]
 export interface AuditLogPayload {
@@ -56,9 +57,21 @@ export async function logAudit(
     const sanitizedDetail = payload.detail ? redactSensitive(payload.detail) : null;
     const detailString = sanitizedDetail ? JSON.stringify(sanitizedDetail) : null;
 
+    let finalUserId = payload.userId || null;
+    if (finalUserId) {
+      try {
+        const userExists = await db.select().from(users).where(eq(users.id, finalUserId)).limit(1);
+        if (userExists.length === 0) {
+          finalUserId = null;
+        }
+      } catch (e) {
+        finalUserId = null;
+      }
+    }
+
     await db.insert(auditLogs).values({
       id,
-      userId: payload.userId || null,
+      userId: finalUserId,
       username: payload.username || null,
       action: payload.action,
       target: payload.target || null,
