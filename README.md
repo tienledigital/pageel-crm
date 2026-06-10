@@ -9,7 +9,7 @@
   <p>Self-hosted financial and invoicing engine tailored for Vietnamese small businesses.</p>
 
   [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-  [![Version](https://img.shields.io/badge/Version-v0.11.4-blue.svg)](CHANGELOG.md)
+  [![Version](https://img.shields.io/badge/Version-v0.12.0-blue.svg)](CHANGELOG.md)
   ![Status](https://img.shields.io/badge/Status-Beta-orange.svg)
   [![Built with Astro](https://img.shields.io/badge/Built%20with-Astro-BC52EE.svg?logo=astro&logoColor=white)](https://astro.build)
 
@@ -46,6 +46,7 @@
 - **Security Hardening (v0.8.0):** Production-grade session auth security, built-in client-side XSS protection, production verbose error masking, and sliding-window rate limiting on login via Cloudflare KV namespace.
 - **Services & Late Association (v0.9.0):** Integrated product/service catalog management, manual transaction association (Late Association) for unmatched payments, dynamic VietQR prefix generation based on selected services, and customizable automated invoice description templates.
 - **Transaction Safety & Locking Resolution (v0.11.4):** Unified database transaction engine with exponential backoff and jitter retry mechanism to resolve database locking conflict (`SQLITE_BUSY`), complemented by a dynamic fallback to sequential execution in local D1 emulate environments lacking transaction support.
+- **Dynamic Reports Module (v0.12.0):** Integrated a custom month-to-month range filter report panel with merged single Excel sheet export option (`.xlsx` format), range zip exports, and dynamically mapped HKD headers (`businessLocation` and `reportingPeriod`) and service placeholders (`{serviceDescription}`) in the tax S1a templates.
 
 ---
 
