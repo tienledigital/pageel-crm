@@ -1,4 +1,4 @@
-// @para-doc [tax-reporting-spec.md#4-thuat-toan-dien-du-lieu-template-s1a-excel-generation-algorithm]
+// @para-doc [tax-reporting-spec.md#41-quan-ly-excel-template-trong-memory-excel-template-memory-management]
 /**
  * S1a-HKD-excel.xlsx template encoded as Base64.
  * Original File: public/templates/S1a-HKD-excel.xlsx

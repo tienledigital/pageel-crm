@@ -1,3 +1,4 @@
+// @para-doc [tax-reporting-spec.md#52-api-xem-truoc-so-lieu-doanh-thu-s1a-hkd-get-apicrmreportspreview]
 import type { APIContext } from 'astro';
 import { getDb } from '@/lib/db';
 import { payments, customers, orders, services, config as configTable } from '@/lib/db/schema';
@@ -16,6 +17,7 @@ const DEFAULT_CONFIG = {
   dateFormat: 'DD/MM/YYYY'
 };
 
+// @para-doc [tax-reporting-spec.md#52-api-xem-truoc-so-lieu-doanh-thu-s1a-hkd-get-apicrmreportspreview]
 export const GET = async (context: APIContext): Promise<Response> => {
   try {
     // 1. Verify user session and permissions

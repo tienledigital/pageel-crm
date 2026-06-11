@@ -5,7 +5,7 @@ import { config as dbConfigTable } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { env } from 'cloudflare:workers';
 
-// @para-doc [tax-reporting-spec.md#4-thuat-toan-dien-du-lieu-template-s1a-excel-generation-algorithm]
+// @para-doc [tax-reporting-spec.md#21-so-do-du-lieu-ket-xuan-data-export-schema]
 export interface ExportPayment {
   paidAt: number; // Unix timestamp in milliseconds
   amount: number;
@@ -105,7 +105,7 @@ const loadExcelJS = async () => {
   return (ExcelJS as any).default || ExcelJS;
 };
 
-// @para-doc [tax-reporting-spec.md#4-thuat-toan-dien-du-lieu-template-s1a-excel-generation-algorithm]
+// @para-doc [tax-reporting-spec.md#42-cac-buoc-dien-du-lieu-excel-generation-steps]
 export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportPayment[], config?: any): Promise<ArrayBuffer> => {
   const ExcelJS = await loadExcelJS();
   const workbook = new ExcelJS.Workbook();
@@ -282,7 +282,7 @@ export const generateS1a = async (templateBuffer: ArrayBuffer, payments: ExportP
   return uint8Array.buffer.slice(uint8Array.byteOffset, uint8Array.byteOffset + uint8Array.byteLength) as ArrayBuffer;
 };
 
-// @para-doc [tax-reporting-spec.md#5-xuat-bao-cao-zip-quan-ly-phan-trang-api]
+// @para-doc [tax-reporting-spec.md#5-xuat-bao-cao-zip-va-quan-ly-phan-trang-api]
 export const exportYearlyS1aZip = async (
   payments: ExportPayment[],
   year: number,
@@ -320,7 +320,7 @@ export const exportYearlyS1aZip = async (
   return blob;
 };
 
-// @para-doc [tax-reporting-spec.md#4-thuat-toan-dien-du-lieu-template-s1a-excel-generation-algorithm]
+// @para-doc [tax-reporting-spec.md#33-tu-dong-chuan-hoa-noi-dung-dien-giai-getpaymentdescription]
 export function parseReportTemplate(
   template: string,
   placeholders: {

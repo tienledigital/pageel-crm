@@ -1,3 +1,4 @@
+// @para-doc [api-contracts.md#4-api-luu-tru-cau-hinh-he-thong-system-configuration-api]
 import type { APIContext } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -16,6 +17,7 @@ const DEFAULT_CONFIG = {
   dateFormat: 'DD/MM/YYYY'
 };
 
+// @para-doc [api-contracts.md#4-api-luu-tru-cau-hinh-he-thong-system-configuration-api]
 export const GET = async (context: APIContext): Promise<Response> => {
   try {
     const user = context.locals.user;
@@ -57,6 +59,7 @@ export const GET = async (context: APIContext): Promise<Response> => {
   }
 };
 
+// @para-doc [api-contracts.md#4-api-luu-tru-cau-hinh-he-thong-system-configuration-api]
 export const POST = async (context: APIContext): Promise<Response> => {
   try {
     const user = context.locals.user;

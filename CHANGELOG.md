@@ -6,6 +6,24 @@ order: 1
 
 All notable changes to this project will be documented in this file.
 
+## [0.12.0] - 2026-06-11
+
+### Added
+- **Dynamic Reports Module**: Integrated dynamic month-to-month range filters (`startMonth` and `endMonth`) into API preview `/api/crm/reports/preview` and Excel export `/api/export/s1a`.
+- **Merged Excel Export**: Added a single file merged export option (`singleFile=true`) to consolidate multiple months of tax revenue data into one Excel sheet.
+- **Reports Dashboard UI**: Redesigned the `/crm/reports` interface with 3 direct action buttons (Merged Excel, ZIP Month Range, ZIP 12 Months) for improved user experience.
+- **Code-Docs Double-Binding Traceability**: Injected `@para-doc` anchor comments into API source code (`config.ts`, `preview.ts`) and synchronized Code-Graph linkages.
+- **Updated Documentation**: Upgraded tax reporting specifications (`tax-reporting-spec.md`) and API contracts (`api-contracts.md`) to version 0.12.0, and generated Notion-themed static HTML files.
+
+### Fixed
+- **Astro Client-side Parser Error**: Patched string interpolation syntax in Astro `<script define:vars>` block to prevent compilation errors.
+
+## [0.11.4] - 2026-06-09
+
+### Added
+- **DB Transactions Retry & Fallback**: Implemented an automated retry mechanism with exponential backoff for SQLite database lock contentions and sequential client fallback for D1 local emulation.
+- **Schema Validation Guards**: Added structural integrity checks within database transaction flows.
+
 ## [0.11.2] - 2026-06-09
 
 ### Added
