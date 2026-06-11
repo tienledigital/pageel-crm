@@ -18,6 +18,7 @@ const DEFAULT_CONFIG = {
 };
 
 // @para-doc [api-contracts.md#4-api-luu-tru-cau-hinh-he-thong-system-configuration-api]
+// @para-doc [tax-reporting-spec.md#53-api-cau-hinh-bao-cao-doanh-thu-s1a-hkd-get-post-apicrmreportsconfig]
 export const GET = async (context: APIContext): Promise<Response> => {
   try {
     const user = context.locals.user;
@@ -60,6 +61,7 @@ export const GET = async (context: APIContext): Promise<Response> => {
 };
 
 // @para-doc [api-contracts.md#4-api-luu-tru-cau-hinh-he-thong-system-configuration-api]
+// @para-doc [tax-reporting-spec.md#53-api-cau-hinh-bao-cao-doanh-thu-s1a-hkd-get-post-apicrmreportsconfig]
 export const POST = async (context: APIContext): Promise<Response> => {
   try {
     const user = context.locals.user;

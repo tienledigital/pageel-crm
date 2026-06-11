@@ -5,7 +5,7 @@ import { config as dbConfigTable } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { env } from 'cloudflare:workers';
 
-// @para-doc [tax-reporting-spec.md#21-so-do-du-lieu-ket-xuan-data-export-schema]
+// @para-doc [tax-reporting-spec.md#21-so-do-du-lieu-ket-xuat-data-export-schema]
 export interface ExportPayment {
   paidAt: number; // Unix timestamp in milliseconds
   amount: number;
