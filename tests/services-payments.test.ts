@@ -9,13 +9,15 @@ import {
   updateService,
   listServices,
   createOrderFromPayment,
-  syncCustomerServices
+  syncCustomerServices,
+  createPendingOrder
 } from '@/lib/services/serviceManager';
 import { customers, staff, payments, customerServices, services, users, orders } from '@/lib/db/schema';
 import { createSessionCookie } from '@/lib/auth';
 import { POST as reconcilePaymentHandler } from '@/pages/api/crm/payments/reconcile';
 import { GET as getServicesHandler, POST as createServiceHandler } from '@/pages/api/crm/services/index';
 import { PUT as updateServiceHandler, DELETE as deleteServiceHandler } from '@/pages/api/crm/services/[id]';
+import { POST as createOrderFromPaymentHandler } from '@/pages/api/crm/payments/create-order';
 
 describe('Services Manager CRUD Logic', () => {
   beforeAll(async () => {
@@ -765,4 +767,189 @@ describe('Chronological Recalculation Engine (syncCustomerServices)', () => {
     expect(customer.expiredAt).toBe(now + 40 * 24 * 60 * 60 * 1000);
   });
 });
+
+describe('Create Pending Order & Months Option (TDD)', () => {
+  const TEST_CUST_PENDING_ID = 'CUST-PENDING-TDD';
+  const TEST_STAFF_ID = 'STAFF-201';
+
+  beforeAll(async () => {
+    const db = getDb();
+    // Seed test customer
+    await db.insert(customers).values({
+      id: TEST_CUST_PENDING_ID,
+      fullName: 'Pending Customer',
+      phone: '0900000000',
+      expiredAt: null,
+    }).onConflictDoNothing();
+  });
+
+  it('should successfully create a pending order with default 1 month', async () => {
+    const db = getDb();
+    // Create service
+    const service = await createService(db, {
+      name: 'TDD Service 1',
+      price: 100000,
+      billingCycle: 30,
+      prefix: 'TDD1'
+    });
+
+    const res = await createPendingOrder(db, {
+      customerId: TEST_CUST_PENDING_ID,
+      serviceId: service.id,
+      staffId: TEST_STAFF_ID,
+    });
+
+    expect(res.success).toBe(true);
+    expect(res.orderId).toBeDefined();
+
+    const order = await db.select().from(orders).where(eq(orders.id, res.orderId)).get();
+    expect(order).toBeDefined();
+    expect(order.status).toBe('pending');
+    expect(order.amount).toBe(100000);
+    expect(order.months).toBe(1);
+    
+    const now = Date.now();
+    expect(Math.abs(order.startDate! - now)).toBeLessThan(5000); // within 5s
+    expect(order.expiredAt).toBe(order.startDate! + 30 * 24 * 60 * 60 * 1000);
+  });
+
+  it('should successfully create a pending order with 3 months option and calculate correct dates', async () => {
+    const db = getDb();
+    const service = await db.select().from(services).where(eq(services.prefix, 'TDD1')).get();
+
+    // Set customer expiredAt in the future (e.g. 5 days from now)
+    const futureExpiredAt = Date.now() + 5 * 24 * 60 * 60 * 1000;
+    await db.update(customers).set({ expiredAt: futureExpiredAt }).where(eq(customers.id, TEST_CUST_PENDING_ID));
+
+    const res = await createPendingOrder(db, {
+      customerId: TEST_CUST_PENDING_ID,
+      serviceId: service.id,
+      months: 3,
+      staffId: TEST_STAFF_ID,
+    });
+
+    expect(res.success).toBe(true);
+    const order = await db.select().from(orders).where(eq(orders.id, res.orderId)).get();
+    expect(order.status).toBe('pending');
+    expect(order.amount).toBe(300000);
+    expect(order.months).toBe(3);
+    expect(order.startDate).toBe(futureExpiredAt);
+    expect(order.expiredAt).toBe(futureExpiredAt + 30 * 3 * 24 * 60 * 60 * 1000);
+  });
+});
+
+describe('POST: Late Association API create-order months Option (TDD)', () => {
+  const SESSION_SECRET = 'fallback-secret-key-must-be-at-least-32-chars-long';
+  let adminToken: string;
+  let adminUserId = 'usr-admin-late-assoc';
+  let staffId = 'staff-late-assoc';
+
+  beforeAll(async () => {
+    const db = getDb();
+    
+    // Seed admin
+    await db.insert(users).values({
+      id: adminUserId,
+      username: 'admin_late_assoc',
+      passwordHash: 'hash',
+      role: 'admin',
+    }).onConflictDoNothing();
+
+    // Seed staff profile
+    await db.insert(staff).values({
+      id: staffId,
+      userId: adminUserId,
+      fullName: 'Late Assoc Staff',
+    }).onConflictDoNothing();
+
+    adminToken = await createSessionCookie({
+      id: adminUserId,
+      username: 'admin_late_assoc',
+      role: 'admin',
+      createdAt: Date.now(),
+    }, SESSION_SECRET);
+  });
+
+  function createMockContext(body?: any, token?: string) {
+    const cookiesMap = new Map();
+    if (token) {
+      cookiesMap.set('session', { value: token });
+    }
+    const request = new Request('http://localhost/api/crm/payments/create-order', {
+      method: 'POST',
+      body: body ? JSON.stringify(body) : undefined,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return {
+      request,
+      url: new URL(request.url),
+      cookies: cookiesMap,
+      locals: {
+        runtime: { env: { SESSION_SECRET } },
+      },
+    } as any;
+  }
+
+  it('should successfully link payment to order with custom months multiplier via API', async () => {
+    const db = getDb();
+    const customerId = 'CUST-LATE-ASSOC-TDD';
+    const serviceId = 'srv-late-assoc-tdd';
+    const paymentId = 'pay-late-assoc-tdd';
+
+    await db.insert(customers).values({
+      id: customerId,
+      fullName: 'Late Assoc Customer',
+      phone: '0913333333',
+    }).onConflictDoNothing();
+
+    await db.insert(services).values({
+      id: serviceId,
+      name: 'Late Assoc Service',
+      price: 250000,
+      billingCycle: 30,
+      prefix: 'LATEASSOC',
+      status: 'active',
+      createdAt: Date.now(),
+    }).onConflictDoNothing();
+
+    await db.insert(payments).values({
+      id: paymentId,
+      customerId,
+      amount: 750000, // 250k * 3
+      transactionId: 'TX_LATE_ASSOC_TDD',
+      paymentMethod: 'bank_transfer',
+      content: 'Chuyen khoan nang cap',
+      paidAt: Date.now(),
+      type: 'in',
+      category: 'non_revenue',
+    }).onConflictDoNothing();
+
+    const startDate = Date.now();
+    const expiredAt = startDate + 30 * 3 * 24 * 60 * 60 * 1000;
+
+    const body = {
+      paymentId,
+      customerId,
+      serviceId,
+      startDate,
+      expiredAt,
+      months: 3,
+    };
+
+    const context = createMockContext(body, adminToken);
+    const response = await createOrderFromPaymentHandler(context);
+    expect(response.status).toBe(200);
+
+    const data = await response.json();
+    expect(data.success).toBe(true);
+
+    // Verify DB order
+    const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).get();
+    expect(order).toBeDefined();
+    expect(order.status).toBe('paid');
+    expect(order.months).toBe(3);
+    expect(order.amount).toBe(250000); // base price by default if customPrice not provided
+  });
+});
+
 

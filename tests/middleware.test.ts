@@ -266,4 +266,92 @@ describe('Astro Middleware - Authentication & RBAC', () => {
       expect(response.headers.get('X-Frame-Options')).toBe('DENY');
     });
   });
+
+  describe('CSRF Protection - Origin Validation', () => {
+    it('should block mutation request with malicious Origin header', async () => {
+      const mockContext: any = {
+        url: new URL('http://localhost/api/crm/customers'),
+        request: new Request('http://localhost/api/crm/customers', {
+          method: 'POST',
+          headers: { 'Origin': 'https://malicious.com' }
+        }),
+        cookies: {
+          get: () => null
+        },
+        locals: { runtime: { env: { SESSION_SECRET } } }
+      };
+
+      const nextCalled = vi.fn();
+      const response = await onRequest(mockContext, nextCalled);
+
+      expect(response.status).toBe(403);
+      const data = await response.json();
+      expect(data.error).toBe('Forbidden: CSRF validation failed');
+      expect(nextCalled).not.toHaveBeenCalled();
+    });
+
+    it('should bypass CSRF validation for exempt paths (like sepay webhook)', async () => {
+      const mockContext: any = {
+        url: new URL('http://localhost/api/webhook/sepay'),
+        request: new Request('http://localhost/api/webhook/sepay', {
+          method: 'POST',
+          headers: { 'Origin': 'https://malicious.com' }
+        }),
+        cookies: {
+          get: () => null
+        },
+        locals: { runtime: { env: { SESSION_SECRET } } }
+      };
+
+      const nextResponse = new Response('ok');
+      const nextCalled = vi.fn().mockResolvedValue(nextResponse);
+      const response = await onRequest(mockContext, nextCalled);
+
+      // Webhook handler is allowed, will continue next
+      expect(nextCalled).toHaveBeenCalled();
+    });
+
+    it('should allow mutation request without Origin header (navigational or same-origin form submits)', async () => {
+      const cookieValue = await createSessionCookie(validPayload, SESSION_SECRET);
+      const mockContext: any = {
+        url: new URL('http://localhost/api/crm/customers'),
+        request: new Request('http://localhost/api/crm/customers', {
+          method: 'POST'
+        }),
+        cookies: {
+          get: (name: string) => name === 'session' ? { value: cookieValue } : null
+        },
+        locals: { runtime: { env: { SESSION_SECRET } } }
+      };
+
+      const nextResponse = new Response('ok');
+      const nextCalled = vi.fn().mockResolvedValue(nextResponse);
+      const response = await onRequest(mockContext, nextCalled);
+
+      expect(response.status).toBe(200);
+      expect(nextCalled).toHaveBeenCalled();
+    });
+
+    it('should allow mutation request with matching Origin header', async () => {
+      const cookieValue = await createSessionCookie(validPayload, SESSION_SECRET);
+      const mockContext: any = {
+        url: new URL('http://localhost/api/crm/customers'),
+        request: new Request('http://localhost/api/crm/customers', {
+          method: 'POST',
+          headers: { 'Origin': 'http://localhost' }
+        }),
+        cookies: {
+          get: (name: string) => name === 'session' ? { value: cookieValue } : null
+        },
+        locals: { runtime: { env: { SESSION_SECRET } } }
+      };
+
+      const nextResponse = new Response('ok');
+      const nextCalled = vi.fn().mockResolvedValue(nextResponse);
+      const response = await onRequest(mockContext, nextCalled);
+
+      expect(response.status).toBe(200);
+      expect(nextCalled).toHaveBeenCalled();
+    });
+  });
 });

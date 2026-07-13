@@ -9,6 +9,7 @@ import { createOrderFromPayment } from '@/lib/services/serviceManager';
 import { logDebug } from '@/lib/debug-logger';
 
 // @para-doc [services-payments-spec.md#64-cac-api-nghiep-vu-don-hang-orders-api-contracts]
+// @para-doc [#csa-api-late-assoc]
 export const POST: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions
@@ -32,7 +33,7 @@ export const POST: APIRoute = async (context) => {
 
     // 2. Parse request body
     const body = await context.request.json().catch(() => ({}));
-    const { paymentId, customerId, serviceId, startDate, expiredAt, customPrice } = body;
+    const { paymentId, customerId, serviceId, startDate, expiredAt, customPrice, months } = body;
 
     if (!paymentId || !customerId || !serviceId || !startDate || !expiredAt) {
       return new Response(JSON.stringify({ error: 'Bad Request: Missing required parameters' }), {
@@ -61,6 +62,7 @@ export const POST: APIRoute = async (context) => {
       expiredAt: Number(expiredAt),
       staffId: currentStaff.id,
       customPrice: customPrice !== undefined ? Number(customPrice) : undefined,
+      months: months ? Number(months) : 1,
     });
 
     return new Response(JSON.stringify({ success: true, orderId: result.orderId }), {

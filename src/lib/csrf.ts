@@ -17,6 +17,7 @@ const CSRF_EXEMPT_PATHS = [
  * - Otherwise, block.
  */
 // @para-doc [auth-spec.md#44-phong-chong-tan-cong-csrf-bang-origin-validation-csrf-protection]
+// @para-doc [#csa-sec-csrf]
 export function validateOrigin(
   origin: string | null,
   host: string,

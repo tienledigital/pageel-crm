@@ -1,7 +1,21 @@
 // @para-doc [administration-guide.md#system-logs]
 import { debugLogs } from '@/lib/db/schema';
 
-// @para-doc [administration-guide.md#system-logs]
+// @para-doc [spec.md#diagnostics-and-error-taxonomy]
+export const DIAG_ERROR_TAXONOMY = {
+  ORDER_CREATION_FAILED: 'ORDER_CREATION_FAILED',
+  RECONCILE_FAILED: 'RECONCILE_FAILED',
+  WALLET_DEDUCTION_FAILED: 'WALLET_DEDUCTION_FAILED',
+  CSRF_VALIDATION_FAILED: 'CSRF_VALIDATION_FAILED',
+} as const;
+
+// @para-doc [spec.md#observable-checkpoints]
+export const OBSERVABLE_CHECKPOINTS = {
+  CP_ORDER_PENDING: 'CP-1',
+  CP_RECONCILE_PARTIAL: 'CP-2',
+  CP_RECONCILE_DELAY_CALC: 'CP-3',
+} as const;
+
 export interface DebugLogPayload {
   level?: 'error' | 'warn' | 'info' | 'debug';
   endpoint?: string | null;

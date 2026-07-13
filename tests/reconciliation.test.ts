@@ -3,9 +3,9 @@ import { getDb } from '@/lib/db';
 import { customers, payments, users, staff } from '@/lib/db/schema';
 import * as schema from '@/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import path from 'path';
-import { parseCustomerIdFromMemo, reconcilePayment } from '@/lib/reconciliation';
+import { parseCustomerIdFromMemo, reconcilePayment, parseMonthsFromMemo, reconcileCustomerWallet } from '@/lib/reconciliation';
 import { POST as webhookHandler } from '@/pages/api/webhook/sepay';
 
 const WEBHOOK_SECRET = 'sepay-webhook-secret-12345';
@@ -43,6 +43,32 @@ describe('Sepay Reconciliation Unit Tests', () => {
       expect(parseCustomerIdFromMemo('Gia han dich vu crm')).toBeNull();
       expect(parseCustomerIdFromMemo('')).toBeNull();
       expect(parseCustomerIdFromMemo('AG-1002')).toBeNull(); // Missing ID part or separator
+    });
+  });
+
+  describe('parseMonthsFromMemo (TDD)', () => {
+    it('should parse valid months format like X3, X12, X60', () => {
+      expect(parseMonthsFromMemo('1005 - Gia han dich vu X3')).toBe(3);
+      expect(parseMonthsFromMemo('1005 X12')).toBe(12);
+      expect(parseMonthsFromMemo('1005 - X60')).toBe(60);
+    });
+
+    it('should fallback to 1 for invalid values (X0, X-5, X61, X999999)', () => {
+      expect(parseMonthsFromMemo('1005 - X0')).toBe(1);
+      expect(parseMonthsFromMemo('1005 - X-5')).toBe(1);
+      expect(parseMonthsFromMemo('1005 - X61')).toBe(1);
+      expect(parseMonthsFromMemo('1005 - X999999')).toBe(1);
+    });
+
+    it('should fallback to 1 for non-numeric or missing X prefix', () => {
+      expect(parseMonthsFromMemo('1005 - Gia han dich vu ALEX')).toBe(1);
+      expect(parseMonthsFromMemo('1005 - Gia han')).toBe(1);
+      expect(parseMonthsFromMemo('')).toBe(1);
+    });
+
+    it('should parse months correctly even with very long memo (prevent ReDoS)', () => {
+      const longMemo = '1005 - ' + 'a'.repeat(200) + ' X5';
+      expect(parseMonthsFromMemo(longMemo)).toBe(5);
     });
   });
 });
@@ -609,6 +635,44 @@ describe('Database Reconciliation Integration Tests', () => {
       const activeCS = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
       expect(activeCS).toHaveLength(1);
       expect(activeCS[0].status).toBe('active');
+    });
+
+    it('should parse X3 from memo during auto reconciliation, multiply order price by 3 and extend service duration by 3 months', async () => {
+      const { services: servicesTable, orders: ordersTable, customerServices: customerServicesTable } = await import('@/lib/db/schema');
+      const serviceId = 'srv-months-auto-1';
+      await db.insert(servicesTable).values({
+        id: serviceId,
+        name: 'Auto Months Service',
+        price: 150000,
+        billingCycle: 30,
+        prefix: 'AUTOMONTHS',
+        status: 'active',
+        createdAt: Date.now()
+      });
+
+      const payment = {
+        transactionId: 'TX_AUTOMONTHS_1',
+        amount: 450000, // 150k * 3 months
+        content: '1005 - NGUYEN VAN A - AUTOMONTHS X3',
+        bank: 'Techcombank',
+        paidAt: Date.now(),
+      };
+
+      const result = await reconcilePayment(db, payment);
+      expect(result.success).toBe(true);
+
+      // Verify order was created with status paid and amount 450k and months 3
+      const allOrders = await db.select().from(ordersTable).where(eq(ordersTable.customerId, '1005')).all();
+      expect(allOrders).toHaveLength(1);
+      expect(allOrders[0].status).toBe('paid');
+      expect(allOrders[0].amount).toBe(450000);
+      expect(allOrders[0].months).toBe(3);
+
+      // Verify customer service was extended by 90 days (30 * 3)
+      const activeCS = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+      expect(activeCS).toHaveLength(1);
+      expect(activeCS[0].status).toBe('active');
+      expect(activeCS[0].expiredAt).toBe(activeCS[0].startDate + 90 * 24 * 60 * 60 * 1000);
     });
 
     it('should automatically generate order for customer default service when customer ID is matched without prefix', async () => {
@@ -1184,6 +1248,20 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
           orderId: null,
         });
 
+        // Seed staff to satisfy FK constraint and simulate admin-created order
+        await db.insert(users).values({
+          id: 'usr-unlink-deposit-staff',
+          username: 'unlink_deposit_staff_user',
+          passwordHash: 'hash',
+          role: 'accountant',
+        }).onConflictDoNothing();
+
+        await db.insert(staff).values({
+          id: 'staff-late-assoc',
+          userId: 'usr-unlink-deposit-staff',
+          fullName: 'Late Assoc Staff',
+        }).onConflictDoNothing();
+
         await db.insert(ordersTable).values({
           id: 'ord-manual-unlink-1',
           orderNumber: 'ORD-MANUAL-UNLINK-1',
@@ -1192,6 +1270,7 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
           status: 'paid',
           customerId: '1005',
           paymentId: 'pay-manual-unlink-1',
+          staffId: 'staff-late-assoc',
         });
 
         // Link payment to order
@@ -1242,6 +1321,20 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
           orderId: null,
         });
 
+        // Seed staff to satisfy FK constraint and simulate admin-created order
+        await db.insert(users).values({
+          id: 'usr-unlink-direct-staff',
+          username: 'unlink_direct_staff_user',
+          passwordHash: 'hash',
+          role: 'accountant',
+        }).onConflictDoNothing();
+
+        await db.insert(staff).values({
+          id: 'staff-late-assoc',
+          userId: 'usr-unlink-direct-staff',
+          fullName: 'Late Assoc Staff',
+        }).onConflictDoNothing();
+
         await db.insert(ordersTable).values({
           id: 'ord-manual-unlink-2',
           orderNumber: 'ORD-MANUAL-UNLINK-2',
@@ -1250,6 +1343,7 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
           status: 'paid',
           customerId: '1005',
           paymentId: 'pay-manual-unlink-2',
+          staffId: 'staff-late-assoc',
         });
 
         // Link payment to order
@@ -1283,6 +1377,233 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
         expect(order.status).toBe('pending');
         expect(order.paymentId).toBeNull();
       });
+
+      it('should recalculate dates when linking a payment to a pending order that is overdue compared to customer expiredAt', async () => {
+        const { orders: ordersTable, payments: paymentsTable, services: servicesTable } = await import('@/lib/db/schema');
+        const srv = await db.insert(servicesTable).values({
+          id: 'srv-manual-recalc-1',
+          name: 'Manual Recalc Service',
+          price: 150000,
+          billingCycle: 30,
+          prefix: 'MANRECALC',
+          status: 'active',
+          createdAt: Date.now(),
+        }).returning().get();
+
+        // 1. Set customer expiredAt in the past
+        const pastExpiredAt = Date.now() - 5 * 24 * 60 * 60 * 1000;
+        await db.update(customers).set({ expiredAt: pastExpiredAt }).where(eq(customers.id, '1005'));
+
+        // 2. Create pending order scheduled in the past
+        const orderId = 'ord-manual-recalc-1';
+        await db.insert(ordersTable).values({
+          id: orderId,
+          orderNumber: 'ORD-MANRECALC-1',
+          amount: 300000,
+          content: 'Pending order recalc',
+          status: 'pending',
+          customerId: '1005',
+          serviceId: srv.id,
+          months: 2,
+          startDate: pastExpiredAt - 5 * 24 * 60 * 60 * 1000,
+          expiredAt: pastExpiredAt,
+        });
+
+        // 3. Create payment paid today
+        const paymentId = 'pay-manual-recalc-1';
+        const paidAt = Date.now();
+        await db.insert(paymentsTable).values({
+          id: paymentId,
+          transactionId: 'TX_MANUAL_RECALC_1',
+          amount: 300000,
+          content: '1005 pay MANRECALC',
+          bank: 'Techcombank',
+          paidAt,
+          category: 'non_revenue',
+          customerId: '1005',
+        });
+
+        // Simulating customer has balance to payoff order
+        await db.update(customers).set({ balance: 300000 }).where(eq(customers.id, '1005'));
+
+        const { POST: reconcilePostHandler } = await import('../src/pages/api/crm/payments/reconcile');
+        const context = createMockContextForApi('POST', {
+          paymentId,
+          customerId: '1005',
+          orderId,
+          category: 'revenue',
+        }, adminToken);
+
+        const response = await reconcilePostHandler(context);
+        expect(response.status).toBe(200);
+
+        // Verify order dates are updated: starts from paidAt and runs for 2 cycles (60 days)
+        const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+        expect(order.status).toBe('paid');
+        expect(order.startDate).toBe(paidAt);
+        expect(order.expiredAt).toBe(paidAt + 60 * 24 * 60 * 60 * 1000);
+
+        // Verify customer expiredAt is synchronized
+        const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+        expect(customerInfo.expiredAt).toBe(order.expiredAt);
+      });
+
+      it('should delete the order completely when unlinking if staffId is null (auto-generated webhook order)', async () => {
+        const { orders: ordersTable, payments: paymentsTable } = await import('@/lib/db/schema');
+        const orderId = 'ord-unlink-auto-1';
+        const paymentId = 'pay-unlink-auto-1';
+
+        await db.insert(paymentsTable).values({
+          id: paymentId,
+          transactionId: 'TX_UNLINK_AUTO_1',
+          amount: 100000,
+          content: '1005 top up auto unlink',
+          bank: 'Techcombank',
+          paidAt: Date.now(),
+          category: 'revenue',
+          customerId: '1005',
+          orderId: null,
+        });
+
+        await db.insert(ordersTable).values({
+          id: orderId,
+          orderNumber: 'ORD-UNLINK-AUTO-1',
+          amount: 100000,
+          content: 'Webhook auto order',
+          status: 'paid',
+          customerId: '1005',
+          paymentId,
+          staffId: null, // auto-generated
+        });
+
+        await db.update(paymentsTable)
+          .set({ orderId })
+          .where(eq(paymentsTable.id, paymentId));
+
+        const { POST: reconcilePostHandler } = await import('../src/pages/api/crm/payments/reconcile');
+        const context = createMockContextForApi('POST', {
+          paymentId,
+          unlinkOrder: true,
+        }, adminToken);
+
+        const response = await reconcilePostHandler(context);
+        expect(response.status).toBe(200);
+
+        // Verify order is deleted completely from database
+        const order = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).get();
+        expect(order).toBeUndefined();
+
+        // Clean up payment link
+        const [payment] = await db.select().from(paymentsTable).where(eq(paymentsTable.id, paymentId));
+        expect(payment.orderId).toBeNull();
+      });
+
+      it('should revert order status to pending when unlinking if staffId is not null (admin hand-crafted order)', async () => {
+        const { orders: ordersTable, payments: paymentsTable } = await import('@/lib/db/schema');
+        const orderId = 'ord-unlink-manual-1';
+        const paymentId = 'pay-unlink-manual-1';
+
+        await db.insert(paymentsTable).values({
+          id: paymentId,
+          transactionId: 'TX_UNLINK_MANUAL_1',
+          amount: 100000,
+          content: '1005 top up manual unlink',
+          bank: 'Techcombank',
+          paidAt: Date.now(),
+          category: 'revenue',
+          customerId: '1005',
+          orderId: null,
+        });
+
+        // Seed staff and user to satisfy FK constraint
+        await db.insert(users).values({
+          id: 'usr-unlink-manual-staff',
+          username: 'unlink_manual_staff_user',
+          passwordHash: 'hash',
+          role: 'accountant',
+        }).onConflictDoNothing();
+
+        await db.insert(staff).values({
+          id: 'staff-late-assoc',
+          userId: 'usr-unlink-manual-staff',
+          fullName: 'Late Assoc Staff',
+        }).onConflictDoNothing();
+
+        await db.insert(ordersTable).values({
+          id: orderId,
+          orderNumber: 'ORD-UNLINK-MANUAL-1',
+          amount: 100000,
+          content: 'Admin manual order',
+          status: 'paid',
+          customerId: '1005',
+          paymentId,
+          staffId: 'staff-late-assoc', // hand-crafted
+        });
+
+        await db.update(paymentsTable)
+          .set({ orderId })
+          .where(eq(paymentsTable.id, paymentId));
+
+        const { POST: reconcilePostHandler } = await import('../src/pages/api/crm/payments/reconcile');
+        const context = createMockContextForApi('POST', {
+          paymentId,
+          unlinkOrder: true,
+        }, adminToken);
+
+        const response = await reconcilePostHandler(context);
+        expect(response.status).toBe(200);
+
+        // Verify order is NOT deleted, but status is reverted to pending
+        const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+        expect(order).toBeDefined();
+        expect(order.status).toBe('pending');
+        expect(order.paymentId).toBeNull();
+      });
     });
   });
 });
+
+describe('Partial Wallet Deduction (TDD)', () => {
+  let db: any;
+
+  beforeEach(async () => {
+    db = getDb();
+  });
+
+  it('should deduct customer wallet partially and mark order as partially_paid with a virtual payment', async () => {
+    const { orders: ordersTable, payments: paymentsTable } = await import('@/lib/db/schema');
+
+    // 1. Seed customer with 100k balance
+    await db.update(customers).set({ balance: 100000 }).where(eq(customers.id, '1005'));
+
+    // 2. Create a pending order of 300k
+    const orderId = 'ord-partial-wallet-tdd';
+    await db.insert(ordersTable).values({
+      id: orderId,
+      orderNumber: 'ORD-PARTIAL-WALLET',
+      amount: 300000,
+      content: 'TDD partial wallet deduction order',
+      status: 'pending',
+      customerId: '1005',
+    });
+
+    // 3. Call reconcileCustomerWallet
+    await reconcileCustomerWallet(db, '1005', undefined, orderId);
+
+    // 4. Verify customer balance is now 0
+    const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+    expect(customerInfo.balance).toBe(0);
+
+    // 5. Verify order is partially_paid
+    const order = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).get();
+    expect(order.status).toBe('partially_paid');
+
+    // 6. Verify virtual payment of 100k was inserted for this order
+    const virtualPayments = await db.select()
+      .from(paymentsTable)
+      .where(and(eq(paymentsTable.orderId, orderId), eq(paymentsTable.paymentMethod, 'wallet_deduction')));
+    expect(virtualPayments.length).toBe(1);
+    expect(virtualPayments[0].amount).toBe(100000);
+  });
+});
+

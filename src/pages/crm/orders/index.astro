@@ -977,6 +977,19 @@ function formatDateInput(timestamp: number | null) {
           </select>
         </div>
 
+        <!-- @para-doc [#csa-ui-orders-modal] -->
+        <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; margin-bottom: 1rem;">
+          <input type="checkbox" id="quickOrderIsPending" name="isPending" style="width: 16px; height: 16px; cursor: pointer;" />
+          <label for="quickOrderIsPending" style="margin-bottom: 0; cursor: pointer; text-transform: none; font-weight: 600; color: var(--text-primary);">
+            {lang === 'vi' ? 'Tạo đơn hàng dạng nháp (Chưa thanh toán)' : 'Create as Draft/Pending Order'}
+          </label>
+        </div>
+
+        <div class="form-group">
+          <label for="quickOrderMonths">{lang === 'vi' ? 'Số chu kỳ tháng (Sử dụng multiplier)' : 'Billing Cycle Multiplier (Months)'}</label>
+          <input type="number" id="quickOrderMonths" name="months" class="form-input" min="1" max="60" value="1" required />
+        </div>
+
         <div class="form-group">
           <label for="quickOrderAmount">{lang === 'vi' ? 'Số tiền thanh toán (VND)' : 'Amount (VND)'}</label>
           <input type="number" id="quickOrderAmount" name="amount" class="form-input" required min="0" placeholder="0" />
@@ -987,24 +1000,26 @@ function formatDateInput(timestamp: number | null) {
           <input type="text" id="quickOrderContent" name="content" class="form-input" required placeholder={lang === 'vi' ? 'Ví dụ: Nguyễn Văn A thanh toán dịch vụ' : 'e.g. John Doe payment'} />
         </div>
 
-        <div class="form-group">
-          <label for="quickOrderPaidAt">{lang === 'vi' ? 'Ngày giờ thanh toán' : 'Payment Date/Time'}</label>
-          <input type="datetime-local" id="quickOrderPaidAt" name="paidAt" class="form-input" required />
-        </div>
+        <div id="quickOrderPaymentFields" style="display: flex; flex-direction: column;">
+          <div class="form-group">
+            <label for="quickOrderPaidAt">{lang === 'vi' ? 'Ngày giờ thanh toán' : 'Payment Date/Time'}</label>
+            <input type="datetime-local" id="quickOrderPaidAt" name="paidAt" class="form-input" required />
+          </div>
 
-        <div class="form-group">
-          <label for="quickOrderMethod">{lang === 'vi' ? 'Phương thức thanh toán' : 'Payment Method'}</label>
-          <select id="quickOrderMethod" name="paymentMethod" class="form-select" required>
-            <option value="bank_transfer" selected>{lang === 'vi' ? 'Chuyển khoản ngân hàng' : 'Bank Transfer'}</option>
-            <option value="cash">{lang === 'vi' ? 'Tiền mặt' : 'Cash'}</option>
-          </select>
-        </div>
+          <div class="form-group">
+            <label for="quickOrderMethod">{lang === 'vi' ? 'Phương thức thanh toán' : 'Payment Method'}</label>
+            <select id="quickOrderMethod" name="paymentMethod" class="form-select" required>
+              <option value="bank_transfer" selected>{lang === 'vi' ? 'Chuyển khoản ngân hàng' : 'Bank Transfer'}</option>
+              <option value="cash">{lang === 'vi' ? 'Tiền mặt' : 'Cash'}</option>
+            </select>
+          </div>
 
-        <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem;">
-          <input type="checkbox" id="quickOrderStartDateFlag" name="startDateFromPayment" style="width: 16px; height: 16px; cursor: pointer;" />
-          <label for="quickOrderStartDateFlag" style="margin-bottom: 0; cursor: pointer; text-transform: none; font-weight: 500;">
-            {lang === 'vi' ? 'Tính ngày bắt đầu từ ngày thanh toán (Nối chu kỳ mới từ hôm nay thay vì chu kỳ cũ)' : 'Start date from payment time (Overlap instead of sequence)'}
-          </label>
+          <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; margin-bottom: 0.5rem;">
+            <input type="checkbox" id="quickOrderStartDateFlag" name="startDateFromPayment" style="width: 16px; height: 16px; cursor: pointer;" />
+            <label for="quickOrderStartDateFlag" style="margin-bottom: 0; cursor: pointer; text-transform: none; font-weight: 500;">
+              {lang === 'vi' ? 'Tính ngày bắt đầu từ ngày thanh toán (Nối chu kỳ mới từ hôm nay thay vì chu kỳ cũ)' : 'Start date from payment time (Overlap instead of sequence)'}
+            </label>
+          </div>
         </div>
 
         <div class="modal-footer" style="margin-top: 1.5rem;">
@@ -1105,6 +1120,12 @@ function formatDateInput(timestamp: number | null) {
     const contentInput = document.getElementById('quickOrderContent');
     const paidAtInput = document.getElementById('quickOrderPaidAt');
 
+    const isPendingCheckbox = document.getElementById('quickOrderIsPending');
+    const paymentFields = document.getElementById('quickOrderPaymentFields');
+    const monthsInput = document.getElementById('quickOrderMonths');
+
+    let servicePrice = 0;
+
     if (openBtn && modal) {
       openBtn.addEventListener('click', () => {
         // Set default date to current local time in ISO format compatible with datetime-local input
@@ -1114,6 +1135,9 @@ function formatDateInput(timestamp: number | null) {
         
         form.reset();
         paidAtInput.value = localISOTime;
+        if (paymentFields) paymentFields.style.display = 'flex';
+        if (paidAtInput) paidAtInput.setAttribute('required', 'true');
+        servicePrice = 0;
         modal.style.display = 'flex';
       });
     }
@@ -1131,6 +1155,29 @@ function formatDateInput(timestamp: number | null) {
         closeModal();
       }
     });
+
+    // Toggle payment fields visibility based on pending state
+    if (isPendingCheckbox && paymentFields) {
+      isPendingCheckbox.addEventListener('change', () => {
+        if (isPendingCheckbox.checked) {
+          paymentFields.style.display = 'none';
+          paidAtInput.removeAttribute('required');
+        } else {
+          paymentFields.style.display = 'flex';
+          paidAtInput.setAttribute('required', 'true');
+        }
+      });
+    }
+
+    // Dynamic price multiplication
+    const updateAmount = () => {
+      const months = Number(monthsInput.value) || 1;
+      amountInput.value = servicePrice * months;
+    };
+
+    if (monthsInput) {
+      monthsInput.addEventListener('input', updateAmount);
+    }
 
     // Smart Auto-fill when Service / Customer is changed
     const updateContentProposal = () => {
@@ -1158,11 +1205,11 @@ function formatDateInput(timestamp: number | null) {
       serviceSelect.addEventListener('change', () => {
         const selectedOption = serviceSelect.options[serviceSelect.selectedIndex];
         if (selectedOption && selectedOption.value) {
-          const price = selectedOption.getAttribute('data-price');
-          amountInput.value = price;
+          servicePrice = Number(selectedOption.getAttribute('data-price')) || 0;
         } else {
-          amountInput.value = '';
+          servicePrice = 0;
         }
+        updateAmount();
         updateContentProposal();
       });
     }
@@ -1176,12 +1223,38 @@ function formatDateInput(timestamp: number | null) {
         const serviceId = serviceSelect.value;
         const amount = Number(amountInput.value);
         const content = contentInput.value;
-        const paidAt = new Date(paidAtInput.value).getTime();
-        const paymentMethod = document.getElementById('quickOrderMethod').value;
-        const startDateFromPayment = document.getElementById('quickOrderStartDateFlag').checked;
+        const isPending = isPendingCheckbox ? isPendingCheckbox.checked : false;
+        const months = Number(monthsInput.value) || 1;
 
-        if (!customerId || !serviceId || !amount || !content || !paidAt || !paymentMethod) {
-          alert('Vui lòng nhập đầy đủ thông tin!');
+        const payload = {
+          customerId,
+          serviceId,
+          amount,
+          content,
+          isPending,
+          months,
+        };
+
+        if (!isPending) {
+          const paidAtVal = paidAtInput.value;
+          const paidAt = paidAtVal ? new Date(paidAtVal).getTime() : Date.now();
+          const paymentMethod = document.getElementById('quickOrderMethod').value;
+          const startDateFromPayment = document.getElementById('quickOrderStartDateFlag').checked;
+
+          if (!paidAt || !paymentMethod) {
+            alert('Vui lòng nhập đầy đủ thông tin thanh toán!');
+            return;
+          }
+
+          Object.assign(payload, {
+            paidAt,
+            paymentMethod,
+            startDateFromPayment,
+          });
+        }
+
+        if (!customerId || !serviceId || !amount || !content) {
+          alert('Vui lòng nhập đầy đủ thông tin đơn hàng!');
           return;
         }
 
@@ -1195,20 +1268,12 @@ function formatDateInput(timestamp: number | null) {
             headers: {
               'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-              customerId,
-              serviceId,
-              amount,
-              content,
-              paidAt,
-              startDateFromPayment,
-              paymentMethod,
-            }),
+            body: JSON.stringify(payload),
           });
 
           const resData = await response.json();
           if (response.ok && resData.success) {
-            alert('Tạo đơn hàng và gia hạn dịch vụ thành công!');
+            alert('Tạo đơn hàng thành công!');
             window.location.reload();
           } else {
             alert('Lỗi: ' + (resData.error || 'Không xác định'));

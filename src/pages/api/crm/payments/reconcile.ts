@@ -9,6 +9,8 @@ import { syncCustomerServices } from '@/lib/services/serviceManager';
 import { logDebug } from '@/lib/debug-logger';
 
 // @para-doc [operations-guide.md#4-doi-soat--gan-go-hoa-don-bang-tay-manual-reconciliations]
+// @para-doc [#csa-api-manual-reconcile]
+// @para-doc [#csa-api-reconcile-unlink-pending]
 export const POST: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions
@@ -52,20 +54,16 @@ export const POST: APIRoute = async (context) => {
       });
     }
     const currentPayment = existingPayments[0];
+    const targetCustomerId = customerId || currentPayment.customerId;
 
     // Handle order unlinking
     if (unlinkOrder) {
       const orderId = currentPayment.orderId;
       const paymentCustId = currentPayment.customerId;
 
-      // Revert linked order status to pending (not deleted!)
       let order = null;
       if (orderId) {
         order = await db.select().from(orders).where(eq(orders.id, orderId)).get();
-        await db
-          .update(orders)
-          .set({ status: 'pending', paidAt: null, paymentId: null })
-          .where(eq(orders.id, orderId));
       }
 
       // Check if it is a Direct Payment
@@ -82,7 +80,7 @@ export const POST: APIRoute = async (context) => {
         }
       }
 
-      // Revert payment linkage
+      // Revert payment linkage FIRST to avoid FOREIGN KEY constraint error on orders deletion
       await db
         .update(payments)
         .set({
@@ -90,6 +88,18 @@ export const POST: APIRoute = async (context) => {
           category: 'non_revenue'
         })
         .where(eq(payments.id, paymentId));
+
+      // Now it is safe to delete or revert the order
+      if (orderId && order) {
+        if (order.staffId === null) {
+          await db.delete(orders).where(eq(orders.id, orderId));
+        } else {
+          await db
+            .update(orders)
+            .set({ status: 'pending', paidAt: null, paymentId: null })
+            .where(eq(orders.id, orderId));
+        }
+      }
 
       // Refund customer wallet balance if NOT a Direct Payment (Deposit Payment)
       if (!isDirectPayment && paymentCustId) {
@@ -114,7 +124,6 @@ export const POST: APIRoute = async (context) => {
 
     // Handle order linking
     if (orderId) {
-      const targetCustomerId = customerId || currentPayment.customerId;
       if (!targetCustomerId) {
         return new Response(JSON.stringify({ error: 'Customer ID is required to link payment' }), {
           status: 400,
@@ -158,16 +167,42 @@ export const POST: APIRoute = async (context) => {
       })
       .where(eq(payments.id, paymentId));
 
-    // 5. If linked to an order, update the order status to paid
+    // 5. If linked to an order, update the order status to paid and recalculate service period dates if necessary
     if (orderId) {
+      const targetOrder = await db.select().from(orders).where(eq(orders.id, orderId)).get();
+      const customerInfo = targetCustomerId ? await db.select().from(customers).where(eq(customers.id, targetCustomerId)).get() : null;
+      const paidAt = currentPayment.paidAt || Date.now();
+
+      let startDate = targetOrder?.startDate || Date.now();
+      let expiredAt = targetOrder?.expiredAt || Date.now();
+
+      if (targetOrder) {
+        const targetService = targetOrder.serviceId ? await db.select().from(services).where(eq(services.id, targetOrder.serviceId)).get() : null;
+        const billingCycle = targetService?.billingCycle || 30;
+        const orderMonths = targetOrder.months || 1;
+
+        if (!customerInfo || !customerInfo.expiredAt || customerInfo.expiredAt <= paidAt) {
+          startDate = paidAt;
+        } else {
+          startDate = customerInfo.expiredAt;
+        }
+        expiredAt = startDate + billingCycle * orderMonths * 24 * 60 * 60 * 1000;
+      }
+
       await db
         .update(orders)
         .set({
           status: 'paid',
-          paidAt: currentPayment.paidAt || Date.now(),
+          paidAt,
           paymentId: paymentId,
+          startDate,
+          expiredAt,
         })
         .where(eq(orders.id, orderId));
+    }
+
+    if (targetCustomerId) {
+      await syncCustomerServices(db, targetCustomerId);
     }
 
     return new Response(JSON.stringify({ success: true }), {

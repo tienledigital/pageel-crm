@@ -41,6 +41,7 @@ export const staff = sqliteTable('staff', {
 });
 
 // 4. orders
+// @para-doc [#csa-db-orders-schema]
 export const orders = sqliteTable('orders', {
   id: text('id').primaryKey(),
   customerId: text('customer_id').references(() => customers.id),
@@ -53,8 +54,9 @@ export const orders = sqliteTable('orders', {
   paymentId: text('payment_id').references((): any => payments.id),
   startDate: integer('start_date'),
   expiredAt: integer('expired_at'),
-  taxInvoiceNumber: text('tax_invoice_number'), // Số hóa đơn đỏ VAT
-  taxInvoiceDate: integer('tax_invoice_date'),   // Ngày xuất hóa đơn đỏ VAT (timestamp ms)
+  taxInvoiceNumber: text('tax_invoice_number'), // VAT tax invoice number
+  taxInvoiceDate: integer('tax_invoice_date'),   // VAT tax invoice issued date (timestamp ms)
+  months: integer('months').default(1).notNull(), // @para-doc [#csa-db-orders-months-field]
   createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`),
   paidAt: integer('paid_at'),
   updatedAt: integer('updated_at').default(sql`(strftime('%s', 'now') * 1000)`),
@@ -76,7 +78,7 @@ export const payments = sqliteTable('payments', {
   senderName: text('sender_name'),       // Sender bank name
   senderBank: text('sender_bank'),       // Sender bank code/name
   type: text('type').notNull().default('in'), // in (incoming payment), out (outgoing payment)
-  category: text('category').notNull().default('non_revenue'), // 'revenue' (Doanh thu), 'non_revenue' (Không phải doanh thu)
+  category: text('category').notNull().default('non_revenue'), // 'revenue', 'non_revenue'
   taxCategory: text('tax_category'),     // Tax category classification
   content: text('content'),              // Original transfer description/content
   paidAt: integer('paid_at').notNull(),  // Bank transaction timestamp

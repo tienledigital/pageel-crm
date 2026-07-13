@@ -482,13 +482,25 @@ if (orderId) {
           />
         </div>
 
+        <!-- @para-doc [#csa-us-3-qr-period] -->
+        <!-- @para-doc [#csa-qr-tool-memo] -->
         <div class="input-group">
-          <span class="input-label">Payment Period</span>
+          <span class="input-label">Payment Period (Months)</span>
           <div class="button-grid" id="periodSelect">
-            <button class="quick-btn active" data-value="none">None</button>
-            <button class="quick-btn" data-value="month">Month (T)</button>
-            <button class="quick-btn" data-value="year">Year (N)</button>
+            <button class="quick-btn active" data-value="1">1 Month</button>
+            <button class="quick-btn" data-value="3">3 Months</button>
+            <button class="quick-btn" data-value="6">6 Months</button>
+            <button class="quick-btn" data-value="12">12 Months</button>
           </div>
+          <input 
+            type="number" 
+            id="periodInput" 
+            min="1" 
+            max="60" 
+            value="1" 
+            placeholder="Enter custom months..." 
+            class="text-input"
+          />
         </div>
       </div>
 
@@ -588,8 +600,9 @@ if (orderId) {
     let selectedCustomerId = initialOrder ? initialOrder.customerId : '';
     let selectedCustomerName = initialOrder ? initialOrder.customerName : '';
     let serviceName = initialOrder ? initialOrder.orderNumber : '';
-    let amount = initialOrder ? initialOrder.amount : 0;
-    let period = 'none';
+    let basePrice = initialOrder ? initialOrder.amount : 0;
+    let period = 1;
+    let amount = basePrice * period;
     let qrTemplate = 'compact2';
     let qrUrl = '';
 
@@ -614,6 +627,9 @@ if (orderId) {
 
     // Trigger state change and regenerate QR code
     function updateState() {
+      // Multiply base price by periods
+      amount = basePrice * period;
+
       // Calculate Memo Content
       let finalMemo = '';
       if (selectedCustomerId) {
@@ -622,13 +638,8 @@ if (orderId) {
         finalMemo = `${selectedCustomerId} - ${namePart}`;
         if (servicePart) finalMemo += ` - ${servicePart}`;
 
-        if (amount > 0) {
-          const amountK = Math.floor(amount / 1000);
-          if (period === 'month') {
-            finalMemo += ` T${amountK}`;
-          } else if (period === 'year') {
-            finalMemo += ` N${amountK}`;
-          }
+        if (period > 1) {
+          finalMemo += ` X${period}`;
         }
       }
 
@@ -724,7 +735,8 @@ if (orderId) {
           serviceInput.value = '';
           amountInput.value = '';
           serviceName = '';
-          amount = 0;
+          basePrice = 0;
+          period = 1;
         }
       } else {
         if (serviceSelect) {
@@ -732,7 +744,8 @@ if (orderId) {
           serviceInput.value = '';
           amountInput.value = '';
           serviceName = '';
-          amount = 0;
+          basePrice = 0;
+          period = 1;
         }
       }
       updateMainServiceBtnState();
@@ -781,31 +794,27 @@ if (orderId) {
           calculatedName = 'TT TOOL';
         }
 
-        let calculatedPeriod = 'none';
-        const normalizedPrefix = prefixUpper.replace('QTW', '').replace('TOOL', '');
-        if (normalizedPrefix.includes('THANG') || normalizedPrefix.includes('MONTH') || normalizedPrefix.includes('T')) {
-          calculatedPeriod = 'month';
-        } else if (normalizedPrefix.includes('NAM') || normalizedPrefix.includes('YEAR') || normalizedPrefix.includes('N')) {
-          calculatedPeriod = 'year';
+        // Reset period to 1 when selecting a new catalog service
+        period = 1;
+        const periodInput = document.getElementById('periodInput');
+        if (periodInput) {
+          periodInput.value = '1';
         }
-
-        // Update serviceName and input
-        serviceName = calculatedName;
-        serviceInput.value = calculatedName;
-
-        // Update amount and input
-        amount = Number(price) || 0;
-        amountInput.value = price;
-
-        // Update period UI
-        period = calculatedPeriod;
         periodButtons.forEach(btn => {
-          if (btn.getAttribute('data-value') === period) {
+          if (btn.getAttribute('data-value') === '1') {
             btn.classList.add('active');
           } else {
             btn.classList.remove('active');
           }
         });
+
+        // Update serviceName and input
+        serviceName = calculatedName;
+        serviceInput.value = calculatedName;
+
+        // Update basePrice and input
+        basePrice = Number(price) || 0;
+        amountInput.value = price;
 
         // Reset quick services buttons active state
         quickServices.forEach(btn => {
@@ -818,7 +827,7 @@ if (orderId) {
 
         // Reset quick amounts buttons active state
         quickAmounts.forEach(btn => {
-          if (Number(btn.getAttribute('data-value')) === amount) {
+          if (Number(btn.getAttribute('data-value')) === basePrice) {
             btn.classList.add('active');
           } else {
             btn.classList.remove('active');
@@ -895,14 +904,14 @@ if (orderId) {
 
     // Amount text input
     amountInput.addEventListener('input', () => {
-      amount = Number(amountInput.value) || 0;
+      basePrice = Number(amountInput.value) || 0;
       if (serviceSelect) {
         serviceSelect.value = '';
       }
       
       // Deactivate quick amount buttons
       quickAmounts.forEach(btn => {
-        if (Number(btn.getAttribute('data-value')) === amount) {
+        if (Number(btn.getAttribute('data-value')) === basePrice) {
           btn.classList.add('active');
         } else {
           btn.classList.remove('active');
@@ -916,8 +925,8 @@ if (orderId) {
       btn.addEventListener('click', () => {
         quickAmounts.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        amount = Number(btn.getAttribute('data-value'));
-        amountInput.value = amount;
+        basePrice = Number(btn.getAttribute('data-value'));
+        amountInput.value = basePrice;
         if (serviceSelect) {
           serviceSelect.value = '';
         }
@@ -925,15 +934,40 @@ if (orderId) {
       });
     });
 
+    // Elements for period
+    const periodInput = document.getElementById('periodInput');
+
     // Period selection
     periodButtons.forEach(btn => {
       btn.addEventListener('click', () => {
         periodButtons.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        period = btn.getAttribute('data-value');
+        period = Number(btn.getAttribute('data-value')) || 1;
+        if (periodInput) {
+          periodInput.value = period;
+        }
         updateState();
       });
     });
+
+    if (periodInput) {
+      periodInput.addEventListener('input', () => {
+        const val = Number(periodInput.value) || 1;
+        period = Math.min(60, Math.max(1, val));
+        periodInput.value = period;
+        
+        // Update quick buttons active state
+        periodButtons.forEach(btn => {
+          if (Number(btn.getAttribute('data-value')) === period) {
+            btn.classList.add('active');
+          } else {
+            btn.classList.remove('active');
+          }
+        });
+        
+        updateState();
+      });
+    }
 
     // 3. Template selection
     templateButtons.forEach(btn => {
@@ -1007,7 +1041,7 @@ if (orderId) {
       
       selectedCustomerId = initialOrder.customerId;
       selectedCustomerName = initialOrder.customerName;
-      amount = initialOrder.amount;
+      basePrice = initialOrder.amount;
       serviceName = initialOrder.orderNumber;
       
       updateState();
