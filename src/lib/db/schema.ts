@@ -41,6 +41,7 @@ export const staff = sqliteTable('staff', {
 });
 
 // 4. orders
+// @para-doc [#csa-db-orders-schema]
 export const orders = sqliteTable('orders', {
   id: text('id').primaryKey(),
   customerId: text('customer_id').references(() => customers.id),
@@ -55,6 +56,7 @@ export const orders = sqliteTable('orders', {
   expiredAt: integer('expired_at'),
   taxInvoiceNumber: text('tax_invoice_number'), // Số hóa đơn đỏ VAT
   taxInvoiceDate: integer('tax_invoice_date'),   // Ngày xuất hóa đơn đỏ VAT (timestamp ms)
+  months: integer('months').default(1).notNull(), // @para-doc [#csa-db-orders-months-field]
   createdAt: integer('created_at').default(sql`(strftime('%s', 'now') * 1000)`),
   paidAt: integer('paid_at'),
   updatedAt: integer('updated_at').default(sql`(strftime('%s', 'now') * 1000)`),

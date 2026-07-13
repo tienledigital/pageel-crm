@@ -219,6 +219,7 @@ export interface CreatePaidOrderParams {
   startDateFromPayment: boolean;
   paymentMethod: string;
   staffId: string | null;
+  months?: number;
 }
 
 // @para-doc [services-payments-spec.md#63-cac-ham-tien-ich-dich-vu-service-helpers]
@@ -258,7 +259,8 @@ export async function createPaidOrder(
       if (!params.startDateFromPayment && existingCS && existingCS.expiredAt > params.paidAt) {
         startDate = existingCS.expiredAt;
       }
-      const expiredAt = startDate + (targetService.billingCycle ?? 30) * 24 * 60 * 60 * 1000;
+      const months = params.months ?? 1; // @para-doc [#csa-us-2-payment-period]
+      const expiredAt = startDate + (targetService.billingCycle ?? 30) * months * 24 * 60 * 60 * 1000;
 
       // 3. Generate IDs
       const orderId = crypto.randomUUID();
@@ -279,6 +281,7 @@ export async function createPaidOrder(
         paymentId: null,
         startDate,
         expiredAt,
+        months,
         createdAt: Date.now(),
         paidAt: params.paidAt,
       });
@@ -544,5 +547,84 @@ export async function autoAssignMainService(db: any): Promise<void> {
       .where(eq(customers.id, custId));
   }
 }
+
+// @para-doc [#csa-us-1-pending-order]
+export interface CreatePendingOrderParams {
+  customerId: string;
+  serviceId: string;
+  months?: number;
+  staffId: string;
+}
+
+// @para-doc [#csa-us-1-pending-order]
+// @para-doc [#csa-test-api-orders-pending]
+export async function createPendingOrder(
+  db: any,
+  params: CreatePendingOrderParams
+): Promise<{ success: boolean; orderId: string }> {
+  const executeInTx = async (tx: any) => {
+    // 1. Fetch service information
+    const targetService = await tx
+      .select()
+      .from(services)
+      .where(eq(services.id, params.serviceId))
+      .get();
+
+    if (!targetService) {
+      throw new Error('SERVICE_NOT_FOUND');
+    }
+
+    // 2. Fetch customer for current expiredAt calculation
+    const customer = await tx
+      .select()
+      .from(customers)
+      .where(eq(customers.id, params.customerId))
+      .get();
+
+    if (!customer) {
+      throw new Error('CUSTOMER_NOT_FOUND');
+    }
+
+    const months = params.months ?? 1;
+    const now = Date.now();
+    
+    // Calculate projected startDate:
+    // If customer is expired or expiredAt is null/0, startDate starts now.
+    // Otherwise, starts from customer.expiredAt in the future.
+    let startDate = now;
+    if (customer.expiredAt && customer.expiredAt > now) {
+      startDate = customer.expiredAt;
+    }
+
+    const billingCycle = targetService.billingCycle ?? 30;
+    const expiredAt = startDate + billingCycle * months * 24 * 60 * 60 * 1000;
+    const orderAmount = targetService.price * months;
+
+    const orderId = crypto.randomUUID();
+    const orderNumber = `ORD-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    // 3. Create a new pending order
+    await tx.insert(orders).values({
+      id: orderId,
+      customerId: params.customerId,
+      staffId: params.staffId,
+      orderNumber,
+      amount: orderAmount,
+      content: `Dang ky dich vu ${targetService.name}`,
+      status: 'pending',
+      serviceId: params.serviceId,
+      paymentId: null,
+      startDate,
+      expiredAt,
+      months,
+      createdAt: now,
+    });
+
+    return { success: true, orderId };
+  };
+
+  return await runTransaction(db, executeInTx);
+}
+
 
 

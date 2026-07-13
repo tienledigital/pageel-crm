@@ -9,7 +9,8 @@ import {
   updateService,
   listServices,
   createOrderFromPayment,
-  syncCustomerServices
+  syncCustomerServices,
+  createPendingOrder
 } from '@/lib/services/serviceManager';
 import { customers, staff, payments, customerServices, services, users, orders } from '@/lib/db/schema';
 import { createSessionCookie } from '@/lib/auth';
@@ -765,4 +766,75 @@ describe('Chronological Recalculation Engine (syncCustomerServices)', () => {
     expect(customer.expiredAt).toBe(now + 40 * 24 * 60 * 60 * 1000);
   });
 });
+
+describe('Create Pending Order & Months Option (TDD)', () => {
+  const TEST_CUST_PENDING_ID = 'CUST-PENDING-TDD';
+  const TEST_STAFF_ID = 'STAFF-201';
+
+  beforeAll(async () => {
+    const db = getDb();
+    // Seed test customer
+    await db.insert(customers).values({
+      id: TEST_CUST_PENDING_ID,
+      fullName: 'Pending Customer',
+      phone: '0900000000',
+      expiredAt: null,
+    }).onConflictDoNothing();
+  });
+
+  it('should successfully create a pending order with default 1 month', async () => {
+    const db = getDb();
+    // Create service
+    const service = await createService(db, {
+      name: 'TDD Service 1',
+      price: 100000,
+      billingCycle: 30,
+      prefix: 'TDD1'
+    });
+
+    const res = await createPendingOrder(db, {
+      customerId: TEST_CUST_PENDING_ID,
+      serviceId: service.id,
+      staffId: TEST_STAFF_ID,
+    });
+
+    expect(res.success).toBe(true);
+    expect(res.orderId).toBeDefined();
+
+    const order = await db.select().from(orders).where(eq(orders.id, res.orderId)).get();
+    expect(order).toBeDefined();
+    expect(order.status).toBe('pending');
+    expect(order.amount).toBe(100000);
+    expect(order.months).toBe(1);
+    
+    const now = Date.now();
+    expect(Math.abs(order.startDate! - now)).toBeLessThan(5000); // within 5s
+    expect(order.expiredAt).toBe(order.startDate! + 30 * 24 * 60 * 60 * 1000);
+  });
+
+  it('should successfully create a pending order with 3 months option and calculate correct dates', async () => {
+    const db = getDb();
+    const service = await db.select().from(services).where(eq(services.prefix, 'TDD1')).get();
+
+    // Set customer expiredAt in the future (e.g. 5 days from now)
+    const futureExpiredAt = Date.now() + 5 * 24 * 60 * 60 * 1000;
+    await db.update(customers).set({ expiredAt: futureExpiredAt }).where(eq(customers.id, TEST_CUST_PENDING_ID));
+
+    const res = await createPendingOrder(db, {
+      customerId: TEST_CUST_PENDING_ID,
+      serviceId: service.id,
+      months: 3,
+      staffId: TEST_STAFF_ID,
+    });
+
+    expect(res.success).toBe(true);
+    const order = await db.select().from(orders).where(eq(orders.id, res.orderId)).get();
+    expect(order.status).toBe('pending');
+    expect(order.amount).toBe(300000);
+    expect(order.months).toBe(3);
+    expect(order.startDate).toBe(futureExpiredAt);
+    expect(order.expiredAt).toBe(futureExpiredAt + 30 * 3 * 24 * 60 * 60 * 1000);
+  });
+});
+
 

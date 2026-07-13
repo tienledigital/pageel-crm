@@ -1,0 +1,1 @@
+ALTER TABLE `orders` ADD `months` integer DEFAULT 1 NOT NULL;
