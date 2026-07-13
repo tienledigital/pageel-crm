@@ -6,17 +6,21 @@ order: 1
 
 All notable changes to this project will be documented in this file.
 
-## [0.12.0] - 2026-06-11
+## [0.12.0] - 2026-07-13
 
 ### Added
+- **Pending Orders & Cycle Multipliers**: Added support for quick draft orders (unpaid) and custom billing cycle months multipliers. Payment descriptions automatically accept period suffixes (e.g. `X{N}` where `{N}` is the cycle count) which are auto-parsed by the webhook reconciliation engine (supporting 1-60 months).
+- **Partial Wallet Deduction**: Implemented automated partial wallet deductions and FIFO top-ups for customer balance reconciliations, updating order status to `partially_paid` with virtual wallet payments.
+- **Unified Reconcile Modal**: Merged Late Association (quick order creation) form directly into the manual reconciliation modal with client-side order amount mismatch warnings.
 - **Dynamic Reports Module**: Integrated dynamic month-to-month range filters (`startMonth` and `endMonth`) into API preview `/api/crm/reports/preview` and Excel export `/api/export/s1a`.
 - **Merged Excel Export**: Added a single file merged export option (`singleFile=true`) to consolidate multiple months of tax revenue data into one Excel sheet.
 - **Reports Dashboard UI**: Redesigned the `/crm/reports` interface with 3 direct action buttons (Merged Excel, ZIP Month Range, ZIP 12 Months) for improved user experience.
-- **Code-Docs Double-Binding Traceability**: Injected `@para-doc` anchor comments into API source code (`config.ts`, `preview.ts`) and synchronized Code-Graph linkages.
+- **Code-Docs Double-Binding Traceability**: Injected `@para-doc` anchor comments into API source code (`config.ts`, `preview.ts`, `reconcile.ts`, `csrf.ts`) and synchronized Code-Graph linkages.
 - **Updated Documentation**: Upgraded tax reporting specifications (`tax-reporting-spec.md`) and API contracts (`api-contracts.md`) to version 0.12.0, and generated Notion-themed static HTML files.
 
 ### Fixed
 - **Astro Client-side Parser Error**: Patched string interpolation syntax in Astro `<script define:vars>` block to prevent compilation errors.
+- **SQLite FK Deletion ordering**: Solved Drizzle SQLite Foreign Key constraint violations on payment unlinking by clearing references before deleting linked orders.
 
 ## [0.11.4] - 2026-06-09
 
