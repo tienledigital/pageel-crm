@@ -3,9 +3,9 @@ import { getDb } from '@/lib/db';
 import { customers, payments, users, staff } from '@/lib/db/schema';
 import * as schema from '@/lib/db/schema';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import path from 'path';
-import { parseCustomerIdFromMemo, reconcilePayment } from '@/lib/reconciliation';
+import { parseCustomerIdFromMemo, reconcilePayment, parseMonthsFromMemo, reconcileCustomerWallet } from '@/lib/reconciliation';
 import { POST as webhookHandler } from '@/pages/api/webhook/sepay';
 
 const WEBHOOK_SECRET = 'sepay-webhook-secret-12345';
@@ -43,6 +43,32 @@ describe('Sepay Reconciliation Unit Tests', () => {
       expect(parseCustomerIdFromMemo('Gia han dich vu crm')).toBeNull();
       expect(parseCustomerIdFromMemo('')).toBeNull();
       expect(parseCustomerIdFromMemo('AG-1002')).toBeNull(); // Missing ID part or separator
+    });
+  });
+
+  describe('parseMonthsFromMemo (TDD)', () => {
+    it('should parse valid months format like X3, X12, X60', () => {
+      expect(parseMonthsFromMemo('1005 - Gia han dich vu X3')).toBe(3);
+      expect(parseMonthsFromMemo('1005 X12')).toBe(12);
+      expect(parseMonthsFromMemo('1005 - X60')).toBe(60);
+    });
+
+    it('should fallback to 1 for invalid values (X0, X-5, X61, X999999)', () => {
+      expect(parseMonthsFromMemo('1005 - X0')).toBe(1);
+      expect(parseMonthsFromMemo('1005 - X-5')).toBe(1);
+      expect(parseMonthsFromMemo('1005 - X61')).toBe(1);
+      expect(parseMonthsFromMemo('1005 - X999999')).toBe(1);
+    });
+
+    it('should fallback to 1 for non-numeric or missing X prefix', () => {
+      expect(parseMonthsFromMemo('1005 - Gia han dich vu ALEX')).toBe(1);
+      expect(parseMonthsFromMemo('1005 - Gia han')).toBe(1);
+      expect(parseMonthsFromMemo('')).toBe(1);
+    });
+
+    it('should parse months correctly even with very long memo (prevent ReDoS)', () => {
+      const longMemo = '1005 - ' + 'a'.repeat(200) + ' X5';
+      expect(parseMonthsFromMemo(longMemo)).toBe(5);
     });
   });
 });
@@ -609,6 +635,44 @@ describe('Database Reconciliation Integration Tests', () => {
       const activeCS = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
       expect(activeCS).toHaveLength(1);
       expect(activeCS[0].status).toBe('active');
+    });
+
+    it('should parse X3 from memo during auto reconciliation, multiply order price by 3 and extend service duration by 3 months', async () => {
+      const { services: servicesTable, orders: ordersTable, customerServices: customerServicesTable } = await import('@/lib/db/schema');
+      const serviceId = 'srv-months-auto-1';
+      await db.insert(servicesTable).values({
+        id: serviceId,
+        name: 'Auto Months Service',
+        price: 150000,
+        billingCycle: 30,
+        prefix: 'AUTOMONTHS',
+        status: 'active',
+        createdAt: Date.now()
+      });
+
+      const payment = {
+        transactionId: 'TX_AUTOMONTHS_1',
+        amount: 450000, // 150k * 3 months
+        content: '1005 - NGUYEN VAN A - AUTOMONTHS X3',
+        bank: 'Techcombank',
+        paidAt: Date.now(),
+      };
+
+      const result = await reconcilePayment(db, payment);
+      expect(result.success).toBe(true);
+
+      // Verify order was created with status paid and amount 450k and months 3
+      const allOrders = await db.select().from(ordersTable).where(eq(ordersTable.customerId, '1005')).all();
+      expect(allOrders).toHaveLength(1);
+      expect(allOrders[0].status).toBe('paid');
+      expect(allOrders[0].amount).toBe(450000);
+      expect(allOrders[0].months).toBe(3);
+
+      // Verify customer service was extended by 90 days (30 * 3)
+      const activeCS = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+      expect(activeCS).toHaveLength(1);
+      expect(activeCS[0].status).toBe('active');
+      expect(activeCS[0].expiredAt).toBe(activeCS[0].startDate + 90 * 24 * 60 * 60 * 1000);
     });
 
     it('should automatically generate order for customer default service when customer ID is matched without prefix', async () => {
@@ -1286,3 +1350,48 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
     });
   });
 });
+
+describe('Partial Wallet Deduction (TDD)', () => {
+  let db: any;
+
+  beforeEach(async () => {
+    db = getDb();
+  });
+
+  it('should deduct customer wallet partially and mark order as partially_paid with a virtual payment', async () => {
+    const { orders: ordersTable, payments: paymentsTable } = await import('@/lib/db/schema');
+
+    // 1. Seed customer with 100k balance
+    await db.update(customers).set({ balance: 100000 }).where(eq(customers.id, '1005'));
+
+    // 2. Create a pending order of 300k
+    const orderId = 'ord-partial-wallet-tdd';
+    await db.insert(ordersTable).values({
+      id: orderId,
+      orderNumber: 'ORD-PARTIAL-WALLET',
+      amount: 300000,
+      content: 'TDD partial wallet deduction order',
+      status: 'pending',
+      customerId: '1005',
+    });
+
+    // 3. Call reconcileCustomerWallet
+    await reconcileCustomerWallet(db, '1005', undefined, orderId);
+
+    // 4. Verify customer balance is now 0
+    const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+    expect(customerInfo.balance).toBe(0);
+
+    // 5. Verify order is partially_paid
+    const order = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).get();
+    expect(order.status).toBe('partially_paid');
+
+    // 6. Verify virtual payment of 100k was inserted for this order
+    const virtualPayments = await db.select()
+      .from(paymentsTable)
+      .where(and(eq(paymentsTable.orderId, orderId), eq(paymentsTable.paymentMethod, 'wallet_deduction')));
+    expect(virtualPayments.length).toBe(1);
+    expect(virtualPayments[0].amount).toBe(100000);
+  });
+});
+
