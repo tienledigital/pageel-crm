@@ -5,7 +5,7 @@ import { getDb } from '@/lib/db';
 import { orders, staff, payments } from '@/lib/db/schema';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { desc, eq } from 'drizzle-orm';
-import { createPaidOrder, syncCustomerServices } from '@/lib/services/serviceManager';
+import { createPaidOrder, createPendingOrder, syncCustomerServices } from '@/lib/services/serviceManager';
 
 // @para-doc [api-contracts.md#141-lay-danh-sach-don-hang-tu-dong]
 export const GET: APIRoute = async (context) => {
@@ -50,6 +50,7 @@ export const GET: APIRoute = async (context) => {
 };
 
 // @para-doc [api-contracts.md#145-tao-don-hang-moi]
+// @para-doc [#csa-api-post-orders]
 export const POST: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions
@@ -80,15 +81,7 @@ export const POST: APIRoute = async (context) => {
 
     // 2. Parse request body
     const body = await context.request.json().catch(() => ({}));
-    const { customerId, serviceId, amount, content, paidAt, startDateFromPayment, paymentMethod } = body;
-
-    // 3. Validation
-    if (!customerId || !serviceId || amount === undefined || !content || paidAt === undefined || !paymentMethod) {
-      return new Response(JSON.stringify({ error: 'Bad Request: Missing required parameters' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+    const { customerId, serviceId, amount, content, paidAt, startDateFromPayment, paymentMethod, isPending, months } = body;
 
     const db = getDb(env);
 
@@ -96,17 +89,43 @@ export const POST: APIRoute = async (context) => {
     const currentStaff = await db.select().from(staff).where(eq(staff.userId, user.id)).get();
     const staffId = currentStaff?.id || null;
 
-    // 5. Create paid order
-    const result = await createPaidOrder(db, {
-      customerId,
-      serviceId,
-      amount: Number(amount),
-      content,
-      paidAt: Number(paidAt),
-      startDateFromPayment: Boolean(startDateFromPayment),
-      paymentMethod,
-      staffId,
-    });
+    let result;
+    if (isPending) {
+      // Validation for pending order
+      if (!customerId || !serviceId) {
+        return new Response(JSON.stringify({ error: 'Bad Request: Missing customerId or serviceId' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      result = await createPendingOrder(db, {
+        customerId,
+        serviceId,
+        months: months ? Number(months) : 1,
+        staffId,
+      });
+    } else {
+      // Validation for paid order
+      if (!customerId || !serviceId || amount === undefined || !content || paidAt === undefined || !paymentMethod) {
+        return new Response(JSON.stringify({ error: 'Bad Request: Missing required parameters' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      result = await createPaidOrder(db, {
+        customerId,
+        serviceId,
+        amount: Number(amount),
+        content,
+        paidAt: Number(paidAt),
+        startDateFromPayment: Boolean(startDateFromPayment),
+        paymentMethod,
+        staffId,
+        months: months ? Number(months) : 1,
+      });
+    }
 
     return new Response(JSON.stringify({ success: true, orderId: result.orderId, orderNumber: result.orderNumber }), {
       status: 200,

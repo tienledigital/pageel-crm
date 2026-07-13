@@ -369,6 +369,99 @@ describe('Quick Create Paid Order API Endpoint Integration Tests', () => {
     expect(order.status).toBe('paid');
     expect(order.staffId).toBeNull();
   });
+
+  it('should successfully create a pending order with 3 months via API', async () => {
+    const db = getDb();
+    const customerId = 'CUST-API-PENDING-TDD';
+    const serviceId = 'srv-api-pending-tdd';
+
+    await db.insert(customers).values({
+      id: customerId,
+      fullName: 'API Customer Pending TDD',
+      phone: '0912222222',
+      expiredAt: null,
+    }).onConflictDoNothing();
+
+    await db.insert(services).values({
+      id: serviceId,
+      name: 'API Service Pending TDD',
+      price: 150000,
+      billingCycle: 30,
+      prefix: 'APIPENDINGTDD',
+      status: 'active',
+      createdAt: Date.now(),
+    }).onConflictDoNothing();
+
+    const body = {
+      customerId,
+      serviceId,
+      isPending: true,
+      months: 3,
+    };
+
+    const context = createMockContext(body, adminToken);
+    const response = await createPaidOrderHandler(context);
+    expect(response.status).toBe(200);
+
+    const data = await response.json();
+    expect(data.success).toBe(true);
+    expect(data.orderId).toBeDefined();
+
+    // Verify DB order
+    const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).get();
+    expect(order).toBeDefined();
+    expect(order.status).toBe('pending');
+    expect(order.months).toBe(3);
+    expect(order.amount).toBe(450000); // 150k * 3 months
+  });
+
+  it('should successfully create a paid order with 2 months via API', async () => {
+    const db = getDb();
+    const customerId = 'CUST-API-PAID-TDD';
+    const serviceId = 'srv-api-paid-tdd';
+
+    await db.insert(customers).values({
+      id: customerId,
+      fullName: 'API Customer Paid TDD',
+      phone: '0912222223',
+      expiredAt: null,
+    }).onConflictDoNothing();
+
+    await db.insert(services).values({
+      id: serviceId,
+      name: 'API Service Paid TDD',
+      price: 200000,
+      billingCycle: 30,
+      prefix: 'APIPAIDTDD',
+      status: 'active',
+      createdAt: Date.now(),
+    }).onConflictDoNothing();
+
+    const body = {
+      customerId,
+      serviceId,
+      amount: 400000, // 200k * 2 months
+      content: 'API paid order with 2 months',
+      paidAt: Date.now(),
+      startDateFromPayment: false,
+      paymentMethod: 'bank_transfer',
+      months: 2,
+    };
+
+    const context = createMockContext(body, adminToken);
+    const response = await createPaidOrderHandler(context);
+    expect(response.status).toBe(200);
+
+    const data = await response.json();
+    expect(data.success).toBe(true);
+
+    const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).get();
+    expect(order).toBeDefined();
+    expect(order.status).toBe('paid');
+    expect(order.months).toBe(2);
+    expect(order.amount).toBe(400000);
+    expect(order.expiredAt).toBe(order.startDate + 60 * 24 * 60 * 60 * 1000);
+  });
 });
 
 describe('DELETE: Delete Paid Order API Endpoint Integration Tests', () => {

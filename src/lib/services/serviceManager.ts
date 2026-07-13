@@ -74,6 +74,7 @@ export interface CreateOrderFromPaymentParams {
   expiredAt: number;
   staffId: string;
   customPrice?: number;
+  months?: number;
 }
 
 // @para-doc [services-payments-spec.md#62-logic-xu-ly-late-association-voi-transaction-nguyen-tu]
@@ -131,6 +132,7 @@ export async function createOrderFromPayment(
         paymentId: params.paymentId,
         startDate: params.startDate,
         expiredAt: params.expiredAt,
+        months: params.months ?? 1,
         createdAt: Date.now(),
         paidAt: existingPayment.paidAt || Date.now(),
       });
@@ -553,7 +555,7 @@ export interface CreatePendingOrderParams {
   customerId: string;
   serviceId: string;
   months?: number;
-  staffId: string;
+  staffId?: string | null;
 }
 
 // @para-doc [#csa-us-1-pending-order]
@@ -561,7 +563,7 @@ export interface CreatePendingOrderParams {
 export async function createPendingOrder(
   db: any,
   params: CreatePendingOrderParams
-): Promise<{ success: boolean; orderId: string }> {
+): Promise<{ success: boolean; orderId: string; orderNumber: string }> {
   const executeInTx = async (tx: any) => {
     // 1. Fetch service information
     const targetService = await tx
@@ -620,7 +622,7 @@ export async function createPendingOrder(
       createdAt: now,
     });
 
-    return { success: true, orderId };
+    return { success: true, orderId, orderNumber };
   };
 
   return await runTransaction(db, executeInTx);

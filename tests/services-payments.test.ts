@@ -17,6 +17,7 @@ import { createSessionCookie } from '@/lib/auth';
 import { POST as reconcilePaymentHandler } from '@/pages/api/crm/payments/reconcile';
 import { GET as getServicesHandler, POST as createServiceHandler } from '@/pages/api/crm/services/index';
 import { PUT as updateServiceHandler, DELETE as deleteServiceHandler } from '@/pages/api/crm/services/[id]';
+import { POST as createOrderFromPaymentHandler } from '@/pages/api/crm/payments/create-order';
 
 describe('Services Manager CRUD Logic', () => {
   beforeAll(async () => {
@@ -834,6 +835,120 @@ describe('Create Pending Order & Months Option (TDD)', () => {
     expect(order.months).toBe(3);
     expect(order.startDate).toBe(futureExpiredAt);
     expect(order.expiredAt).toBe(futureExpiredAt + 30 * 3 * 24 * 60 * 60 * 1000);
+  });
+});
+
+describe('POST: Late Association API create-order months Option (TDD)', () => {
+  const SESSION_SECRET = 'fallback-secret-key-must-be-at-least-32-chars-long';
+  let adminToken: string;
+  let adminUserId = 'usr-admin-late-assoc';
+  let staffId = 'staff-late-assoc';
+
+  beforeAll(async () => {
+    const db = getDb();
+    
+    // Seed admin
+    await db.insert(users).values({
+      id: adminUserId,
+      username: 'admin_late_assoc',
+      passwordHash: 'hash',
+      role: 'admin',
+    }).onConflictDoNothing();
+
+    // Seed staff profile
+    await db.insert(staff).values({
+      id: staffId,
+      userId: adminUserId,
+      fullName: 'Late Assoc Staff',
+    }).onConflictDoNothing();
+
+    adminToken = await createSessionCookie({
+      id: adminUserId,
+      username: 'admin_late_assoc',
+      role: 'admin',
+      createdAt: Date.now(),
+    }, SESSION_SECRET);
+  });
+
+  function createMockContext(body?: any, token?: string) {
+    const cookiesMap = new Map();
+    if (token) {
+      cookiesMap.set('session', { value: token });
+    }
+    const request = new Request('http://localhost/api/crm/payments/create-order', {
+      method: 'POST',
+      body: body ? JSON.stringify(body) : undefined,
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return {
+      request,
+      url: new URL(request.url),
+      cookies: cookiesMap,
+      locals: {
+        runtime: { env: { SESSION_SECRET } },
+      },
+    } as any;
+  }
+
+  it('should successfully link payment to order with custom months multiplier via API', async () => {
+    const db = getDb();
+    const customerId = 'CUST-LATE-ASSOC-TDD';
+    const serviceId = 'srv-late-assoc-tdd';
+    const paymentId = 'pay-late-assoc-tdd';
+
+    await db.insert(customers).values({
+      id: customerId,
+      fullName: 'Late Assoc Customer',
+      phone: '0913333333',
+    }).onConflictDoNothing();
+
+    await db.insert(services).values({
+      id: serviceId,
+      name: 'Late Assoc Service',
+      price: 250000,
+      billingCycle: 30,
+      prefix: 'LATEASSOC',
+      status: 'active',
+      createdAt: Date.now(),
+    }).onConflictDoNothing();
+
+    await db.insert(payments).values({
+      id: paymentId,
+      customerId,
+      amount: 750000, // 250k * 3
+      transactionId: 'TX_LATE_ASSOC_TDD',
+      paymentMethod: 'bank_transfer',
+      content: 'Chuyen khoan nang cap',
+      paidAt: Date.now(),
+      type: 'in',
+      category: 'non_revenue',
+    }).onConflictDoNothing();
+
+    const startDate = Date.now();
+    const expiredAt = startDate + 30 * 3 * 24 * 60 * 60 * 1000;
+
+    const body = {
+      paymentId,
+      customerId,
+      serviceId,
+      startDate,
+      expiredAt,
+      months: 3,
+    };
+
+    const context = createMockContext(body, adminToken);
+    const response = await createOrderFromPaymentHandler(context);
+    expect(response.status).toBe(200);
+
+    const data = await response.json();
+    expect(data.success).toBe(true);
+
+    // Verify DB order
+    const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).get();
+    expect(order).toBeDefined();
+    expect(order.status).toBe('paid');
+    expect(order.months).toBe(3);
+    expect(order.amount).toBe(250000); // base price by default if customPrice not provided
   });
 });
 

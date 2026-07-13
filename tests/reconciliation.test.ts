@@ -1248,6 +1248,20 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
           orderId: null,
         });
 
+        // Seed staff to satisfy FK constraint and simulate admin-created order
+        await db.insert(users).values({
+          id: 'usr-unlink-deposit-staff',
+          username: 'unlink_deposit_staff_user',
+          passwordHash: 'hash',
+          role: 'accountant',
+        }).onConflictDoNothing();
+
+        await db.insert(staff).values({
+          id: 'staff-late-assoc',
+          userId: 'usr-unlink-deposit-staff',
+          fullName: 'Late Assoc Staff',
+        }).onConflictDoNothing();
+
         await db.insert(ordersTable).values({
           id: 'ord-manual-unlink-1',
           orderNumber: 'ORD-MANUAL-UNLINK-1',
@@ -1256,6 +1270,7 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
           status: 'paid',
           customerId: '1005',
           paymentId: 'pay-manual-unlink-1',
+          staffId: 'staff-late-assoc',
         });
 
         // Link payment to order
@@ -1306,6 +1321,20 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
           orderId: null,
         });
 
+        // Seed staff to satisfy FK constraint and simulate admin-created order
+        await db.insert(users).values({
+          id: 'usr-unlink-direct-staff',
+          username: 'unlink_direct_staff_user',
+          passwordHash: 'hash',
+          role: 'accountant',
+        }).onConflictDoNothing();
+
+        await db.insert(staff).values({
+          id: 'staff-late-assoc',
+          userId: 'usr-unlink-direct-staff',
+          fullName: 'Late Assoc Staff',
+        }).onConflictDoNothing();
+
         await db.insert(ordersTable).values({
           id: 'ord-manual-unlink-2',
           orderNumber: 'ORD-MANUAL-UNLINK-2',
@@ -1314,6 +1343,7 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
           status: 'paid',
           customerId: '1005',
           paymentId: 'pay-manual-unlink-2',
+          staffId: 'staff-late-assoc',
         });
 
         // Link payment to order
@@ -1344,6 +1374,188 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
 
         // Verify order status is reverted to pending (not deleted!)
         const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, 'ord-manual-unlink-2'));
+        expect(order.status).toBe('pending');
+        expect(order.paymentId).toBeNull();
+      });
+
+      it('should recalculate dates when linking a payment to a pending order that is overdue compared to customer expiredAt', async () => {
+        const { orders: ordersTable, payments: paymentsTable, services: servicesTable } = await import('@/lib/db/schema');
+        const srv = await db.insert(servicesTable).values({
+          id: 'srv-manual-recalc-1',
+          name: 'Manual Recalc Service',
+          price: 150000,
+          billingCycle: 30,
+          prefix: 'MANRECALC',
+          status: 'active',
+          createdAt: Date.now(),
+        }).returning().get();
+
+        // 1. Set customer expiredAt in the past
+        const pastExpiredAt = Date.now() - 5 * 24 * 60 * 60 * 1000;
+        await db.update(customers).set({ expiredAt: pastExpiredAt }).where(eq(customers.id, '1005'));
+
+        // 2. Create pending order scheduled in the past
+        const orderId = 'ord-manual-recalc-1';
+        await db.insert(ordersTable).values({
+          id: orderId,
+          orderNumber: 'ORD-MANRECALC-1',
+          amount: 300000,
+          content: 'Pending order recalc',
+          status: 'pending',
+          customerId: '1005',
+          serviceId: srv.id,
+          months: 2,
+          startDate: pastExpiredAt - 5 * 24 * 60 * 60 * 1000,
+          expiredAt: pastExpiredAt,
+        });
+
+        // 3. Create payment paid today
+        const paymentId = 'pay-manual-recalc-1';
+        const paidAt = Date.now();
+        await db.insert(paymentsTable).values({
+          id: paymentId,
+          transactionId: 'TX_MANUAL_RECALC_1',
+          amount: 300000,
+          content: '1005 pay MANRECALC',
+          bank: 'Techcombank',
+          paidAt,
+          category: 'non_revenue',
+          customerId: '1005',
+        });
+
+        // Simulating customer has balance to payoff order
+        await db.update(customers).set({ balance: 300000 }).where(eq(customers.id, '1005'));
+
+        const { POST: reconcilePostHandler } = await import('../src/pages/api/crm/payments/reconcile');
+        const context = createMockContextForApi('POST', {
+          paymentId,
+          customerId: '1005',
+          orderId,
+          category: 'revenue',
+        }, adminToken);
+
+        const response = await reconcilePostHandler(context);
+        expect(response.status).toBe(200);
+
+        // Verify order dates are updated: starts from paidAt and runs for 2 cycles (60 days)
+        const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+        expect(order.status).toBe('paid');
+        expect(order.startDate).toBe(paidAt);
+        expect(order.expiredAt).toBe(paidAt + 60 * 24 * 60 * 60 * 1000);
+
+        // Verify customer expiredAt is synchronized
+        const customerInfo = await db.select().from(customers).where(eq(customers.id, '1005')).get();
+        expect(customerInfo.expiredAt).toBe(order.expiredAt);
+      });
+
+      it('should delete the order completely when unlinking if staffId is null (auto-generated webhook order)', async () => {
+        const { orders: ordersTable, payments: paymentsTable } = await import('@/lib/db/schema');
+        const orderId = 'ord-unlink-auto-1';
+        const paymentId = 'pay-unlink-auto-1';
+
+        await db.insert(paymentsTable).values({
+          id: paymentId,
+          transactionId: 'TX_UNLINK_AUTO_1',
+          amount: 100000,
+          content: '1005 top up auto unlink',
+          bank: 'Techcombank',
+          paidAt: Date.now(),
+          category: 'revenue',
+          customerId: '1005',
+          orderId: null,
+        });
+
+        await db.insert(ordersTable).values({
+          id: orderId,
+          orderNumber: 'ORD-UNLINK-AUTO-1',
+          amount: 100000,
+          content: 'Webhook auto order',
+          status: 'paid',
+          customerId: '1005',
+          paymentId,
+          staffId: null, // auto-generated
+        });
+
+        await db.update(paymentsTable)
+          .set({ orderId })
+          .where(eq(paymentsTable.id, paymentId));
+
+        const { POST: reconcilePostHandler } = await import('../src/pages/api/crm/payments/reconcile');
+        const context = createMockContextForApi('POST', {
+          paymentId,
+          unlinkOrder: true,
+        }, adminToken);
+
+        const response = await reconcilePostHandler(context);
+        expect(response.status).toBe(200);
+
+        // Verify order is deleted completely from database
+        const order = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId)).get();
+        expect(order).toBeUndefined();
+
+        // Clean up payment link
+        const [payment] = await db.select().from(paymentsTable).where(eq(paymentsTable.id, paymentId));
+        expect(payment.orderId).toBeNull();
+      });
+
+      it('should revert order status to pending when unlinking if staffId is not null (admin hand-crafted order)', async () => {
+        const { orders: ordersTable, payments: paymentsTable } = await import('@/lib/db/schema');
+        const orderId = 'ord-unlink-manual-1';
+        const paymentId = 'pay-unlink-manual-1';
+
+        await db.insert(paymentsTable).values({
+          id: paymentId,
+          transactionId: 'TX_UNLINK_MANUAL_1',
+          amount: 100000,
+          content: '1005 top up manual unlink',
+          bank: 'Techcombank',
+          paidAt: Date.now(),
+          category: 'revenue',
+          customerId: '1005',
+          orderId: null,
+        });
+
+        // Seed staff and user to satisfy FK constraint
+        await db.insert(users).values({
+          id: 'usr-unlink-manual-staff',
+          username: 'unlink_manual_staff_user',
+          passwordHash: 'hash',
+          role: 'accountant',
+        }).onConflictDoNothing();
+
+        await db.insert(staff).values({
+          id: 'staff-late-assoc',
+          userId: 'usr-unlink-manual-staff',
+          fullName: 'Late Assoc Staff',
+        }).onConflictDoNothing();
+
+        await db.insert(ordersTable).values({
+          id: orderId,
+          orderNumber: 'ORD-UNLINK-MANUAL-1',
+          amount: 100000,
+          content: 'Admin manual order',
+          status: 'paid',
+          customerId: '1005',
+          paymentId,
+          staffId: 'staff-late-assoc', // hand-crafted
+        });
+
+        await db.update(paymentsTable)
+          .set({ orderId })
+          .where(eq(paymentsTable.id, paymentId));
+
+        const { POST: reconcilePostHandler } = await import('../src/pages/api/crm/payments/reconcile');
+        const context = createMockContextForApi('POST', {
+          paymentId,
+          unlinkOrder: true,
+        }, adminToken);
+
+        const response = await reconcilePostHandler(context);
+        expect(response.status).toBe(200);
+
+        // Verify order is NOT deleted, but status is reverted to pending
+        const [order] = await db.select().from(ordersTable).where(eq(ordersTable.id, orderId));
+        expect(order).toBeDefined();
         expect(order.status).toBe('pending');
         expect(order.paymentId).toBeNull();
       });
