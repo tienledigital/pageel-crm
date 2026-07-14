@@ -1,6 +1,6 @@
 import { env } from 'cloudflare:workers';
 
-// @para-doc [auth-spec.md#41-quan-ly-khoa-bi-mat-tap-trung-centralized-secret-management]
+// @para-doc [#csa-auth-secret]
 export function getSessionSecret(): string {
   const secret = env?.SESSION_SECRET || import.meta.env.SESSION_SECRET || (typeof process !== 'undefined' ? process.env.SESSION_SECRET : undefined);
   if (!secret) {
@@ -11,7 +11,7 @@ export function getSessionSecret(): string {
   return secret;
 }
 
-// @para-doc [auth-spec.md#2-co-che-session-cookie-khong-luu-trang-thai-stateless-signed-cookie]
+// @para-doc [#csa-auth-cookie]
 export interface SessionPayload {
   id: string;
   username: string;
@@ -20,7 +20,7 @@ export interface SessionPayload {
 }
 
 // Helper to convert Uint8Array to Hex string
-// @para-doc [auth-spec.md#24-cac-ham-tien-ich-ma-hoa-crypto-encoding-helpers]
+// @para-doc [#csa-auth-crypto]
 function toHex(buffer: Uint8Array): string {
   return Array.from(buffer)
     .map((b) => b.toString(16).padStart(2, '0'))
@@ -28,7 +28,7 @@ function toHex(buffer: Uint8Array): string {
 }
 
 // Helper to convert Hex string to Uint8Array
-// @para-doc [auth-spec.md#24-cac-ham-tien-ich-ma-hoa-crypto-encoding-helpers]
+// @para-doc [#csa-auth-crypto]
 function fromHex(hex: string): Uint8Array {
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i++) {
@@ -38,7 +38,7 @@ function fromHex(hex: string): Uint8Array {
 }
 
 // Helper to decode Base64URL to string
-// @para-doc [auth-spec.md#24-cac-ham-tien-ich-ma-hoa-crypto-encoding-helpers]
+// @para-doc [#csa-auth-crypto]
 function base64urlDecode(str: string): string {
   let base64 = str.replace(/-/g, '+').replace(/_/g, '/');
   while (base64.length % 4) {
@@ -51,7 +51,7 @@ function base64urlDecode(str: string): string {
 }
 
 // Helper to encode string to Base64URL
-// @para-doc [auth-spec.md#24-cac-ham-tien-ich-ma-hoa-crypto-encoding-helpers]
+// @para-doc [#csa-auth-crypto]
 function base64urlEncode(str: string): string {
   let base64 = '';
   if (typeof Buffer !== 'undefined') {
@@ -62,7 +62,7 @@ function base64urlEncode(str: string): string {
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-// @para-doc [auth-spec.md#1-thuat-toan-bam-mat-khau-password-hashing]
+// @para-doc [#csa-auth-hash]
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const encoder = new TextEncoder();
@@ -93,7 +93,7 @@ export async function hashPassword(password: string): Promise<string> {
   return `pbkdf2:10000:${saltHex}:${hashHex}`;
 }
 
-// @para-doc [auth-spec.md#1-thuat-toan-bam-mat-khau-password-hashing]
+// @para-doc [#csa-auth-hash]
 export async function verifyPassword(password: string, storedHash: string): Promise<boolean> {
   if (!storedHash.startsWith('pbkdf2:10000:')) {
     return false;
@@ -144,7 +144,7 @@ export async function verifyPassword(password: string, storedHash: string): Prom
   return diff === 0;
 }
 
-// @para-doc [auth-spec.md#23-quy-trinh-ky-va-xac-thuc-hmac-signature-flow]
+// @para-doc [#csa-auth-hmac]
 export async function createSessionCookie(payload: SessionPayload, secret: string): Promise<string> {
   const encoder = new TextEncoder();
   const payloadStr = JSON.stringify(payload);
@@ -166,7 +166,7 @@ export async function createSessionCookie(payload: SessionPayload, secret: strin
   return `${payloadBase64}.${signatureHex}`;
 }
 
-// @para-doc [auth-spec.md#23-quy-trinh-ky-va-xac-thuc-hmac-signature-flow]
+// @para-doc [#csa-auth-hmac]
 export async function verifySessionCookie(cookieValue: string, secret: string): Promise<SessionPayload | null> {
   const parts = cookieValue.split('.');
   if (parts.length !== 2) {

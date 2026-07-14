@@ -1,4 +1,4 @@
-// @para-doc [sepay-integration.md#reconciliation-logic]
+// @para-doc [#csa-reconcile-logic]
 import { eq, sql, and } from 'drizzle-orm';
 import { customers, payments, config, services, customerServices, orders } from './db/schema';
 import { runTransaction } from './db';
@@ -8,7 +8,7 @@ import { runTransaction } from './db';
  * Parses customer ID from payment transfer memo content.
  * Matches legacy format "AG1002 - ..." or new format "1005 - ...".
  */
-// @para-doc [sepay-integration.md#memo-parsing]
+// @para-doc [#csa-reconcile-memo]
 export function parseCustomerIdFromMemo(memo: string): string | null {
   if (!memo) return null;
   const trimmed = memo.trim();
@@ -62,7 +62,7 @@ export function parseMonthsFromMemo(memo: string): number {
 /**
  * Scans transaction memo content to automatically match any existing customer ID.
  */
-// @para-doc [sepay-integration.md#memo-parsing]
+// @para-doc [#csa-reconcile-memo]
 export async function autoMatchCustomer(db: any, content: string): Promise<string | null> {
   if (!content) return null;
   
@@ -118,7 +118,7 @@ export async function autoMatchCustomer(db: any, content: string): Promise<strin
  * Sums up all payments associated with a given order.
  * If the sum of payments equals or exceeds the order amount, updates status to 'paid'.
  */
-// @para-doc [sepay-integration.md#2-ghi-nhan-giao-dich-reconciliation-logic]
+// @para-doc [#csa-reconcile-record]
 export async function checkAndUnionPartialOrderPayments(db: any, orderId: string): Promise<boolean> {
   const order = await db.select().from(orders).where(eq(orders.id, orderId)).get();
   if (!order) return false;
@@ -143,7 +143,7 @@ export async function checkAndUnionPartialOrderPayments(db: any, orderId: string
   return false;
 }
 
-// @para-doc [sepay-integration.md#memo-parsing]
+// @para-doc [#csa-reconcile-memo]
 export async function autoMatchOrder(
   db: any,
   content: string
@@ -180,7 +180,7 @@ export async function autoMatchOrder(
   return null;
 }
 
-// @para-doc [sepay-integration.md#reconciliation-logic]
+// @para-doc [#csa-reconcile-logic]
 export interface ReconcileResult {
   success: boolean;
   message: string;
@@ -191,7 +191,7 @@ export interface ReconcileResult {
  * Reconciles a bank payment transaction.
  * Creates a payment entry and extends service duration if customer is matched.
  */
-// @para-doc [sepay-integration.md#reconciliation-logic]
+// @para-doc [#csa-reconcile-logic]
 export async function extendCustomerService(
   db: any,
   customerId: string,
@@ -266,7 +266,7 @@ export async function extendCustomerService(
  * Reconciles a bank payment transaction.
  * Creates a payment entry and extends service duration if customer is matched.
  */
-// @para-doc [sepay-integration.md#reconciliation-logic]
+// @para-doc [#csa-reconcile-logic]
 export async function reconcilePayment(
   db: any,
   payment: {
@@ -284,7 +284,7 @@ export async function reconcilePayment(
 ): Promise<ReconcileResult> {
 
 
-  // @para-doc [sepay-integration.md#2-ghi-nhan-giao-dich-reconciliation-logic]
+  // @para-doc [#csa-reconcile-record]
   const executeReconcile = async (tx: any) => {
     // Check if payment with same transactionId already exists to prevent duplicate error logs
     if (payment.transactionId) {
@@ -315,6 +315,7 @@ export async function reconcilePayment(
       if (matchedOrder.customerId) {
         targetCustomerId = matchedOrder.customerId;
       }
+      // @para-doc [#csa-reconcile-direct-revenue]
       paymentCategory = 'revenue';
     } else {
       // Fetch custom rules from config table
@@ -476,6 +477,8 @@ export async function reconcilePayment(
         if (payment.amount >= orderAmount) {
           autoOrderStatus = 'paid';
         } else {
+          // @para-doc [#csa-wallet-underpayment]
+          // @para-doc [#csa-reconcile-direct-underpaid]
           autoOrderStatus = 'partially_paid';
         }
       } else {
@@ -551,6 +554,8 @@ export async function reconcilePayment(
           }
         }
 
+        // @para-doc [#csa-wallet-overpayment]
+        // @para-doc [#csa-reconcile-direct-surplus]
         surplus = payment.amount - price;
         if (surplus > 0) {
           await tx.update(customers)
@@ -652,7 +657,7 @@ export async function reconcilePayment(
   });
 }
 
-// @para-doc [spec.md#automated-revenue-reconciliation]
+// @para-doc [#csa-reconcile-auto]
 /**
  * Automatically scans and deducts from customer balance to pay off partially paid orders.
  */
@@ -711,6 +716,7 @@ export async function reconcileCustomerWallet(
       continue;
     }
 
+    // @para-doc [#csa-wallet-cash]
     if (currentBalance >= remaining) {
       // Deduct from balance
       currentBalance -= remaining;

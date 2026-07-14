@@ -1,4 +1,4 @@
-// @para-doc [sepay-integration.md#webhooks]
+// @para-doc [#csa-reconcile-direct-revenue]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm';
 import { logDebug } from '@/lib/debug-logger';
 import { config } from '@/lib/db/schema';
 
-// @para-doc [sepay-integration.md#webhooks]
+// @para-doc [#csa-reconcile-direct-revenue]
 export const POST: APIRoute = async (context) => {
   let db: any = null;
   let requestBody: any = null;

@@ -9,8 +9,7 @@ import { syncCustomerServices } from '@/lib/services/serviceManager';
 import { logDebug } from '@/lib/debug-logger';
 
 // @para-doc [operations-guide.md#4-doi-soat--gan-go-hoa-don-bang-tay-manual-reconciliations]
-// @para-doc [#csa-api-manual-reconcile]
-// @para-doc [#csa-api-reconcile-unlink-pending]
+// @para-doc [#csa-reconcile-manual]
 export const POST: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions

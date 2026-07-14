@@ -1,8 +1,8 @@
-// @para-doc [spec.md#automated-revenue-reconciliation]
+// @para-doc [#csa-vietqr-gen]
 /**
  * Removes Vietnamese accents and special characters to generate a safe string for VietQR/SePay API
  */
-// @para-doc [spec.md#automated-revenue-reconciliation]
+// @para-doc [#csa-vietqr-gen]
 export const removeAccents = (str: string): string => {
   return str
     .normalize('NFD')
@@ -16,7 +16,7 @@ export const removeAccents = (str: string): string => {
  * Generates a VietQR string according to SePay/VietQR format
  * Template types: compact, compact2, qr_only, logo
  */
-// @para-doc [spec.md#automated-revenue-reconciliation]
+// @para-doc [#csa-vietqr-gen]
 export const generateSePayQR = (
   data: { amount: number; description: string; bankCode: string; accountNumber: string },
   template: string = 'compact2'

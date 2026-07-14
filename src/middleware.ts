@@ -1,4 +1,4 @@
-// @para-doc [auth-spec.md#2-co-che-session-cookie-khong-luu-trang-thai-stateless-signed-cookie]
+// @para-doc [#csa-auth-cookie]
 import type { APIContext, MiddlewareNext } from 'astro';
 import { env } from 'cloudflare:workers';
 import { verifySessionCookie, getSessionSecret } from './lib/auth';
@@ -15,7 +15,7 @@ const PUBLIC_ROUTES = [
   '/api/webhook/sepay',
 ];
 
-// @para-doc [auth-spec.md#23-quy-trinh-ky-va-xac-thuc-hmac-signature-flow]
+// @para-doc [#csa-auth-hmac]
 export const onRequest = async (context: APIContext, next: MiddlewareNext) => {
   const { pathname } = context.url;
 
@@ -101,7 +101,7 @@ export const onRequest = async (context: APIContext, next: MiddlewareNext) => {
 // Security response headers — applied to all successful responses
 // Mutate headers directly to avoid miniflare ReadableStream piping issues
 // (creating new Response(response.body) causes "Promise will never complete" in Workers dev)
-// @para-doc [auth-spec.md#46-cau-hinh-cac-tieu-de-bao-mat-http-http-security-headers]
+// @para-doc [#csa-security-headers]
 function addSecurityHeaders(response: Response): Response {
   response.headers.set('X-Frame-Options', 'DENY');
   response.headers.set('X-Content-Type-Options', 'nosniff');

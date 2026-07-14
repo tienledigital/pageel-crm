@@ -1,4 +1,4 @@
-// @para-doc [auth-spec.md#31-dang-nhap-post-apiauthlogin]
+// @para-doc [#csa-auth-login]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -7,7 +7,7 @@ import { eq } from 'drizzle-orm';
 import { verifyPassword, createSessionCookie, hashPassword, getSessionSecret } from '@/lib/auth';
 import { checkRateLimit } from '@/lib/rate-limiter';
 
-// @para-doc [auth-spec.md#31-dang-nhap-post-apiauthlogin]
+// @para-doc [#csa-auth-login]
 export const POST: APIRoute = async (context) => {
   try {
     // Check rate limiting first using Cloudflare KV namespace
