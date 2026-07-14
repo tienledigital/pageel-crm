@@ -492,15 +492,22 @@ if (orderId) {
             <button class="quick-btn" data-value="6">6 Months</button>
             <button class="quick-btn" data-value="12">12 Months</button>
           </div>
-          <input 
-            type="number" 
-            id="periodInput" 
-            min="1" 
-            max="60" 
-            value="1" 
-            placeholder="Enter custom months..." 
-            class="text-input"
-          />
+          <div style="display: flex; gap: 0.5rem; width: 100%;">
+            <input 
+              type="number" 
+              id="periodInput" 
+              min="1" 
+              max="60" 
+              value="1" 
+              placeholder="Enter custom months..." 
+              class="text-input"
+              style="flex: 1;"
+            />
+            <select id="periodUnit" class="select-input" style="width: 120px;">
+              <option value="months">{lang === 'vi' ? 'Tháng' : 'Months'}</option>
+              <option value="years">{lang === 'vi' ? 'Năm' : 'Years'}</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -619,6 +626,7 @@ if (orderId) {
     const copyBtn = document.getElementById('copyBtn');
     const downloadBtn = document.getElementById('downloadBtn');
     const shareBtn = document.getElementById('shareBtn');
+    const periodUnit = document.getElementById('periodUnit');
 
     const quickServices = document.querySelectorAll('#quickServices .quick-btn');
     const quickAmounts = document.querySelectorAll('#quickAmounts .quick-btn');
@@ -629,16 +637,27 @@ if (orderId) {
     function updatePeriodUI(billingCycle, prefix) {
       const periodLabel = document.getElementById('periodLabel');
       const periodInput = document.getElementById('periodInput');
+      const periodUnit = document.getElementById('periodUnit');
       
-      const isYearly = (prefix && prefix.toUpperCase().startsWith('N')) || billingCycle > 180;
+      let isYearly = false;
+      if (billingCycle !== undefined && prefix !== undefined) {
+        isYearly = (prefix && prefix.toUpperCase().startsWith('N')) || billingCycle > 180;
+        if (periodUnit) {
+          periodUnit.value = isYearly ? 'years' : 'months';
+        }
+      } else if (periodUnit) {
+        isYearly = periodUnit.value === 'years';
+      }
 
       if (isYearly) {
-        if (periodLabel) periodLabel.textContent = 'Payment Period (Years)';
-        if (periodInput) periodInput.placeholder = 'Enter custom years...';
+        if (periodLabel) periodLabel.textContent = lang === 'vi' ? 'Chu kỳ thanh toán (Năm)' : 'Payment Period (Years)';
+        if (periodInput) periodInput.placeholder = lang === 'vi' ? 'Nhập số năm...' : 'Enter custom years...';
         
         // Update quick buttons
         const yearValues = ['1', '2', '3', '5'];
-        const yearLabels = ['1 Year', '2 Years', '3 Years', '5 Years'];
+        const yearLabels = lang === 'vi' 
+          ? ['1 Năm', '2 Năm', '3 Năm', '5 Năm'] 
+          : ['1 Year', '2 Years', '3 Years', '5 Years'];
         periodButtons.forEach((btn, index) => {
           if (index < yearValues.length) {
             btn.setAttribute('data-value', yearValues[index]);
@@ -646,12 +665,14 @@ if (orderId) {
           }
         });
       } else {
-        if (periodLabel) periodLabel.textContent = 'Payment Period (Months)';
-        if (periodInput) periodInput.placeholder = 'Enter custom months...';
+        if (periodLabel) periodLabel.textContent = lang === 'vi' ? 'Chu kỳ thanh toán (Tháng)' : 'Payment Period (Months)';
+        if (periodInput) periodInput.placeholder = lang === 'vi' ? 'Nhập số tháng...' : 'Enter custom months...';
         
         // Update quick buttons
         const monthValues = ['1', '3', '6', '12'];
-        const monthLabels = ['1 Month', '3 Months', '6 Months', '12 Months'];
+        const monthLabels = lang === 'vi' 
+          ? ['1 Tháng', '3 Tháng', '6 Tháng', '12 Tháng']
+          : ['1 Month', '3 Months', '6 Months', '12 Months'];
         periodButtons.forEach((btn, index) => {
           if (index < monthValues.length) {
             btn.setAttribute('data-value', monthValues[index]);
@@ -669,14 +690,21 @@ if (orderId) {
       // Calculate Memo Content
       let finalMemo = '';
       if (selectedCustomerId) {
-        const namePart = removeAccents(selectedCustomerName).toUpperCase();
-        const servicePart = removeAccents(serviceName).toUpperCase();
-        finalMemo = `${selectedCustomerId} - ${namePart}`;
-        if (servicePart) finalMemo += ` - ${servicePart}`;
-
-        if (period > 1) {
-          finalMemo += ` X${period}`;
+        finalMemo = `CRM${selectedCustomerId}`;
+        
+        let serviceCode = '';
+        const selectedOption = serviceSelect.options[serviceSelect.selectedIndex];
+        if (selectedOption && selectedOption.value) {
+          serviceCode = selectedOption.getAttribute('data-prefix') || '';
+        } else {
+          serviceCode = removeAccents(serviceName).toUpperCase().split(' ')[0];
         }
+        
+        if (serviceCode) {
+          finalMemo += ` ${serviceCode}`;
+        }
+        
+        finalMemo += ` X${period}`;
       }
 
       // Update UI displays
@@ -1008,6 +1036,24 @@ if (orderId) {
           }
         });
         
+        updateState();
+      });
+    }
+
+    if (periodUnit) {
+      periodUnit.addEventListener('change', () => {
+        updatePeriodUI();
+        period = 1;
+        if (periodInput) {
+          periodInput.value = '1';
+        }
+        periodButtons.forEach(btn => {
+          if (btn.getAttribute('data-value') === '1') {
+            btn.classList.add('active');
+          } else {
+            btn.classList.remove('active');
+          }
+        });
         updateState();
       });
     }

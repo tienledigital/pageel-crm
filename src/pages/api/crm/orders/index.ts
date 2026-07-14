@@ -163,7 +163,7 @@ export const PUT: APIRoute = async (context) => {
 
     // 2. Parse request body
     const body = await context.request.json().catch(() => ({}));
-    const { orderId, serviceId, amount, startDate, expiredAt } = body;
+    const { orderId, serviceId, amount, startDate, expiredAt, months } = body;
 
     // 3. Validation
     if (!orderId || !serviceId || amount === undefined || !startDate || !expiredAt) {
@@ -171,6 +171,17 @@ export const PUT: APIRoute = async (context) => {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });
+    }
+
+    let monthsNum = undefined;
+    if (months !== undefined) {
+      monthsNum = parseInt(months, 10);
+      if (isNaN(monthsNum) || monthsNum <= 0 || monthsNum > 120) {
+        return new Response(JSON.stringify({ error: 'Bad Request: Invalid months parameter' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     const db = getDb(env);
@@ -184,16 +195,29 @@ export const PUT: APIRoute = async (context) => {
       });
     }
 
+    // Block changes to paid orders
+    if (existingOrder.status === 'paid') {
+      return new Response(JSON.stringify({ error: 'Bad Request: Cannot modify financial parameters of a paid order' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     // 4. Update order details
+    const updateData: any = {
+      serviceId,
+      amount: Number(amount),
+      startDate: Number(startDate),
+      expiredAt: Number(expiredAt),
+      updatedAt: Date.now(),
+    };
+    if (monthsNum !== undefined) {
+      updateData.months = monthsNum;
+    }
+
     await db
       .update(orders)
-      .set({
-        serviceId,
-        amount: Number(amount),
-        startDate: Number(startDate),
-        expiredAt: Number(expiredAt),
-        updatedAt: Date.now(),
-      })
+      .set(updateData)
       .where(eq(orders.id, orderId));
 
     // 5. Run recalculation engine
