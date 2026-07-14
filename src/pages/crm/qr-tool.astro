@@ -690,21 +690,30 @@ if (orderId) {
       // Calculate Memo Content
       let finalMemo = '';
       if (selectedCustomerId) {
-        finalMemo = `CRM${selectedCustomerId}`;
+        const namePart = removeAccents(selectedCustomerName).toUpperCase();
+        const servicePart = removeAccents(serviceName).toUpperCase();
         
-        let serviceCode = '';
+        let prefixPart = '';
         const selectedOption = serviceSelect.options[serviceSelect.selectedIndex];
         if (selectedOption && selectedOption.value) {
-          serviceCode = selectedOption.getAttribute('data-prefix') || '';
-        } else {
-          serviceCode = removeAccents(serviceName).toUpperCase().split(' ')[0];
+          prefixPart = (selectedOption.getAttribute('data-prefix') || '').toUpperCase();
         }
-        
-        if (serviceCode) {
-          finalMemo += ` ${serviceCode}`;
+
+        finalMemo = `${selectedCustomerId} - ${namePart}`;
+
+        if (servicePart) {
+          finalMemo += ` - ${servicePart}`;
         }
-        
-        finalMemo += ` X${period}`;
+
+        if (prefixPart && prefixPart !== servicePart) {
+          if (!servicePart.includes(prefixPart)) {
+            finalMemo += ` ${prefixPart}`;
+          }
+        }
+
+        if (period > 1) {
+          finalMemo += ` X${period}`;
+        }
       }
 
       // Update UI displays
