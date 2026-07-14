@@ -507,6 +507,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
       align-items: center;
     }
 
+    /* @para-doc [#csa-ui-payments-modal-scrollable] */
     .modal-content {
       background-color: var(--bg-card);
       border: 1px solid var(--border-color);
@@ -514,6 +515,8 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
       padding: 2rem;
       width: 100%;
       max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
       box-shadow: 0 10px 25px rgba(0,0,0,0.5);
       animation: scale-up 0.2s ease-out;
     }
