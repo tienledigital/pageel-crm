@@ -576,6 +576,41 @@ function formatDateInput(timestamp: number | null) {
       border-color: var(--primary);
     }
 
+    .searchable-select-container {
+      position: relative;
+    }
+
+    .searchable-select-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      width: 100%;
+      max-height: 200px;
+      overflow-y: auto;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      z-index: 1010;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .searchable-select-option {
+      padding: 0.65rem 0.85rem;
+      cursor: pointer;
+      font-size: 0.875rem;
+      color: var(--text-primary);
+    }
+
+    .searchable-select-option:hover {
+      background-color: var(--primary);
+      color: #fff;
+    }
+
+    .searchable-select-option.selected {
+      background-color: var(--primary);
+      color: #fff;
+    }
+
     .modal-footer {
       display: flex;
       justify-content: flex-end;
@@ -957,14 +992,21 @@ function formatDateInput(timestamp: number | null) {
         <button class="modal-close" id="quickOrderModalCloseBtn">&times;</button>
       </div>
       <form id="quickOrderForm" style="display: flex; flex-direction: column;">
+        <!-- @para-doc [#csa-ui-orders-customer-search] -->
         <div class="form-group">
-          <label for="quickOrderCustomer">{lang === 'vi' ? 'Khách hàng' : 'Customer'}</label>
-          <select id="quickOrderCustomer" name="customerId" class="form-select" required>
-            <option value="">{lang === 'vi' ? '-- Chọn khách hàng --' : '-- Select Customer --'}</option>
-            {customersList.map((cust: any) => (
-              <option value={cust.id} data-name={cust.fullName}>{cust.fullName} ({cust.phone})</option>
-            ))}
-          </select>
+          <label for="quickOrderCustomerSearchInput">{lang === 'vi' ? 'Khách hàng' : 'Customer'}</label>
+          <div class="searchable-select-container">
+            <input type="text" id="quickOrderCustomerSearchInput" class="form-input" placeholder={lang === 'vi' ? 'Gõ tìm kiếm tên hoặc số điện thoại...' : 'Type to search name or phone...'} autocomplete="off" />
+            <input type="hidden" id="quickOrderCustomerSelect" name="customerId" />
+            <div class="searchable-select-dropdown" id="quickOrderCustomerSearchDropdown" style="display: none;">
+              <div class="searchable-select-option" data-value="">{lang === 'vi' ? '-- Chọn khách hàng --' : '-- Select Customer --'}</div>
+              {customersList.map((cust: any) => (
+                <div class="searchable-select-option" data-value={cust.id} data-name={cust.fullName} data-search={`${cust.fullName.toLowerCase()} ${cust.phone} ${(cust.id || '').toLowerCase()}`}>
+                  {cust.fullName} ({cust.phone})
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div class="form-group">
@@ -1114,7 +1156,10 @@ function formatDateInput(timestamp: number | null) {
     const form = document.getElementById('quickOrderForm');
     const submitBtn = document.getElementById('quickOrderSubmitBtn');
 
-    const customerSelect = document.getElementById('quickOrderCustomer');
+    const customerSelect = document.getElementById('quickOrderCustomerSelect');
+    const customerSearchInput = document.getElementById('quickOrderCustomerSearchInput');
+    const customerSearchDropdown = document.getElementById('quickOrderCustomerSearchDropdown');
+    const customerOptions = customerSearchDropdown ? Array.from(customerSearchDropdown.querySelectorAll('.searchable-select-option')) : [];
     const serviceSelect = document.getElementById('quickOrderService');
     const amountInput = document.getElementById('quickOrderAmount');
     const contentInput = document.getElementById('quickOrderContent');
@@ -1134,6 +1179,9 @@ function formatDateInput(timestamp: number | null) {
         const localISOTime = (new Date(now - offset)).toISOString().slice(0, 16);
         
         form.reset();
+        if (customerSelect) customerSelect.value = '';
+        if (customerSearchInput) customerSearchInput.value = '';
+        customerOptions.forEach(o => o.classList.remove('selected'));
         paidAtInput.value = localISOTime;
         if (paymentFields) paymentFields.style.display = 'flex';
         if (paidAtInput) paidAtInput.setAttribute('required', 'true');
@@ -1181,10 +1229,11 @@ function formatDateInput(timestamp: number | null) {
 
     // Smart Auto-fill when Service / Customer is changed
     const updateContentProposal = () => {
-      const selectedCustOption = customerSelect.options[customerSelect.selectedIndex];
+      const customerId = customerSelect ? customerSelect.value : '';
       const selectedSrvOption = serviceSelect.options[serviceSelect.selectedIndex];
 
-      const customerName = selectedCustOption && selectedCustOption.value ? selectedCustOption.getAttribute('data-name') : '';
+      const selectedCustOption = customerSearchDropdown ? customerSearchDropdown.querySelector(`.searchable-select-option[data-value="${customerId}"]`) : null;
+      const customerName = selectedCustOption && customerId ? selectedCustOption.getAttribute('data-name') : '';
       const servicePrefix = selectedSrvOption && selectedSrvOption.value ? selectedSrvOption.getAttribute('data-prefix') : '';
 
       if (customerName && servicePrefix) {
@@ -1200,6 +1249,54 @@ function formatDateInput(timestamp: number | null) {
     };
 
     if (customerSelect) customerSelect.addEventListener('change', updateContentProposal);
+
+    // Autocomplete Searchable Select Logic
+    if (customerSearchInput && customerSearchDropdown) {
+      customerSearchInput.addEventListener('focus', () => {
+        customerSearchDropdown.style.display = 'block';
+        customerOptions.forEach(opt => opt.style.display = 'block');
+      });
+
+      customerSearchInput.addEventListener('input', () => {
+        const term = customerSearchInput.value.toLowerCase().trim();
+        customerOptions.forEach(opt => {
+          const text = opt.getAttribute('data-search') || '';
+          if (text.includes(term) || opt.getAttribute('data-value') === '') {
+            opt.style.display = 'block';
+          } else {
+            opt.style.display = 'none';
+          }
+        });
+      });
+
+      customerOptions.forEach(opt => {
+        opt.addEventListener('click', () => {
+          const val = opt.getAttribute('data-value');
+          const text = opt.textContent.trim();
+          if (customerSelect) customerSelect.value = val;
+          customerSearchInput.value = val ? text : '';
+          customerSearchDropdown.style.display = 'none';
+          
+          customerOptions.forEach(o => {
+            if (o.getAttribute('data-value') === val) {
+              o.classList.add('selected');
+            } else {
+              o.classList.remove('selected');
+            }
+          });
+
+          if (customerSelect) {
+            customerSelect.dispatchEvent(new Event('change'));
+          }
+        });
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.searchable-select-container')) {
+          customerSearchDropdown.style.display = 'none';
+        }
+      });
+    }
 
     if (serviceSelect) {
       serviceSelect.addEventListener('change', () => {
