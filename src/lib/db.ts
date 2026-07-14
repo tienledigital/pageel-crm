@@ -1,4 +1,4 @@
-// @para-doc [spec.md#relational-database]
+// @para-doc [#csa-db-relational]
 import { drizzle as drizzleD1 } from 'drizzle-orm/d1';
 import { drizzle as drizzleSqlite } from 'drizzle-orm/better-sqlite3';
 import Database from 'better-sqlite3';
@@ -6,7 +6,7 @@ import * as schema from './db/schema';
 
 let sqliteDb: any = null;
 
-// @para-doc [development-guide.md#database]
+// @para-doc [#csa-db-client]
 // DEV: miniflare provides D1 binding automatically (uses .wrangler/state/ SQLite)
 // TEST: uses in-memory SQLite via better-sqlite3 (Node.js only)
 // PROD: uses Cloudflare D1 binding
@@ -34,7 +34,7 @@ export function getDb(platformEnv?: { DB: any }) {
   return sqliteDb;
 }
 
-// @para-doc [spec.md#relational-database]
+// @para-doc [#csa-db-relational]
 export async function runTransaction<T>(
   db: any,
   callback: (tx: any) => Promise<T>,

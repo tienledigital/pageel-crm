@@ -54,9 +54,11 @@ export async function POST(context: any) {
       const body = await context.request.clone().json().catch(() => null);
       if (body) {
         if (body.limit !== undefined || body.transaction_date_min !== undefined) {
+          // @para-doc [#csa-reconcile-sepay-override]
           hasOverride = true;
 
           // Strict role authorization: Only admin can perform advanced override sync
+          // @para-doc [#csa-reconcile-sepay-role]
           if (user.role !== 'admin') {
             return new Response(
               JSON.stringify({ error: 'Forbidden: Requires admin role for advanced sync' }),
@@ -68,6 +70,7 @@ export async function POST(context: any) {
           }
 
           if (typeof body.limit === 'number' && body.limit > 0) {
+            // @para-doc [#csa-reconcile-sepay-limit]
             limit = Math.min(body.limit, 1000); // Dynamic maximum limit guard
           }
           if (typeof body.transaction_date_min === 'string' && body.transaction_date_min.trim() !== '') {

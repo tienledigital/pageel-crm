@@ -1573,6 +1573,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
           btnConfirmUnlinkOrder.disabled = true;
           const res = await fetch('/api/crm/payments/reconcile', {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ paymentId, unlinkOrder: true })
           });
@@ -1633,6 +1634,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         } else {
           res = await fetch('/api/crm/payments/reconcile', {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ paymentId, customerId, orderId, category, taxCategory }),
           });
@@ -1662,6 +1664,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         try {
           const res = await fetch('/api/payments/sync-sepay', {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
           });
 
@@ -1774,6 +1777,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
         try {
           const res = await fetch('/api/payments/sync-sepay', {
             method: 'POST',
+            credentials: 'include',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               limit: limitVal,
@@ -2148,6 +2152,7 @@ function hasMatchingTrigger(txContent: string | null, rules: any[]): boolean {
           try {
             const res = await fetch(`/api/crm/payments/reconcile?id=${paymentId}`, {
               method: 'DELETE',
+              credentials: 'include',
             });
             const data = await res.json();
             if (res.ok && data.success) {

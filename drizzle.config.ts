@@ -1,4 +1,4 @@
-// @para-doc [spec.md#relational-database]
+// @para-doc [#csa-db-relational]
 import { defineConfig } from 'drizzle-kit';
 
 export default defineConfig({
