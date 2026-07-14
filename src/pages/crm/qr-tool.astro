@@ -435,7 +435,7 @@ if (orderId) {
             <select id="serviceSelect" class="select-input" style="flex: 1;">
               <option value="" data-price="" data-prefix="">-- Select Service Catalog --</option>
               {activeServices.map((srv: any) => (
-                <option value={srv.id} data-price={srv.price} data-prefix={srv.prefix}>
+                <option value={srv.id} data-price={srv.price} data-prefix={srv.prefix} data-cycle={srv.billingCycle}>
                   {srv.name} - {srv.price.toLocaleString()} đ ({srv.prefix})
                 </option>
               ))}
@@ -485,22 +485,29 @@ if (orderId) {
         <!-- @para-doc [#csa-us-3-qr-period] -->
         <!-- @para-doc [#csa-qr-tool-memo] -->
         <div class="input-group">
-          <span class="input-label">Payment Period (Months)</span>
+          <span class="input-label" id="periodLabel">Payment Period (Months)</span>
           <div class="button-grid" id="periodSelect">
             <button class="quick-btn active" data-value="1">1 Month</button>
             <button class="quick-btn" data-value="3">3 Months</button>
             <button class="quick-btn" data-value="6">6 Months</button>
             <button class="quick-btn" data-value="12">12 Months</button>
           </div>
-          <input 
-            type="number" 
-            id="periodInput" 
-            min="1" 
-            max="60" 
-            value="1" 
-            placeholder="Enter custom months..." 
-            class="text-input"
-          />
+          <div style="display: flex; gap: 0.5rem; width: 100%;">
+            <input 
+              type="number" 
+              id="periodInput" 
+              min="1" 
+              max="60" 
+              value="1" 
+              placeholder="Enter custom months..." 
+              class="text-input"
+              style="flex: 1;"
+            />
+            <select id="periodUnit" class="select-input" style="width: 120px;">
+              <option value="months">{lang === 'vi' ? 'Tháng' : 'Months'}</option>
+              <option value="years">{lang === 'vi' ? 'Năm' : 'Years'}</option>
+            </select>
+          </div>
         </div>
       </div>
 
@@ -619,11 +626,61 @@ if (orderId) {
     const copyBtn = document.getElementById('copyBtn');
     const downloadBtn = document.getElementById('downloadBtn');
     const shareBtn = document.getElementById('shareBtn');
+    const periodUnit = document.getElementById('periodUnit');
 
     const quickServices = document.querySelectorAll('#quickServices .quick-btn');
     const quickAmounts = document.querySelectorAll('#quickAmounts .quick-btn');
     const periodButtons = document.querySelectorAll('#periodSelect .quick-btn');
     const templateButtons = document.querySelectorAll('#templateGrid .template-btn');
+
+    // @para-doc [#csa-qr-tool-dynamic-period]
+    function updatePeriodUI(billingCycle, prefix) {
+      const periodLabel = document.getElementById('periodLabel');
+      const periodInput = document.getElementById('periodInput');
+      const periodUnit = document.getElementById('periodUnit');
+      
+      let isYearly = false;
+      if (billingCycle !== undefined && prefix !== undefined) {
+        isYearly = (prefix && prefix.toUpperCase().startsWith('N')) || billingCycle > 180;
+        if (periodUnit) {
+          periodUnit.value = isYearly ? 'years' : 'months';
+        }
+      } else if (periodUnit) {
+        isYearly = periodUnit.value === 'years';
+      }
+
+      if (isYearly) {
+        if (periodLabel) periodLabel.textContent = lang === 'vi' ? 'Chu kỳ thanh toán (Năm)' : 'Payment Period (Years)';
+        if (periodInput) periodInput.placeholder = lang === 'vi' ? 'Nhập số năm...' : 'Enter custom years...';
+        
+        // Update quick buttons
+        const yearValues = ['1', '2', '3', '5'];
+        const yearLabels = lang === 'vi' 
+          ? ['1 Năm', '2 Năm', '3 Năm', '5 Năm'] 
+          : ['1 Year', '2 Years', '3 Years', '5 Years'];
+        periodButtons.forEach((btn, index) => {
+          if (index < yearValues.length) {
+            btn.setAttribute('data-value', yearValues[index]);
+            btn.textContent = yearLabels[index];
+          }
+        });
+      } else {
+        if (periodLabel) periodLabel.textContent = lang === 'vi' ? 'Chu kỳ thanh toán (Tháng)' : 'Payment Period (Months)';
+        if (periodInput) periodInput.placeholder = lang === 'vi' ? 'Nhập số tháng...' : 'Enter custom months...';
+        
+        // Update quick buttons
+        const monthValues = ['1', '3', '6', '12'];
+        const monthLabels = lang === 'vi' 
+          ? ['1 Tháng', '3 Tháng', '6 Tháng', '12 Tháng']
+          : ['1 Month', '3 Months', '6 Months', '12 Months'];
+        periodButtons.forEach((btn, index) => {
+          if (index < monthValues.length) {
+            btn.setAttribute('data-value', monthValues[index]);
+            btn.textContent = monthLabels[index];
+          }
+        });
+      }
+    }
 
     // Trigger state change and regenerate QR code
     function updateState() {
@@ -633,14 +690,21 @@ if (orderId) {
       // Calculate Memo Content
       let finalMemo = '';
       if (selectedCustomerId) {
-        const namePart = removeAccents(selectedCustomerName).toUpperCase();
-        const servicePart = removeAccents(serviceName).toUpperCase();
-        finalMemo = `${selectedCustomerId} - ${namePart}`;
-        if (servicePart) finalMemo += ` - ${servicePart}`;
-
-        if (period > 1) {
-          finalMemo += ` X${period}`;
+        finalMemo = `CRM${selectedCustomerId}`;
+        
+        let serviceCode = '';
+        const selectedOption = serviceSelect.options[serviceSelect.selectedIndex];
+        if (selectedOption && selectedOption.value) {
+          serviceCode = selectedOption.getAttribute('data-prefix') || '';
+        } else {
+          serviceCode = removeAccents(serviceName).toUpperCase().split(' ')[0];
         }
+        
+        if (serviceCode) {
+          finalMemo += ` ${serviceCode}`;
+        }
+        
+        finalMemo += ` X${period}`;
       }
 
       // Update UI displays
@@ -737,6 +801,7 @@ if (orderId) {
           serviceName = '';
           basePrice = 0;
           period = 1;
+          updatePeriodUI(30, '');
         }
       } else {
         if (serviceSelect) {
@@ -746,6 +811,7 @@ if (orderId) {
           serviceName = '';
           basePrice = 0;
           period = 1;
+          updatePeriodUI(30, '');
         }
       }
       updateMainServiceBtnState();
@@ -758,6 +824,7 @@ if (orderId) {
       if (serviceSelect) {
         serviceSelect.value = '';
       }
+      updatePeriodUI(30, '');
       
       // Deactivate quick service buttons if no longer matching
       quickServices.forEach(btn => {
@@ -782,7 +849,10 @@ if (orderId) {
 
         const price = selectedOption.getAttribute('data-price') || '';
         const prefix = selectedOption.getAttribute('data-prefix') || '';
+        const cycle = Number(selectedOption.getAttribute('data-cycle')) || 30;
         const prefixUpper = prefix.toUpperCase();
+
+        updatePeriodUI(cycle, prefix);
 
         // Smart Service Auto-fill rules
         let calculatedName = prefix;
@@ -898,6 +968,7 @@ if (orderId) {
         if (serviceSelect) {
           serviceSelect.value = '';
         }
+        updatePeriodUI(30, '');
         updateState();
       });
     });
@@ -965,6 +1036,24 @@ if (orderId) {
           }
         });
         
+        updateState();
+      });
+    }
+
+    if (periodUnit) {
+      periodUnit.addEventListener('change', () => {
+        updatePeriodUI();
+        period = 1;
+        if (periodInput) {
+          periodInput.value = '1';
+        }
+        periodButtons.forEach(btn => {
+          if (btn.getAttribute('data-value') === '1') {
+            btn.classList.add('active');
+          } else {
+            btn.classList.remove('active');
+          }
+        });
         updateState();
       });
     }

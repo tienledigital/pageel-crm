@@ -39,6 +39,16 @@ describe('Sepay Reconciliation Unit Tests', () => {
       expect(id).toBe('1002');
     });
 
+    it('should parse customer ID with CRM prefix like "CRM1005" or "crm1002"', () => {
+      expect(parseCustomerIdFromMemo('CRM1005 T300 X3')).toBe('1005');
+      expect(parseCustomerIdFromMemo('crm1002 N2000 X1')).toBe('1002');
+    });
+
+    it('should parse customer ID with CRM and alpha prefix like "CRMAG1" or "crmsg2"', () => {
+      expect(parseCustomerIdFromMemo('CRMAG1 T300 X3')).toBe('AG1');
+      expect(parseCustomerIdFromMemo('crmsg2 N2000 X1')).toBe('sg2');
+    });
+
     it('should return null for invalid memo formats', () => {
       expect(parseCustomerIdFromMemo('Gia han dich vu crm')).toBeNull();
       expect(parseCustomerIdFromMemo('')).toBeNull();
@@ -69,6 +79,11 @@ describe('Sepay Reconciliation Unit Tests', () => {
     it('should parse months correctly even with very long memo (prevent ReDoS)', () => {
       const longMemo = '1005 - ' + 'a'.repeat(200) + ' X5';
       expect(parseMonthsFromMemo(longMemo)).toBe(5);
+    });
+
+    it('should parse months correctly even with trailing whitespace or trailing characters (TDD)', () => {
+      expect(parseMonthsFromMemo('1005 - Gia han dich vu X3 ')).toBe(3);
+      expect(parseMonthsFromMemo('1005 - Gia han dich vu X3   ')).toBe(3);
     });
   });
 });
@@ -739,6 +754,79 @@ describe('Database Reconciliation Integration Tests', () => {
       expect(insertedPayments[0].customerId).toBe('1005');
       expect(insertedPayments[0].orderId).toBeNull();
     });
+
+    // @para-doc [#csa-test-webhook-regex]
+    it('should automatically match order using CRM prefix and service monthly code like "CRM1005 T300 X3"', async () => {
+      const { services: servicesTable, orders: ordersTable, customerServices: customerServicesTable } = await import('@/lib/db/schema');
+      const serviceId = 'srv-months-crm-1';
+      await db.insert(servicesTable).values({
+        id: serviceId,
+        name: 'CRM Monthly Service',
+        price: 300000,
+        billingCycle: 30,
+        prefix: 'T300',
+        status: 'active',
+        createdAt: Date.now()
+      });
+
+      const payment = {
+        transactionId: 'TX_CRM_MONTHLY_1',
+        amount: 900000, // 300k * 3
+        content: 'CRM1005 T300 X3',
+        bank: 'Techcombank',
+        paidAt: Date.now(),
+      };
+
+      const result = await reconcilePayment(db, payment);
+      expect(result.success).toBe(true);
+
+      const allOrders = await db.select().from(ordersTable).where(eq(ordersTable.customerId, '1005')).all();
+      expect(allOrders).toHaveLength(1);
+      expect(allOrders[0].status).toBe('paid');
+      expect(allOrders[0].amount).toBe(900000);
+      expect(allOrders[0].months).toBe(3);
+
+      const activeCS = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+      expect(activeCS).toHaveLength(1);
+      expect(activeCS[0].status).toBe('active');
+      expect(activeCS[0].expiredAt).toBe(activeCS[0].startDate + 90 * 24 * 60 * 60 * 1000);
+    });
+
+    it('should automatically match order using CRM prefix and service yearly code like "CRM1005 N2000 X1" (extends by 12 months)', async () => {
+      const { services: servicesTable, orders: ordersTable, customerServices: customerServicesTable } = await import('@/lib/db/schema');
+      const serviceId = 'srv-years-crm-1';
+      await db.insert(servicesTable).values({
+        id: serviceId,
+        name: 'CRM Yearly Service',
+        price: 2000000,
+        billingCycle: 360,
+        prefix: 'N2000',
+        status: 'active',
+        createdAt: Date.now()
+      });
+
+      const payment = {
+        transactionId: 'TX_CRM_YEARLY_1',
+        amount: 2000000, // 2M * 1 year
+        content: 'CRM1005 N2000 X1', // X1 means 1 year cycle
+        bank: 'Techcombank',
+        paidAt: Date.now(),
+      };
+
+      const result = await reconcilePayment(db, payment);
+      expect(result.success).toBe(true);
+
+      const allOrders = await db.select().from(ordersTable).where(eq(ordersTable.serviceId, serviceId)).all();
+      expect(allOrders).toHaveLength(1);
+      expect(allOrders[0].status).toBe('paid');
+      expect(allOrders[0].amount).toBe(2000000);
+      expect(allOrders[0].months).toBe(12); // Converted from 1 year to 12 months!
+
+      const activeCS = await db.select().from(customerServicesTable).where(eq(customerServicesTable.serviceId, serviceId)).all();
+      expect(activeCS).toHaveLength(1);
+      expect(activeCS[0].status).toBe('active');
+      expect(activeCS[0].expiredAt).toBe(activeCS[0].startDate + 360 * 24 * 60 * 60 * 1000);
+    });
   });
 });
 
@@ -1127,6 +1215,141 @@ describe('Sepay Webhook Endpoint Integration Tests', () => {
       const data = await response.json();
       expect(data).toHaveLength(1);
       expect(data[0].orderNumber).toBe('ORD-20260604-0001');
+    });
+
+    it('should successfully update order parameters via PUT when order is pending (TDD)', async () => {
+      const { orders: ordersTable, services: servicesTable } = await import('@/lib/db/schema');
+      // Seed service first
+      await db.insert(servicesTable).values({
+        id: 'srv-months-auto-1',
+        name: 'Auto Months Service',
+        price: 200000,
+        billingCycle: 30,
+        prefix: 'AUTOMONTHS',
+        status: 'active',
+        createdAt: Date.now()
+      }).onConflictDoNothing();
+
+      await db.insert(ordersTable).values({
+        id: 'ord-put-pending-1',
+        orderNumber: 'ORD-20260714-PUT1',
+        amount: 200000,
+        content: 'ORD pending content',
+        status: 'pending',
+        months: 2,
+        customerId: '1005',
+      });
+
+      const { PUT: putOrdersHandler } = await import('../src/pages/api/crm/orders/index');
+      const now = Date.now();
+      const context = createMockContextForApi('PUT', {
+        orderId: 'ord-put-pending-1',
+        serviceId: 'srv-months-auto-1',
+        amount: 600000,
+        startDate: now,
+        expiredAt: now + 90 * 24 * 60 * 60 * 1000,
+        months: 3,
+      }, adminToken);
+
+      const response = await putOrdersHandler(context);
+      expect(response.status).toBe(200);
+
+      const [updatedOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, 'ord-put-pending-1'));
+      expect(updatedOrder.amount).toBe(600000);
+      expect(updatedOrder.months).toBe(3);
+      expect(updatedOrder.serviceId).toBe('srv-months-auto-1');
+    });
+
+    it('should fail to update order parameters via PUT when order status is paid (TDD)', async () => {
+      const { orders: ordersTable, services: servicesTable } = await import('@/lib/db/schema');
+      // Seed service first
+      await db.insert(servicesTable).values({
+        id: 'srv-months-auto-1',
+        name: 'Auto Months Service',
+        price: 200000,
+        billingCycle: 30,
+        prefix: 'AUTOMONTHS',
+        status: 'active',
+        createdAt: Date.now()
+      }).onConflictDoNothing();
+
+      await db.insert(ordersTable).values({
+        id: 'ord-put-paid-1',
+        orderNumber: 'ORD-20260714-PUT2',
+        amount: 200000,
+        content: 'ORD paid content',
+        status: 'paid',
+        months: 2,
+        customerId: '1005',
+      });
+
+      const { PUT: putOrdersHandler } = await import('../src/pages/api/crm/orders/index');
+      const now = Date.now();
+      const context = createMockContextForApi('PUT', {
+        orderId: 'ord-put-paid-1',
+        serviceId: 'srv-months-auto-1',
+        amount: 600000,
+        startDate: now,
+        expiredAt: now + 90 * 24 * 60 * 60 * 1000,
+        months: 3,
+      }, adminToken);
+
+      const response = await putOrdersHandler(context);
+      expect(response.status).toBe(400); // Bad Request (cannot modify paid orders)
+
+      const [updatedOrder] = await db.select().from(ordersTable).where(eq(ordersTable.id, 'ord-put-paid-1'));
+      expect(updatedOrder.amount).toBe(200000); // unchanged
+      expect(updatedOrder.months).toBe(2); // unchanged
+    });
+
+    it('should return 400 Bad Request if validation parameters fail on PUT (TDD)', async () => {
+      const { orders: ordersTable, services: servicesTable } = await import('@/lib/db/schema');
+      // Seed service first
+      await db.insert(servicesTable).values({
+        id: 'srv-months-auto-1',
+        name: 'Auto Months Service',
+        price: 200000,
+        billingCycle: 30,
+        prefix: 'AUTOMONTHS',
+        status: 'active',
+        createdAt: Date.now()
+      }).onConflictDoNothing();
+
+      await db.insert(ordersTable).values({
+        id: 'ord-put-invalid-1',
+        orderNumber: 'ORD-20260714-PUT3',
+        amount: 200000,
+        content: 'ORD pending content 2',
+        status: 'pending',
+        months: 2,
+        customerId: '1005',
+      });
+
+      const { PUT: putOrdersHandler } = await import('../src/pages/api/crm/orders/index');
+      const now = Date.now();
+      const context = createMockContextForApi('PUT', {
+        orderId: 'ord-put-invalid-1',
+        serviceId: 'srv-months-auto-1',
+        amount: 600000,
+        startDate: now,
+        expiredAt: now + 90 * 24 * 60 * 60 * 1000,
+        months: -5, // invalid negative months
+      }, adminToken);
+
+      const response = await putOrdersHandler(context);
+      expect(response.status).toBe(400);
+
+      const context2 = createMockContextForApi('PUT', {
+        orderId: 'ord-put-invalid-1',
+        serviceId: 'srv-months-auto-1',
+        amount: 600000,
+        startDate: now,
+        expiredAt: now + 90 * 24 * 60 * 60 * 1000,
+        months: 150, // too large months (> 120)
+      }, adminToken);
+
+      const response2 = await putOrdersHandler(context2);
+      expect(response2.status).toBe(400);
     });
 
     describe('Manual Reconcile API Tests', () => {

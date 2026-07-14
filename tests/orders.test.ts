@@ -738,7 +738,7 @@ describe('PUT: Update Paid Order API Endpoint Integration Tests', () => {
       orderNumber: 'ORD-PUT-01',
       amount: 100000,
       content: 'Original Content',
-      status: 'paid',
+      status: 'pending',
       serviceId: serviceId1,
       startDate: createdAt,
       expiredAt: createdAt + 30 * 24 * 60 * 60 * 1000,
