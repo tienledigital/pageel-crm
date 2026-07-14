@@ -6,6 +6,16 @@ order: 1
 
 All notable changes to this project will be documented in this file.
 
+## [0.12.1] - 2026-07-14
+
+### Added
+- **Searchable Customer Dropdown**: Upgraded the customer selector on the Orders creation modal from a standard select element to a searchable autocomplete dropdown with keyboard filtration and auto-proposal content generation.
+
+### Fixed
+- **API Late Association 400**: Refactored `/api/crm/payments/create-order` endpoint to dynamically query transaction dates and service billing cycles when omitted by the client.
+- **Modal Overflow CSS**: Restricted maximum modal height (`max-height: 90vh`) and added vertical scroll support on `.modal-content` wrapper to prevent screen overflows on smaller layouts.
+- **Database local D1 column drift**: Applied migrations to inject the missing `months` column into local emulated D1 database schemas, resolving Astro 500 server crashes.
+
 ## [0.12.0] - 2026-07-13
 
 ### Added
