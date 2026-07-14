@@ -950,6 +950,67 @@ describe('POST: Late Association API create-order months Option (TDD)', () => {
     expect(order.months).toBe(3);
     expect(order.amount).toBe(250000); // base price by default if customPrice not provided
   });
+
+  it('should automatically calculate dates when not provided in body', async () => {
+    const db = getDb();
+
+    const paymentId = 'pay-late-assoc-tdd-2';
+    const customerId = 'cust-late-assoc-2';
+    const serviceId = 'srv-late-assoc-2';
+
+    await db.insert(customers).values({
+      id: customerId,
+      fullName: 'Late Assoc Customer 2',
+      phone: '0914444444',
+    }).onConflictDoNothing();
+
+    await db.insert(services).values({
+      id: serviceId,
+      name: 'Late Assoc Service 2',
+      price: 150000,
+      billingCycle: 15,
+      prefix: 'LATEASSOC2',
+      status: 'active',
+      createdAt: Date.now(),
+    }).onConflictDoNothing();
+
+    const paidAt = Date.now() - 10000;
+
+    await db.insert(payments).values({
+      id: paymentId,
+      customerId,
+      amount: 450000,
+      transactionId: 'TX_LATE_ASSOC_TDD_2',
+      paymentMethod: 'bank_transfer',
+      content: 'Nang cap 2',
+      paidAt,
+      type: 'in',
+      category: 'non_revenue',
+    }).onConflictDoNothing();
+
+    // Body does NOT contain startDate and expiredAt
+    const body = {
+      paymentId,
+      customerId,
+      serviceId,
+      months: 2,
+    };
+
+    const context = createMockContext(body, adminToken);
+    const response = await createOrderFromPaymentHandler(context);
+    expect(response.status).toBe(200);
+
+    const data = await response.json();
+    expect(data.success).toBe(true);
+
+    // Verify DB order has resolved dates correctly
+    const order = await db.select().from(orders).where(eq(orders.id, data.orderId)).get();
+    expect(order).toBeDefined();
+    expect(order.status).toBe('paid');
+    expect(order.months).toBe(2);
+    expect(order.startDate).toBe(paidAt);
+    expect(order.expiredAt).toBe(paidAt + 15 * 2 * 24 * 60 * 60 * 1000);
+  });
 });
 
 

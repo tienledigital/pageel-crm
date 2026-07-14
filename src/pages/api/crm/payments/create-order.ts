@@ -2,7 +2,7 @@
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
-import { staff } from '@/lib/db/schema';
+import { staff, payments, services } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { createOrderFromPayment } from '@/lib/services/serviceManager';
@@ -35,7 +35,7 @@ export const POST: APIRoute = async (context) => {
     const body = await context.request.json().catch(() => ({}));
     const { paymentId, customerId, serviceId, startDate, expiredAt, customPrice, months } = body;
 
-    if (!paymentId || !customerId || !serviceId || !startDate || !expiredAt) {
+    if (!paymentId || !customerId || !serviceId) {
       return new Response(JSON.stringify({ error: 'Bad Request: Missing required parameters' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
@@ -43,6 +43,28 @@ export const POST: APIRoute = async (context) => {
     }
 
     const db = getDb(env);
+
+    // Retrieve payment to get paidAt
+    const targetPayment = await db.select().from(payments).where(eq(payments.id, paymentId)).get();
+    if (!targetPayment) {
+      return new Response(JSON.stringify({ error: 'Bad Request: Payment not found' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Retrieve service info to get billingCycle
+    const targetService = await db.select().from(services).where(eq(services.id, serviceId)).get();
+    if (!targetService) {
+      return new Response(JSON.stringify({ error: 'Bad Request: Service not found' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const resolvedMonths = months ? Number(months) : 1;
+    const resolvedStartDate = startDate ? Number(startDate) : (targetPayment.paidAt || Date.now());
+    const resolvedExpiredAt = expiredAt ? Number(expiredAt) : (resolvedStartDate + (targetService.billingCycle ?? 30) * resolvedMonths * 24 * 60 * 60 * 1000);
 
     // 3. Retrieve current staff member associated with the user
     const currentStaff = await db.select().from(staff).where(eq(staff.userId, user.id)).get();
@@ -54,15 +76,16 @@ export const POST: APIRoute = async (context) => {
     }
 
     // 4. Create order from payment
+    // @para-doc [#csa-api-late-assoc-auto-date]
     const result = await createOrderFromPayment(db, {
       paymentId,
       customerId,
       serviceId,
-      startDate: Number(startDate),
-      expiredAt: Number(expiredAt),
+      startDate: resolvedStartDate,
+      expiredAt: resolvedExpiredAt,
       staffId: currentStaff.id,
       customPrice: customPrice !== undefined ? Number(customPrice) : undefined,
-      months: months ? Number(months) : 1,
+      months: resolvedMonths,
     });
 
     return new Response(JSON.stringify({ success: true, orderId: result.orderId }), {
