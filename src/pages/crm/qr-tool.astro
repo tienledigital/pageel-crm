@@ -435,7 +435,7 @@ if (orderId) {
             <select id="serviceSelect" class="select-input" style="flex: 1;">
               <option value="" data-price="" data-prefix="">-- Select Service Catalog --</option>
               {activeServices.map((srv: any) => (
-                <option value={srv.id} data-price={srv.price} data-prefix={srv.prefix}>
+                <option value={srv.id} data-price={srv.price} data-prefix={srv.prefix} data-cycle={srv.billingCycle}>
                   {srv.name} - {srv.price.toLocaleString()} đ ({srv.prefix})
                 </option>
               ))}
@@ -485,7 +485,7 @@ if (orderId) {
         <!-- @para-doc [#csa-us-3-qr-period] -->
         <!-- @para-doc [#csa-qr-tool-memo] -->
         <div class="input-group">
-          <span class="input-label">Payment Period (Months)</span>
+          <span class="input-label" id="periodLabel">Payment Period (Months)</span>
           <div class="button-grid" id="periodSelect">
             <button class="quick-btn active" data-value="1">1 Month</button>
             <button class="quick-btn" data-value="3">3 Months</button>
@@ -625,6 +625,42 @@ if (orderId) {
     const periodButtons = document.querySelectorAll('#periodSelect .quick-btn');
     const templateButtons = document.querySelectorAll('#templateGrid .template-btn');
 
+    // @para-doc [#csa-qr-tool-dynamic-period]
+    function updatePeriodUI(billingCycle, prefix) {
+      const periodLabel = document.getElementById('periodLabel');
+      const periodInput = document.getElementById('periodInput');
+      
+      const isYearly = (prefix && prefix.toUpperCase().startsWith('N')) || billingCycle > 180;
+
+      if (isYearly) {
+        if (periodLabel) periodLabel.textContent = 'Payment Period (Years)';
+        if (periodInput) periodInput.placeholder = 'Enter custom years...';
+        
+        // Update quick buttons
+        const yearValues = ['1', '2', '3', '5'];
+        const yearLabels = ['1 Year', '2 Years', '3 Years', '5 Years'];
+        periodButtons.forEach((btn, index) => {
+          if (index < yearValues.length) {
+            btn.setAttribute('data-value', yearValues[index]);
+            btn.textContent = yearLabels[index];
+          }
+        });
+      } else {
+        if (periodLabel) periodLabel.textContent = 'Payment Period (Months)';
+        if (periodInput) periodInput.placeholder = 'Enter custom months...';
+        
+        // Update quick buttons
+        const monthValues = ['1', '3', '6', '12'];
+        const monthLabels = ['1 Month', '3 Months', '6 Months', '12 Months'];
+        periodButtons.forEach((btn, index) => {
+          if (index < monthValues.length) {
+            btn.setAttribute('data-value', monthValues[index]);
+            btn.textContent = monthLabels[index];
+          }
+        });
+      }
+    }
+
     // Trigger state change and regenerate QR code
     function updateState() {
       // Multiply base price by periods
@@ -737,6 +773,7 @@ if (orderId) {
           serviceName = '';
           basePrice = 0;
           period = 1;
+          updatePeriodUI(30, '');
         }
       } else {
         if (serviceSelect) {
@@ -746,6 +783,7 @@ if (orderId) {
           serviceName = '';
           basePrice = 0;
           period = 1;
+          updatePeriodUI(30, '');
         }
       }
       updateMainServiceBtnState();
@@ -758,6 +796,7 @@ if (orderId) {
       if (serviceSelect) {
         serviceSelect.value = '';
       }
+      updatePeriodUI(30, '');
       
       // Deactivate quick service buttons if no longer matching
       quickServices.forEach(btn => {
@@ -782,7 +821,10 @@ if (orderId) {
 
         const price = selectedOption.getAttribute('data-price') || '';
         const prefix = selectedOption.getAttribute('data-prefix') || '';
+        const cycle = Number(selectedOption.getAttribute('data-cycle')) || 30;
         const prefixUpper = prefix.toUpperCase();
+
+        updatePeriodUI(cycle, prefix);
 
         // Smart Service Auto-fill rules
         let calculatedName = prefix;
@@ -898,6 +940,7 @@ if (orderId) {
         if (serviceSelect) {
           serviceSelect.value = '';
         }
+        updatePeriodUI(30, '');
         updateState();
       });
     });

@@ -68,12 +68,7 @@ export const POST: APIRoute = async (context) => {
 
     // 3. Retrieve current staff member associated with the user
     const currentStaff = await db.select().from(staff).where(eq(staff.userId, user.id)).get();
-    if (!currentStaff) {
-      return new Response(JSON.stringify({ error: 'Forbidden: User is not linked to staff record' }), {
-        status: 403,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
+    const staffId = currentStaff ? currentStaff.id : null;
 
     // 4. Create order from payment
     // @para-doc [#csa-api-late-assoc-auto-date]
@@ -83,7 +78,7 @@ export const POST: APIRoute = async (context) => {
       serviceId,
       startDate: resolvedStartDate,
       expiredAt: resolvedExpiredAt,
-      staffId: currentStaff.id,
+      staffId: staffId,
       customPrice: customPrice !== undefined ? Number(customPrice) : undefined,
       months: resolvedMonths,
     });

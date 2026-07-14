@@ -70,6 +70,11 @@ describe('Sepay Reconciliation Unit Tests', () => {
       const longMemo = '1005 - ' + 'a'.repeat(200) + ' X5';
       expect(parseMonthsFromMemo(longMemo)).toBe(5);
     });
+
+    it('should parse months correctly even with trailing whitespace or trailing characters (TDD)', () => {
+      expect(parseMonthsFromMemo('1005 - Gia han dich vu X3 ')).toBe(3);
+      expect(parseMonthsFromMemo('1005 - Gia han dich vu X3   ')).toBe(3);
+    });
   });
 });
 

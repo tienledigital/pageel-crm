@@ -72,7 +72,7 @@ export interface CreateOrderFromPaymentParams {
   serviceId: string;
   startDate: number;
   expiredAt: number;
-  staffId: string;
+  staffId?: string | null;
   customPrice?: number;
   months?: number;
 }
@@ -123,7 +123,7 @@ export async function createOrderFromPayment(
       await tx.insert(orders).values({
         id: orderId,
         customerId: params.customerId,
-        staffId: params.staffId,
+        staffId: params.staffId || null,
         orderNumber,
         amount: orderAmount,
         content: `Thanh toan dich vu ${targetService.name}`,

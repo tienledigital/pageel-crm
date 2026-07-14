@@ -29,13 +29,15 @@ export function parseCustomerIdFromMemo(memo: string): string | null {
 }
 
 // @para-doc [#csa-reconcile-regex]
+// @para-doc [#csa-reconcile-months-regex-trailing-space]
 export function parseMonthsFromMemo(memo: string): number {
   if (!memo) return 1;
+  const trimmed = memo.trim();
   // 1. ReDoS Guard: Only scan the last 100 characters of the memo to prevent backtracking on long strings
-  const textToScan = memo.length > 100 ? memo.substring(memo.length - 100) : memo;
+  const textToScan = trimmed.length > 100 ? trimmed.substring(trimmed.length - 100) : trimmed;
   
   // 2. Scan memo using regex for billing cycles suffix "X{N}" (e.g. X3, X12)
-  const match = textToScan.match(/(?:\s+X(\d{1,10}))?$/i);
+  const match = textToScan.match(/(?:\s+X(\d{1,10}))\s*$/i);
   if (match && match[1]) {
     const val = parseInt(match[1], 10);
     // 3. Integer Overflow Guard: billing cycle must be between 1 and 60 months
