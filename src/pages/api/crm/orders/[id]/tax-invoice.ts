@@ -1,4 +1,4 @@
-// @para-doc [api-contracts.md#142-cap-nhat-hoa-don-do-cho-don-hang]
+// @para-doc [#csa-orders-tax-invoice-update]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -7,8 +7,8 @@ import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { logAudit } from '@/lib/audit';
 import { logDebug } from '@/lib/debug-logger';
 import { eq } from 'drizzle-orm';
-// @para-doc [api-contracts.md#142-cap-nhat-hoa-don-do-cho-don-hang]
-// @para-doc [tax-reporting-spec.md#22-api-cap-nhat-hoa-don-thue-post-apicrmordersidtax-invoice]
+// @para-doc [#csa-orders-tax-invoice-update]
+// @para-doc [#csa-orders-tax-invoice-post]
 export const POST: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions

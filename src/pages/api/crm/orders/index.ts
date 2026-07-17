@@ -1,4 +1,4 @@
-// @para-doc [api-contracts.md#14-api-quan-ly-don-hang-tu-dong-orders-api]
+// @para-doc [#csa-orders-api-overview]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -7,7 +7,7 @@ import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { desc, eq } from 'drizzle-orm';
 import { createPaidOrder, createPendingOrder, syncCustomerServices } from '@/lib/services/serviceManager';
 
-// @para-doc [api-contracts.md#141-lay-danh-sach-don-hang-tu-dong]
+// @para-doc [#csa-orders-api-list]
 export const GET: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions
@@ -49,7 +49,7 @@ export const GET: APIRoute = async (context) => {
   }
 };
 
-// @para-doc [api-contracts.md#145-tao-don-hang-moi]
+// @para-doc [#csa-orders-api-create]
 // @para-doc [#csa-api-post-orders]
 export const POST: APIRoute = async (context) => {
   try {
@@ -139,7 +139,7 @@ export const POST: APIRoute = async (context) => {
   }
 };
 
-// @para-doc [api-contracts.md#143-cap-nhat-thong-tin-don-hang-edit-order]
+// @para-doc [#csa-orders-api-update]
 export const PUT: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions
@@ -237,7 +237,7 @@ export const PUT: APIRoute = async (context) => {
   }
 };
 
-// @para-doc [api-contracts.md#144-xoa-don-hang-delete-order]
+// @para-doc [#csa-orders-api-delete]
 export const DELETE: APIRoute = async (context) => {
   try {
     // 1. Verify user session and permissions

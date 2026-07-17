@@ -52,6 +52,7 @@ if (statusFilter) {
   conditions.push(eq(orders.status, statusFilter));
 }
 
+// @para-doc [#csa-orders-api-list-date-filter]
 if (startDateParam) {
   const startTs = new Date(startDateParam + 'T00:00:00+07:00').getTime();
   conditions.push(sql`${issuedDateSql} >= ${startTs}`);

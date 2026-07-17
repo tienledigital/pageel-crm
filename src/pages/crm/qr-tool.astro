@@ -1,5 +1,5 @@
 ---
-// @para-doc [user-manual/06-qr-tool.md]
+// @para-doc [#csa-qr-tool-autofill]
 import DashboardLayout from '@/layouts/DashboardLayout.astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -633,7 +633,7 @@ if (orderId) {
     const periodButtons = document.querySelectorAll('#periodSelect .quick-btn');
     const templateButtons = document.querySelectorAll('#templateGrid .template-btn');
 
-    // @para-doc [#csa-qr-tool-dynamic-period]
+    // @para-doc [#csa-qr-tool-autofill]
     function updatePeriodUI(billingCycle, prefix) {
       const periodLabel = document.getElementById('periodLabel');
       const periodInput = document.getElementById('periodInput');

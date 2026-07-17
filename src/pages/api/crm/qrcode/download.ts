@@ -1,8 +1,7 @@
-// @para-doc [spec.md#automated-revenue-reconciliation]
+// @para-doc [#csa-qrcode-download-proxy]
 import type { APIRoute } from 'astro';
 import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 
-// @para-doc [spec.md#automated-revenue-reconciliation]
 export const GET: APIRoute = async (context) => {
   try {
     // 1. Verify user session
@@ -33,6 +32,7 @@ export const GET: APIRoute = async (context) => {
       });
     }
 
+    // @para-doc [#csa-qrcode-download-ssrf-guard]
     // 3. SSRF Protection: Ensure domain is img.vietqr.io
     let parsedUrl: URL;
     try {

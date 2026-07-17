@@ -211,7 +211,7 @@ export async function createOrderFromPayment(
     return await runTransaction(db, executeInTx);
 }
 
-// @para-doc [spec-2026-06-05-quick-create-paid-order.md#4-code-style]
+// @para-doc [#csa-quick-order-code-style]
 export interface CreatePaidOrderParams {
   customerId: string;
   serviceId: string;
