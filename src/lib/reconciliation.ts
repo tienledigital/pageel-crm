@@ -40,7 +40,6 @@ export function parseCustomerIdFromMemo(memo: string): string | null {
 }
 
 // @para-doc [#csa-reconcile-regex]
-// @para-doc [#csa-reconcile-months-regex-trailing-space]
 export function parseMonthsFromMemo(memo: string): number {
   if (!memo) return 1;
   const trimmed = memo.trim();

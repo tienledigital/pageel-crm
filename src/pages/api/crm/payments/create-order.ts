@@ -1,4 +1,4 @@
-// @para-doc [services-payments-spec.md#64-cac-api-nghiep-vu-don-hang-orders-api-contracts]
+// @para-doc [#csa-orders-service-manager-contracts]
 import type { APIRoute } from 'astro';
 import { env } from 'cloudflare:workers';
 import { getDb } from '@/lib/db';
@@ -8,7 +8,7 @@ import { verifySessionCookie, getSessionSecret } from '@/lib/auth';
 import { createOrderFromPayment } from '@/lib/services/serviceManager';
 import { logDebug } from '@/lib/debug-logger';
 
-// @para-doc [services-payments-spec.md#64-cac-api-nghiep-vu-don-hang-orders-api-contracts]
+// @para-doc [#csa-orders-service-manager-contracts]
 // @para-doc [#csa-api-late-assoc]
 export const POST: APIRoute = async (context) => {
   try {
